@@ -11,7 +11,7 @@ import java.lang.System.Logger.Level;
 public interface ProxyLogger {
 
   static ProxyLogger get(String source) {
-    String debugFlag = System.getenv("SENSEPITCH_EDGE_DEBUG");
+    String debugFlag = System.getenv("SENSEPITCH_EDGE_LOG_LEVEL");
     if (debugFlag != null) {
       return new WithTracing(source, LogTarget.INSTANCE);
     }
@@ -30,23 +30,27 @@ public interface ProxyLogger {
 
   void log(LogInfo record);
 
+  void trace(String message);
+
   void trace(Channel downstream, String message);
 
   void traceChannelRead(ChannelHandlerContext ctx, Object msg);
 
   void trace(Channel downstream, Channel upstream, String message);
 
+  void info(String message);
+
   void error(Channel channel, Throwable cause);
 
   void error(Channel channel, String msg, Throwable cause);
+
+  void error(Channel downstream, Channel upstream, String msg, Throwable cause);
 
   void error(Channel channel, String msg);
 
   void error(String msg);
 
   void error(String msg, Throwable cause);
-
-  void info(String message);
 
   abstract class BaseLogger implements ProxyLogger {
 
@@ -61,6 +65,16 @@ public interface ProxyLogger {
     @Override
     public void log(LogInfo record) {
       target.log(source, record);
+    }
+
+    @Override
+    public void trace(String message) {
+      if (isTraceEnabled()) {
+        log(LogInfo.builder()
+          .level(Level.TRACE)
+          .message(message)
+          .build());
+      }
     }
 
     @Override
@@ -120,6 +134,16 @@ public interface ProxyLogger {
         .level(Level.ERROR)
         .channel(channel)
         .message(message)
+        .build());
+    }
+
+    public void error(Channel downstream, Channel upstream, String message,  Throwable cause) {
+      log(LogInfo.builder()
+        .level(Level.ERROR)
+        .downstreamChannel(downstream)
+        .upstreamChannel(upstream)
+        .message(message)
+        .error(cause)
         .build());
     }
 

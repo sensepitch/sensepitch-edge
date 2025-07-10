@@ -26,6 +26,8 @@ import java.io.IOException;
  */
 public class Proxy {
 
+  ProxyLogger LOG = ProxyLogger.get(Proxy.class);
+
   private final ProxyConfig config;
   private final MetricsBridge metricsBridge;
   private final AdmissionHandler admissionHandler;
@@ -150,6 +152,7 @@ public class Proxy {
       int port = config.listen().port();
       ChannelFuture f = sb.bind(port).sync();
       System.out.println("Proxy listening on port " + port);
+      LOG.trace("tracing enabled");
       f.channel().closeFuture().sync();
     } finally {
       bossGroup.shutdownGracefully();
