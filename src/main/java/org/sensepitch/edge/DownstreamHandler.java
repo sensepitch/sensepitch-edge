@@ -40,7 +40,7 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
       boolean hasBodyOrIsNoGet = HttpUtil.isContentLengthSet(request) || HttpUtil.isTransferEncodingChunked(request) || !request.method().name().equals("GET");
       // TODO: pooled connections need more work and interpret keep alive correctly
       boolean doNotPool = true;
-      Upstream upstream = upstreamRouter.selectUpstream(ctx, request);
+      Upstream upstream = upstreamRouter.selectUpstream(request);
       if (doNotPool || hasBodyOrIsNoGet) {
         requestWithBody(upstream, ctx, request);
       } else {
@@ -80,7 +80,6 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
     if (contentExpected) {
       // turn of reading until the upstream connection is established to avoid overflowing
       ctx.channel().config().setAutoRead(false);
-      // ctx.channel().pipeline().replace(this, "content", new DownstreamContentHandler(f.channel(), this));
     }
     DEBUG.trace(ctx.channel(), "connecting to upstream contentExpected=" + contentExpected);
     request.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);

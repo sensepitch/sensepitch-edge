@@ -1,7 +1,5 @@
 package org.sensepitch.edge;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioIoHandler;
@@ -22,7 +20,6 @@ import org.yaml.snakeyaml.representer.Representer;
 import javax.net.ssl.SSLException;
 import java.io.File;
 import java.io.IOException;
-import java.util.List;
 
 /**
  * Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
@@ -49,7 +46,12 @@ public class Proxy {
     sniMapping = initializeSniMapping();
     redirectHandler = proxyConfig.redirect() != null ? new RedirectHandler(proxyConfig.redirect()) : null;
     // downstreamHandler = new DownstreamHandler(proxyConfig);
-    upstreamRouter = new UpstreamRouter(proxyConfig.upstream());
+    if (proxyConfig.upstream().size() == 1) {
+      Upstream upstream = new Upstream(proxyConfig.upstream().getFirst());
+      upstreamRouter = request -> upstream;
+    } else {
+      upstreamRouter = new HostBasedUpstreamRouter(proxyConfig.upstream());
+    }
     try {
       if (proxyConfig.ipLookup() != null) {
         ipTraitsLookup = new CombinedIpTraitsLookup(proxyConfig.ipLookup());
