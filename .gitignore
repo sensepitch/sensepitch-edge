@@ -40,3 +40,9 @@ build/
 
 dependency-reduced-pom.xml
 *~
+
+# generated files
+/performance-test/ssl/nginx.crt
+/performance-test/ssl/nginx.key
+/performance-test/html/10kb.img
+/performance-test/html/100kb.img
