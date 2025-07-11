@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.LongAdder;
  * @author Jens Wilke
  */
 @ChannelHandler.Sharable
-public class AdmissionHandler extends ChannelDuplexHandler implements HasMetrics {
+public class AdmissionHandler extends ChannelInboundHandlerAdapter implements HasMetrics {
 
   private static final ProxyLogger LOG = ProxyLogger.get(AdmissionHandler.class);
 
