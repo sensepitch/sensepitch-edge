@@ -28,13 +28,10 @@ public class ReportIoErrorsHandler extends ChannelDuplexHandler {
 
   @Override
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-    if (msg == Unpooled.EMPTY_BUFFER) {
-      return;
-    }
     promise.addListener((ChannelFuture future) -> {
-        if (!future.isSuccess()) {
-          DEBUG.error(future.channel(), designation + "@write", future.cause());
-        }
+      if (!future.isSuccess()) {
+        DEBUG.error(future.channel(), designation + "@write", future.cause());
+      }
     });
     super.write(ctx, msg, promise);
   }

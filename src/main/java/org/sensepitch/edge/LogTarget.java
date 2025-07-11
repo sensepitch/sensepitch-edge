@@ -17,6 +17,15 @@ public interface LogTarget {
 
   LogTarget INSTANCE = new StreamOutput(System.out);
 
+  static String localChannelId(Channel ch) {
+    if (ch == null) {
+      return "null";
+    }
+    long hash = 0xFFFFFFFFL & ch.hashCode();
+    return Long.toString(hash, 36);
+  }
+
+
   void log(String source, LogInfo info);
 
   class StreamOutput implements LogTarget {
@@ -25,14 +34,6 @@ public interface LogTarget {
 
     public StreamOutput(PrintStream output) {
       this.output = output;
-    }
-
-    String localChannelId(Channel ch) {
-      if (ch == null) {
-        return "null";
-      }
-      long hash = 0xFFFFFFFFL & ch.hashCode();
-      return Long.toString(hash, 36);
     }
 
    private static final DateTimeFormatter TSTAMP = new DateTimeFormatterBuilder()

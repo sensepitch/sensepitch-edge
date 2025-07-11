@@ -9,8 +9,8 @@ nginx, openresty, caddy, traefik.
 - Ingress / reverse proxy for public web applications or static web sites
 - Protects up stream resources from malicious robots, DoS attacks or hacking scanners
 - Don't block out legitimate crawlers
-- Make CAPTCHAs within the applications unneccessary
-- Improve site performance, e.g. with caching or better compression
+- Make CAPTCHAs or other protection mechanisms within the applications redundant
+- Improve site performance, e.g. by SSL offloading, optimized HTTP protocol handling, with caching or better compression
 - Minimize needed configuration and have sensible defaults.
 
 ## Non Goals
@@ -25,10 +25,11 @@ as soon as certain checks are passed. Capabilities like web application firewall
 
 ## Proof of concept - phase 1
 
-- Analyze and validate performanc of doing a reverse proxy with Netty
-- Validate simple bypass capailities
+- Analyze and validate performance Netty based proxy approach
+- Validate simple bypass capabilities
 - Validate challenge is answered by user browsers
-- Production expierience, monitoring, possible protocol errors, etc.
+- Production experience, monitoring, possible protocol errors, etc.
+- Collect legitimate clients that are not real browsers
 
 ## Roadmap / TODOs
 
@@ -41,11 +42,15 @@ as soon as certain checks are passed. Capabilities like web application firewall
 - [x] proxy headers
 - [x] pass to NGINX configuration 
 - [x] host based upstream routing
-- [ ] admission: use server IP in token
-- [ ] admission: make time a parameter
-- [ ] make admission secret configurable
+- [x] admission: use server IP in token
+- [x] admission: make time a parameter
+- [x] make admission secret configurable
+- [x] can we use Builder in lombok?
 - [ ] POC production testing
-- [ ] can we use Builder in lombok?
+- [ ] openssl support for HTTPS
+- [ ] cleanup debugging code / use Netty logger
+- [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
+- [ ] test errors of in flight requests
 - [ ] restrict admissions per solved challenge
 - [ ] default configs / layer configuration / overwrite config tree
 - [ ] yaml based configuration
@@ -53,11 +58,9 @@ as soon as certain checks are passed. Capabilities like web application firewall
 - [ ] standard logging target
 - [ ] Admission performance: skip validation for keep-alive connections
 - [ ] Admission performance: deliver a challenge via cookie and serve static HTML
-- [ ] make secret configurable
-- [ ] default configuration
+- [ ] improve default configuration
 - [ ] improve bypass matching (maybe ASN, geo)
 - [ ] upstream http keep alive connections
-- [ ] openssl support for HTTPS
 - [ ] downstream http2 support
 - [ ] Expiry of granted admissions
 - [ ] abnormal admission usage detection of admission

@@ -6,6 +6,8 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SniHandler;
 import io.netty.handler.ssl.SslContext;
@@ -146,6 +148,7 @@ public class Proxy {
               ch.pipeline().addLast(redirectHandler);
             }
             ch.pipeline().addLast(admissionHandler);
+//            ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO));
             ch.pipeline().addLast(new DownstreamHandler(upstreamRouter));
           }
         });

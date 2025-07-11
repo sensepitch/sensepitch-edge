@@ -17,6 +17,8 @@ import io.netty.channel.pool.SimpleChannelPool;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.HttpClientCodec;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
@@ -45,10 +47,7 @@ public class Upstream {
       .group(new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory()))
       .channel(NioSocketChannel.class)
       .option(ChannelOption.SO_KEEPALIVE, true)
-      // NGINX test
-      // .remoteAddress("172.24.0.2", 80)
       .remoteAddress(target, port);
-
     final ChannelPoolHandler channelHandler = new ChannelPoolHandler() {
       @Override
       public void channelReleased(Channel ch) throws Exception {
@@ -67,7 +66,7 @@ public class Upstream {
         ch.pipeline().addLast("forward", new ForwardHandler(null, null));
       }
     };
-    int maxConnections = -1;
+    int maxConnections = 3;
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap,
         channelHandler,
@@ -78,7 +77,7 @@ public class Upstream {
         ChannelHealthChecker.ACTIVE,
         FixedChannelPool.AcquireTimeoutAction.FAIL,
         50,   // acquire timeout ms
-        5000,     // max connections
+        maxConnections,     // max connections
         1,
         true
       );
@@ -88,6 +87,7 @@ public class Upstream {
   void addHttpHandler(ChannelPipeline  pipeline) {
     pipeline.addLast(new ReportIoErrorsHandler("upstream"));
     pipeline.addLast(new HttpClientCodec());
+    // pipeline.addLast(new LoggingHandler(LogLevel.INFO));
   }
 
   /**
@@ -116,14 +116,17 @@ public class Upstream {
     future.addListener(new FutureListener<Channel>() {
       @Override
       public void operationComplete(Future<Channel> future) throws Exception {
-        Channel ch = future.resultNow();
-        if (LOG.isTraceEnabled()) {
-          LOG.trace(downstream, future.resultNow(), "pool acquire complete isActive=" + ch.isActive() + " pipeline=" + ch.pipeline().names());
-        }
-        try {
-          future.resultNow().pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
-        } catch (Throwable t) {
-          LOG.error(downstream, future.resultNow(), "pipeline replace", t);
+        if (future.isSuccess()) {
+          DownstreamProgress.progress(downstream, "upstream connection established");
+          Channel ch = future.resultNow();
+          if (LOG.isTraceEnabled()) {
+            LOG.trace(downstream, future.resultNow(), "pool acquire complete isActive=" + ch.isActive() + " pipeline=" + ch.pipeline().names());
+          }
+          try {
+            future.resultNow().pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
+          } catch (Throwable t) {
+            LOG.error(downstream, future.resultNow(), "pipeline replace", t);
+          }
         }
       }
     });

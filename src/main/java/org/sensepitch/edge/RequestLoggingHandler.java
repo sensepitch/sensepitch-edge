@@ -51,7 +51,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     if (msg instanceof LastHttpContent) {
       try {
         logger.logRequest(ctx, this);
-      } catch (Exception e) {
+      } catch (Throwable e) {
         DEBUG.error(ctx.channel(), "Error logging request", e);
       }
     }
