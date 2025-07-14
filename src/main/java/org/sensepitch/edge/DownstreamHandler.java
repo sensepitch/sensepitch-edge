@@ -44,11 +44,11 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
       }
       DownstreamProgress.progress(ctx.channel(), "request received");
       Upstream upstream = upstreamRouter.selectUpstream(request);
-      requestWithBody(upstream, ctx, request);
-    }
-    // Upstream channel might be still connecting or retrieved and checked by the pool.
-    // Queue in all content we receive via the listener.
-    if (msg instanceof LastHttpContent) {
+      upstreamChannel = upstream.connect(ctx);
+      augmentHeadersAndForwardRequest(ctx, request);
+    } else if (msg instanceof LastHttpContent) {
+      // Upstream channel might be still connecting or retrieved and checked by the pool.
+      // Queue in all content we receive via the listener.
       upstreamChannel.addListener((FutureListener<Channel>)
         future -> forwardLastContentAndFlush(ctx.channel(), future, (LastHttpContent) msg));
     } else if (msg instanceof HttpContent) {
@@ -102,11 +102,9 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
   }
 
   /**
-   * For requests with body, always establish a new upstream connection. We can start writing to the channel
-   * even before the connection is established.
+   * Send the HTTP request, which may include content, upstream
    */
-  public void requestWithBody(Upstream upstream, ChannelHandlerContext ctx, HttpRequest request) {
-    upstreamChannel = upstream.connect(ctx);
+  public void augmentHeadersAndForwardRequest(ChannelHandlerContext ctx, HttpRequest request) {
     boolean contentExpected = (HttpUtil.isContentLengthSet(request) || HttpUtil.isTransferEncodingChunked(request)) && !(request instanceof FullHttpRequest);
     if (contentExpected) {
       // turn of reading until the upstream connection is established to avoid overflowing
@@ -118,7 +116,11 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
     // request.headers().set("X-Forwarded-Port", );
     upstreamChannel.addListener(future -> {
       if (future.isSuccess()) {
-        upstreamChannel.resultNow().write(request);
+        if (request instanceof LastHttpContent) {
+          upstreamChannel.resultNow().writeAndFlush(request);
+        } else {
+          upstreamChannel.resultNow().write(request);
+        }
         if (contentExpected) {
           ctx.channel().config().setAutoRead(true);
         }
