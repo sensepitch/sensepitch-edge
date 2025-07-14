@@ -22,6 +22,7 @@ import java.util.List;
 public class ProxyStaticNginxPrestashop {
 
   public static void main(String[] args) throws Exception {
+
     ProxyConfig cfg = ProxyConfig.builder()
       .metrics(MetricsConfig.builder()
         .enable(true)
@@ -41,7 +42,7 @@ public class ProxyStaticNginxPrestashop {
       .upstream(List.of(
         UpstreamConfig.builder()
           .host("")
-          .target("172.30.0.3:80")
+          .target("172.30.0.2:80")
           .build()
       ))
       .admission(AdmissionConfig.builder()
@@ -58,6 +59,5 @@ public class ProxyStaticNginxPrestashop {
       .build();
     new Proxy(cfg).start();
   }
-
 
 }

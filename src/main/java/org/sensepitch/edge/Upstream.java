@@ -66,7 +66,7 @@ public class Upstream {
         ch.pipeline().addLast("forward", new ForwardHandler(null, null));
       }
     };
-    int maxConnections = 3;
+    int maxConnections = 1000;
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap,
         channelHandler,

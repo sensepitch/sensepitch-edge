@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -16,7 +17,7 @@ import java.util.Set;
  * @author Jens Wilke
  */
 @ChannelHandler.Sharable
-public class RedirectHandler extends ChannelDuplexHandler {
+public class RedirectHandler extends ChannelInboundHandlerAdapter {
 
   private final Set<String> passDomains;
   private String defaultTarget;

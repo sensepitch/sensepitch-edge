@@ -43,15 +43,15 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       }
     }
     if (msg instanceof LastHttpContent) {
-      DownstreamProgress.progress(downstream, "received last content from upstream, flushing response");
-      // FIXME: the call of this listener is missing
-      downstream.writeAndFlush(msg).addListener(future -> {
+      Channel downstreamCopy = downstream;
+      downstreamCopy.writeAndFlush(msg).addListener(future -> {
         if (future.isSuccess()) {
-          DownstreamProgress.complete(downstream);
+          DownstreamProgress.complete(downstreamCopy);
         } else {
-          DownstreamProgress.progress(downstream, "flush error " + future.cause());
+          DownstreamProgress.progress(downstreamCopy, "flush error " + future.cause());
         }
       });
+      DownstreamProgress.progress(downstream, "received last content from upstream, flushing response");
       if (closeConnection) {
         ctx.channel().close();
       }
@@ -63,7 +63,6 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
         downstream = null;
       }
     } else if (msg instanceof HttpContent) {
-      DownstreamProgress.progress(downstream, "writing content");
       downstream.write(msg);
     }
   }
