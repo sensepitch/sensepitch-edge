@@ -6,12 +6,15 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.logging.ByteBufFormat;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SniHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
 import org.yaml.snakeyaml.DumperOptions;
@@ -118,6 +121,7 @@ public class Proxy {
     try {
       return SslContextBuilder.forServer(new File(cfg.cert()), new File(cfg.key()))
         .clientAuth(ClientAuth.NONE)
+        .sslProvider(SslProvider.OPENSSL)
         .build();
     } catch (SSLException e) {
       throw new RuntimeException(e);
@@ -141,8 +145,9 @@ public class Proxy {
             }
             ch.pipeline().addLast(new HttpServerCodec());
             ch.pipeline().addLast(new HttpServerKeepAliveHandler());
+            // ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
             ch.pipeline().addLast(new IpTraitsHandler(ipTraitsLookup));
-            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
+//            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
             ch.pipeline().addLast(new RequestLoggingHandler());
             if (redirectHandler != null) {
               ch.pipeline().addLast(redirectHandler);
@@ -154,6 +159,7 @@ public class Proxy {
         });
       int port = config.listen().port();
       ChannelFuture f = sb.bind(port).sync();
+      System.out.println("Open SSL: " + OpenSsl.versionString());
       System.out.println("Proxy listening on port " + port);
       LOG.trace("tracing enabled");
       f.channel().closeFuture().sync();
