@@ -147,7 +147,6 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
         discardFollowingContent(ctx);
       }
     } else {
-      // TODO: bypass all content messages? better change pipeline
       ctx.fireChannelRead(msg);
     }
   }
