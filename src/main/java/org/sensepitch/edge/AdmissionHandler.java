@@ -22,6 +22,8 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.util.CharsetUtil;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.ReferenceCounted;
 
 import java.net.Inet4Address;
 import java.net.SocketException;
@@ -141,9 +143,12 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
         ctx.fireChannelRead(msg);
       } else if (request.method() == HttpMethod.GET && request.uri().startsWith(VERIFICATION_URL)) {
         handleChallengeAnswer(ctx, request);
+        ReferenceCountUtil.release(request);
         discardFollowingContent(ctx);
       } else {
+        // TODO: behaviour of non GET requests?
         outputChallengeHtml(ctx.channel());
+        ReferenceCountUtil.release(request);
         discardFollowingContent(ctx);
       }
     } else {
@@ -163,6 +168,7 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
         if (msg instanceof LastHttpContent) {
           ctx.pipeline().replace(this, "admission", AdmissionHandler.this);
         }
+        ReferenceCountUtil.release(msg);
       }
     };
     ctx.pipeline().replace(this, "discard", inboundHandler);

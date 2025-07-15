@@ -11,10 +11,13 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.ReferenceCountUtil;
 
 import java.util.Set;
 
 /**
+ * Redirect all incoming requests that are not in a domain list to a default target.
+ *
  * @author Jens Wilke
  */
 @ChannelHandler.Sharable
@@ -50,6 +53,7 @@ public class RedirectHandler extends ChannelInboundHandlerAdapter {
         if (msg instanceof LastHttpContent) {
           ctx.pipeline().replace(this, "redirect", RedirectHandler.this);
         }
+        ReferenceCountUtil.release(msg);
       }
     };
     ctx.pipeline().replace(this, "discard", inboundHandler);
