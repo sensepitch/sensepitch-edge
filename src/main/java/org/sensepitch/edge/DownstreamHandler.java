@@ -5,6 +5,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
@@ -15,6 +16,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 
@@ -26,11 +28,14 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
   static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
 
   private final UpstreamRouter upstreamRouter;
+  private final ProxyMetrics metrics;
   // private ChannelFuture upstreamFuture;
   private Future<Channel> upstreamChannel;
+  private boolean requestProcessed;
 
-  public DownstreamHandler(UpstreamRouter upstreamRouter) {
+  public DownstreamHandler(UpstreamRouter upstreamRouter, ProxyMetrics metrics) {
     this.upstreamRouter = upstreamRouter;
+    this.metrics = metrics;
   }
 
   @Override
@@ -53,7 +58,7 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
         future -> forwardLastContentAndFlush(ctx.channel(), future, (LastHttpContent) msg));
     } else if (msg instanceof HttpContent) {
       upstreamChannel.addListener((FutureListener<Channel>)
-        future -> forwardContent(ctx.channel(), future, (LastHttpContent) msg));
+        future -> forwardContent(future, (LastHttpContent) msg));
     }
   }
 
@@ -87,10 +92,11 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  void forwardContent(Channel downstream, Future<Channel> future, HttpContent msg) {
+  void forwardContent(Future<Channel> future, HttpContent msg) {
     if (future.isSuccess()) {
       future.resultNow().write(msg);
     } else {
+      ReferenceCountUtil.release(msg);
       // ignore, only react to an upstream connection problem after receiving LastHttpContent
     }
   }
@@ -104,7 +110,7 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
   /**
    * Send the HTTP request, which may include content, upstream
    */
-  public void augmentHeadersAndForwardRequest(ChannelHandlerContext ctx, HttpRequest request) {
+  void augmentHeadersAndForwardRequest(ChannelHandlerContext ctx, HttpRequest request) {
     boolean contentExpected = (HttpUtil.isContentLengthSet(request) || HttpUtil.isTransferEncodingChunked(request)) && !(request instanceof FullHttpRequest);
     if (contentExpected) {
       // turn of reading until the upstream connection is established to avoid overflowing
@@ -118,6 +124,7 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
       if (future.isSuccess()) {
         if (request instanceof LastHttpContent) {
           upstreamChannel.resultNow().writeAndFlush(request);
+          requestProcessed = true;
         } else {
           upstreamChannel.resultNow().write(request);
         }
@@ -125,9 +132,41 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
           ctx.channel().config().setAutoRead(true);
         }
       } else {
+        ReferenceCountUtil.release(request);
         // ignore, only react to an upstream connection problem after receiving LastHttpContent
       }
     });
+  }
+
+  /**
+   * Flush if output buffer is full and apply back pressure to upstream.
+   */
+  @Override
+  public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+    DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=" + ctx.channel().isWritable());
+    if (upstreamChannel == null || !upstreamChannel.isDone()) { return; }
+    if (ctx.channel().isWritable()) {
+      upstreamChannel.resultNow().setOption(ChannelOption.AUTO_READ, true);
+    } else {
+      DEBUG.trace(ctx.channel(), "channelWritabilityChanged, flushing");
+      // FIXME: in test we never get the isWritable=true
+      // upstreamChannel.resultNow().setOption(ChannelOption.AUTO_READ, false);
+      ctx.channel().flush();
+    }
+  }
+
+  @Override
+  public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+    if (upstreamChannel == null) {
+      DEBUG.downstreamError(ctx.channel(), "handshake error", cause);
+      metrics.incrementDownstreamHandshakeErrorCount();
+    } else {
+      if (!requestProcessed) {
+        DEBUG.downstreamError(ctx.channel(), "request error", cause);
+      } else {
+        DEBUG.downstreamError(ctx.channel(), "processing error", cause);
+      }
+    }
   }
 
 }

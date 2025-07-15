@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -46,6 +47,7 @@ public class Upstream {
     bootstrap = new Bootstrap()
       .group(new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory()))
       .channel(NioSocketChannel.class)
+      .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
       .option(ChannelOption.SO_KEEPALIVE, true)
       .remoteAddress(target, port);
     final ChannelPoolHandler channelHandler = new ChannelPoolHandler() {
@@ -66,6 +68,7 @@ public class Upstream {
         ch.pipeline().addLast("forward", new ForwardHandler(null, null));
       }
     };
+    // TODO: parameter
     int maxConnections = 1000;
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap,
@@ -85,7 +88,7 @@ public class Upstream {
   }
 
   void addHttpHandler(ChannelPipeline  pipeline) {
-    pipeline.addLast(new ReportIoErrorsHandler("upstream"));
+    // pipeline.addLast(new ReportIoErrorsHandler("upstream"));
     pipeline.addLast(new HttpClientCodec());
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO));
   }

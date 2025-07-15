@@ -33,6 +33,7 @@ public class Proxy {
 
   ProxyLogger LOG = ProxyLogger.get(Proxy.class);
 
+  private final ProxyMetrics metrics = new ProxyMetrics();
   private final ProxyConfig config;
   private final MetricsBridge metricsBridge;
   private final AdmissionHandler admissionHandler;
@@ -47,6 +48,7 @@ public class Proxy {
     dumpConfig(proxyConfig);
     config = proxyConfig;
     metricsBridge = initializeMetrics();
+    metricsBridge.expose(metrics);
     admissionHandler = new AdmissionHandler(proxyConfig.admission());
     metricsBridge.expose(admissionHandler);
     sslContext = initializeSslContext();
@@ -135,6 +137,7 @@ public class Proxy {
       ServerBootstrap sb = new ServerBootstrap();
       sb.group(bossGroup, workerGroup)
         .channel(NioServerSocketChannel.class)
+        // .option(ChannelOption.SO_SNDBUF, 1 * 1024) // testing
         .childHandler(new ChannelInitializer<SocketChannel>() {
           @Override
           protected void initChannel(SocketChannel ch) {
@@ -154,7 +157,7 @@ public class Proxy {
             }
             ch.pipeline().addLast(admissionHandler);
 //            ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO));
-            ch.pipeline().addLast(new DownstreamHandler(upstreamRouter));
+            ch.pipeline().addLast(new DownstreamHandler(upstreamRouter, metrics));
           }
         });
       int port = config.listen().port();

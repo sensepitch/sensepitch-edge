@@ -22,7 +22,6 @@ import java.util.List;
 public class ProxyStaticNginxPrestashop {
 
   public static void main(String[] args) throws Exception {
-
     ProxyConfig cfg = ProxyConfig.builder()
       .metrics(MetricsConfig.builder()
         .enable(true)

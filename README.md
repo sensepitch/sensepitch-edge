@@ -58,9 +58,12 @@ In comparison to NGINX and Lua based technologies, that use per worker heaps, a 
 - [x] can we use Builder in lombok?
 - [x] use keep alive / connection pool upstream
 - [x] openssl support for HTTPS
+- [ ] upstream backpressure
+- [ ] block requests that are not GET and POST if not admitted or crawler bypassed
+- [ ] expose allocator statistics via prometheus
+- [ ] expose upstream connection pool statistics via prometheus
 - [ ] POC production testing
 - [ ] failure counters
-- [ ] upstream backpressure
 - [ ] cleanup debugging code / use Netty logger
 - [ ] make Netty socket options available, check connection timeout and SO_TIMEOUT
 - [ ] test errors of in flight requests

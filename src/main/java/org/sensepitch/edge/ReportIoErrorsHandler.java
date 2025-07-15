@@ -23,7 +23,7 @@ public class ReportIoErrorsHandler extends ChannelDuplexHandler {
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
     DEBUG.error(ctx.channel(), designation + "@read" , cause);
-    // super.exceptionCaught(ctx, cause);
+    super.exceptionCaught(ctx, cause);
   }
 
   @Override

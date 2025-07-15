@@ -52,14 +52,23 @@ public interface ProxyLogger {
 
   void error(String msg, Throwable cause);
 
+  void downstreamError(Channel downstream, String msg, Throwable cause);
+
   abstract class BaseLogger implements ProxyLogger {
 
     private final LogTarget target;
     private final String source;
+    private final ReportErrorOnce downstreamOnce =
+      new ReportErrorOnce(this);
 
     public BaseLogger(String source, LogTarget target) {
       this.target = target;
       this.source = source;
+    }
+
+    @Override
+    public void downstreamError(Channel downstream, String msg, Throwable cause) {
+      downstreamOnce.report(msg + " (subsequent errors suppressed) " + cause.getMessage());
     }
 
     @Override

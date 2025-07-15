@@ -12,7 +12,8 @@ openssl req -x509 -nodes -days 365 \
   -subj "/CN=localhost"
 
 
-dd if=/dev/zero bs=1d 024 count=100 of=html/100kb.img
+dd if=/dev/zero bs=1024 count=1024 of=html/1mb.img
+dd if=/dev/zero bs=1024 count=100 of=html/100kb.img
 dd if=/dev/zero bs=1024 count=10 of=html/10kb.img
 
 docker compose up -d
@@ -40,6 +41,10 @@ export ${!SENSEPITCH_@}
 
 java -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
 
+PROXY_URL=https://127.0.0.1:$SENSEPITCH_EDGE_LISTEN_PORT
+
+wget --no-check-certificate $PROXY_URL/10kb.img
+
 echo "GET https://$NGINX_PROXY_IP:$NGINX_PROXY_PORT/10kb.img" | vegeta attack -insecure -duration=5s -timeout=10s -rate=100 -keepalive=true | vegeta report
-echo "GET https://localhost:7443/10kb.img" | vegeta attack -insecure -duration=5s -timeout=10s -rate=10000 -keepalive=true | vegeta report
+echo "GET $PROXY_URL" | vegeta attack -insecure -duration=5s -timeout=10s -rate=10000 -keepalive=true | vegeta report
 
