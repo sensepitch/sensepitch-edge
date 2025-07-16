@@ -39,12 +39,16 @@ SENSEPITCH_EDGE_ADMISSION_TOKEN_GENERATOR_0_SECRET=dummy
 SENSEPITCH_EDGE_UPSTREAM_0_TARGET=$UPSTREAM_IP:$UPSTREAM_PORT
 export ${!SENSEPITCH_@}
 
-java -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
+# java -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
+java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar ../target/sensepitch-edge-1.0-SNAPSHOT-with-dependencies.jar > sensepitch-edge.log 2>&1 &
 
 PROXY_URL=https://127.0.0.1:$SENSEPITCH_EDGE_LISTEN_PORT
 
 wget --no-check-certificate $PROXY_URL/10kb.img
 
-echo "GET https://$NGINX_PROXY_IP:$NGINX_PROXY_PORT/10kb.img" | vegeta attack -insecure -duration=5s -timeout=10s -rate=100 -keepalive=true | vegeta report
-echo "GET $PROXY_URL" | vegeta attack -insecure -duration=5s -timeout=10s -rate=10000 -keepalive=true | vegeta report
+TEST_DURATION=10s
+TEST_RATE=50000
+
+echo "GET https://$NGINX_PROXY_IP:$NGINX_PROXY_PORT/10kb.img" | vegeta attack -insecure -duration=10s -timeout=10s -rate=$TEST_RATE -keepalive=true | vegeta report
+echo "GET $PROXY_URL/10kb.img" | vegeta attack -insecure -duration=10s -timeout=10s -rate=$TEST_RATE -keepalive=true | vegeta report
 

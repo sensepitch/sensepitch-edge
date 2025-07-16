@@ -9,6 +9,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.pool.ChannelHealthChecker;
@@ -34,7 +35,7 @@ public class Upstream {
   private final Bootstrap bootstrap;
   private final SimpleChannelPool pool;
 
-  public Upstream(UpstreamConfig cfg) {
+  public Upstream(ProxyContext ctx, UpstreamConfig cfg) {
     String[] sa = cfg.target().split(":");
     int port = 80;
     String target = sa[0];
@@ -45,7 +46,7 @@ public class Upstream {
       port = Integer.parseInt(sa[1]);
     }
     bootstrap = new Bootstrap()
-      .group(new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory()))
+      .group(ctx.eventLoopGroup())
       .channel(NioSocketChannel.class)
       .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
       .option(ChannelOption.SO_KEEPALIVE, true)
@@ -69,7 +70,7 @@ public class Upstream {
       }
     };
     // TODO: parameter
-    int maxConnections = 1000;
+    int maxConnections = 0;
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap,
         channelHandler,

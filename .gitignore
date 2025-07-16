@@ -46,4 +46,5 @@ dependency-reduced-pom.xml
 /performance-test/ssl/nginx.key
 /performance-test/html/10kb.img
 /performance-test/html/100kb.img
+/performance-test/html/1mb.img
 /performance-test/sensepitch-edge.log
