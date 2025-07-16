@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
@@ -28,6 +29,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private HttpResponse response;
   private long requestStartTime;
   private final RequestLogger logger = new StandardOutRequestLogger();
+  private Channel channel;
+  private Throwable error;
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception{
@@ -49,15 +52,22 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       contentBytes += httpContent.content().readableBytes();
     }
     if (msg instanceof LastHttpContent) {
-      try {
-        logger.logRequest(ctx, this);
-      } catch (Throwable e) {
-        DEBUG.error(ctx.channel(), "Error logging request", e);
-      }
+      channel = ctx.channel();
+      promise.addListener(future -> {
+          error = future.cause();
+          try {
+            logger.logRequest(this);
+          } catch (Throwable e) {
+            DEBUG.error(ctx.channel(), "Error logging request", e);
+          }
+        }
+      );
     }
     super.write(ctx, msg, promise);
   }
 
+  @Override public Channel channel() { return channel; }
+  @Override  public Throwable error() { return error; }
   @Override public HttpRequest request() { return request; }
   @Override public HttpResponse response() { return response; }
   @Override public long contentBytes() { return contentBytes; }

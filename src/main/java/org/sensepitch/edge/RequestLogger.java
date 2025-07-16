@@ -7,6 +7,6 @@ import io.netty.channel.ChannelHandlerContext;
  */
 public interface RequestLogger {
 
-  void logRequest(ChannelHandlerContext downStreamContext, RequestLogInfo info);
+  void logRequest(RequestLogInfo info);
 
 }
