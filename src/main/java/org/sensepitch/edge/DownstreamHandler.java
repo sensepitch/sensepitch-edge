@@ -2,11 +2,11 @@ package org.sensepitch.edge;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
@@ -26,15 +26,16 @@ import java.net.InetSocketAddress;
 /**
  * @author Jens Wilke
  */
-public class DownstreamHandler extends ChannelInboundHandlerAdapter {
+public class DownstreamHandler extends ChannelDuplexHandler {
 
   static final ProxyLogger DEBUG = ProxyLogger.get(DownstreamHandler.class);
 
   private final UpstreamRouter upstreamRouter;
   private final ProxyMetrics metrics;
-  // private ChannelFuture upstreamFuture;
   private Future<Channel> upstreamChannelFuture;
+  private boolean requestReceived;
   private boolean requestProcessed;
+  private Runnable flushTask;
 
   public DownstreamHandler(UpstreamRouter upstreamRouter, ProxyMetrics metrics) {
     this.upstreamRouter = upstreamRouter;
@@ -50,6 +51,7 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
         String clientIP = ((SocketChannel) ctx.channel()).remoteAddress().getAddress().getHostAddress();
         DEBUG.trace(ctx.channel(), msg.getClass().getName() + " " + clientIP + " -> " + request.method() + " " + request.uri());
       }
+      requestReceived = true;
       DownstreamProgress.progress(ctx.channel(), "request received");
       Upstream upstream = upstreamRouter.selectUpstream(request);
       upstreamChannelFuture = upstream.connect(ctx);
@@ -148,17 +150,21 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
   }
 
   /**
-   * Flush if output buffer is full and throttle upstream.
+   * If upstream is active sending content, throttle reading. In any case flush the buffer it its full.
    */
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    if (upstreamChannelFuture == null || !upstreamChannelFuture.isDone()) { return; }
-    if (ctx.channel().isWritable()) {
-      DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=true, start upstream reads");
-      upstreamChannelFuture.resultNow().config().setAutoRead(true);
-    } else {
+    if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
+      if (ctx.channel().isWritable()) {
+        DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=true, start upstream reads");
+        upstreamChannelFuture.resultNow().config().setAutoRead(true);
+      } else {
+        DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=false, queuing flush, stop upstream reads");
+        upstreamChannelFuture.resultNow().config().setAutoRead(false);
+      }
+    }
+    if (!ctx.channel().isWritable()) {
       DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=false, queuing flush, stop upstream reads");
-      upstreamChannelFuture.resultNow().config().setAutoRead(false);
       // flush task is only created once for the context
       if (flushTask == null) {
         flushTask = new Runnable() {
@@ -184,11 +190,24 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  private Runnable flushTask;
+  /**
+   * Remove upstream reference when processing for this request is complete.
+   * The upstream channel will go back to the pool, so we need to ensure that we don't
+   * have it anymore for throttling.
+   * 
+   * @see #channelWritabilityChanged(ChannelHandlerContext)
+   */
+  @Override
+  public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+    if (msg instanceof LastHttpContent) {
+      upstreamChannelFuture = null;
+    }
+    super.write(ctx, msg, promise);
+  }
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-    if (upstreamChannelFuture == null) {
+    if (!requestReceived) {
       DEBUG.downstreamError(ctx.channel(), "handshake error", cause);
       metrics.incrementDownstreamHandshakeErrorCount();
     } else {
