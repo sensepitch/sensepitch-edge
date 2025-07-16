@@ -46,6 +46,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
     if (msg instanceof LastHttpContent) {
       Channel downstreamCopy = downstream;
+      DownstreamProgress.progress(downstream, "received last content from upstream, flushing response");
       downstreamCopy.writeAndFlush(msg).addListener(future -> {
         if (future.isSuccess()) {
           DownstreamProgress.complete(downstreamCopy);
@@ -54,7 +55,6 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
           // DownstreamProgress.progress(downstreamCopy, "flush error " + future.cause());
         }
       });
-      DownstreamProgress.progress(downstream, "received last content from upstream, flushing response");
       if (closeConnection) {
         ctx.channel().close();
       }
