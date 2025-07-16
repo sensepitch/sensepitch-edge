@@ -148,17 +148,17 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
   }
 
   /**
-   * Flush if output buffer is full and apply back pressure to upstream.
+   * Flush if output buffer is full and throttle upstream.
    */
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture == null || !upstreamChannelFuture.isDone()) { return; }
     if (ctx.channel().isWritable()) {
       DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=true, start upstream reads");
-      upstreamChannelFuture.resultNow().setOption(ChannelOption.AUTO_READ, true);
+      upstreamChannelFuture.resultNow().config().setAutoRead(true);
     } else {
       DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=false, queuing flush, stop upstream reads");
-      upstreamChannelFuture.resultNow().setOption(ChannelOption.AUTO_READ, false);
+      upstreamChannelFuture.resultNow().config().setAutoRead(false);
       // flush task is only created once for the context
       if (flushTask == null) {
         flushTask = new Runnable() {
@@ -167,11 +167,13 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
             ctx.channel().writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(new ChannelFutureListener() {
               @Override
               public void operationComplete(ChannelFuture future) throws Exception {
-                if (!ctx.channel().isWritable()) {
-                  DEBUG.trace(future.channel(), "flush complete, output buffer still full, queuing another flush");
-                  ctx.executor().execute(flushTask);
-                } else {
-                  DEBUG.trace(future.channel(), "flush complete, output buffer writable");
+                if (future.isSuccess() && ctx.channel().isActive()) {
+                  if (!ctx.channel().isWritable()) {
+                    DEBUG.trace(future.channel(), "flush complete, output buffer still full, queuing another flush");
+                    ctx.executor().execute(flushTask);
+                  } else {
+                    DEBUG.trace(future.channel(), "flush complete, output buffer writable");
+                  }
                 }
               }
             });
