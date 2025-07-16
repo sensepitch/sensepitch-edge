@@ -48,3 +48,5 @@ dependency-reduced-pom.xml
 /performance-test/html/100kb.img
 /performance-test/html/1mb.img
 /performance-test/sensepitch-edge.log
+
+.env

@@ -206,3 +206,20 @@ iptables -t nat -A OUTPUT -o lo -p tcp --dport 80  -j REDIRECT --to-port 7080
 iptables -t nat -A OUTPUT -o lo -p tcp --dport 443 -j REDIRECT --to-port 7443
 ````
 
+# build and run with docker
+
+```sh
+./mvnw clean package
+docker build -t sensepitch-edge .
+
+cat <<EOF > .env
+SENSEPITCH_EDGE_ADMISSION_SERVER_IPV4_ADDRESS=localhost
+SENSEPITCH_EDGE_ADMISSION_TOKEN_GENERATOR_0_PREFIX=sense_
+SENSEPITCH_EDGE_ADMISSION_TOKEN_GENERATOR_0_SECRET=nonsense
+SENSEPITCH_EDGE_LISTEN_DOMAINS=localhost
+SENSEPITCH_EDGE_LISTEN_PORT=6000
+SENSEPITCH_EDGE_LISTEN_SNI_0_domain=localhost
+EOF
+
+docker run --env-file .env sensepitch-edge
+```
