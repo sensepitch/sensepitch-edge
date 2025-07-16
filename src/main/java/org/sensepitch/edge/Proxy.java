@@ -6,9 +6,6 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.logging.ByteBufFormat;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SniHandler;
@@ -29,7 +26,7 @@ import java.io.IOException;
 /**
  * Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
  */
-public class Proxy {
+public class Proxy implements ProxyContext {
 
   ProxyLogger LOG = ProxyLogger.get(Proxy.class);
 
@@ -43,9 +40,11 @@ public class Proxy {
   // private final DownstreamHandler downstreamHandler;
   private final UpstreamRouter upstreamRouter;
   private final IpTraitsLookup ipTraitsLookup;
+  private final EventLoopGroup eventLoopGroup;
 
   public Proxy(ProxyConfig proxyConfig) {
     dumpConfig(proxyConfig);
+    eventLoopGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     config = proxyConfig;
     metricsBridge = initializeMetrics();
     metricsBridge.expose(metrics);
@@ -56,10 +55,10 @@ public class Proxy {
     redirectHandler = proxyConfig.redirect() != null ? new RedirectHandler(proxyConfig.redirect()) : null;
     // downstreamHandler = new DownstreamHandler(proxyConfig);
     if (proxyConfig.upstream().size() == 1) {
-      Upstream upstream = new Upstream(proxyConfig.upstream().getFirst());
+      Upstream upstream = new Upstream(this, proxyConfig.upstream().getFirst());
       upstreamRouter = request -> upstream;
     } else {
-      upstreamRouter = new HostBasedUpstreamRouter(proxyConfig.upstream());
+      upstreamRouter = new HostBasedUpstreamRouter(this, proxyConfig.upstream());
     }
     try {
       if (proxyConfig.ipLookup() != null) {
@@ -131,7 +130,7 @@ public class Proxy {
   }
 
   public void start() throws Exception {
-    EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
+    EventLoopGroup bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
     EventLoopGroup workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     try {
       ServerBootstrap sb = new ServerBootstrap();
@@ -170,6 +169,11 @@ public class Proxy {
       bossGroup.shutdownGracefully();
       workerGroup.shutdownGracefully();
     }
+  }
+
+  @Override
+  public EventLoopGroup eventLoopGroup() {
+    return eventLoopGroup;
   }
 
 }

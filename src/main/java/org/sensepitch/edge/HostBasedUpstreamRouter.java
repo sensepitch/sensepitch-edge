@@ -16,11 +16,11 @@ public class HostBasedUpstreamRouter implements UpstreamRouter {
 
   private final Map<String, Upstream> host2upstream;
 
-  public HostBasedUpstreamRouter(List<UpstreamConfig> cfg) {
+  public HostBasedUpstreamRouter(ProxyContext ctx, List<UpstreamConfig> cfg) {
     host2upstream = new HashMap<>();
     for (UpstreamConfig upCfg : cfg) {
       String host = upCfg.host();
-      Upstream upstream = new Upstream(upCfg);
+      Upstream upstream = new Upstream(ctx, upCfg);
       host2upstream.put(host, upstream);
     }
   }
