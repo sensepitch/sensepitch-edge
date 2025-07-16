@@ -3,14 +3,11 @@ package org.sensepitch.edge.experiments;
 import org.sensepitch.edge.AdmissionConfig;
 import org.sensepitch.edge.AdmissionTokenGeneratorConfig;
 import org.sensepitch.edge.BypassConfig;
-import org.sensepitch.edge.GeoIp2Config;
-import org.sensepitch.edge.IpLookupConfig;
 import org.sensepitch.edge.ListenConfig;
 import org.sensepitch.edge.MetricsConfig;
 import org.sensepitch.edge.PrometheusConfig;
 import org.sensepitch.edge.Proxy;
 import org.sensepitch.edge.ProxyConfig;
-import org.sensepitch.edge.SniConfig;
 import org.sensepitch.edge.SslConfig;
 import org.sensepitch.edge.UpstreamConfig;
 
@@ -19,7 +16,7 @@ import java.util.List;
 /**
  * @author Jens Wilke
  */
-public class ProxyStaticNginxPrestashop {
+public class ProxyStaticNginx {
 
   public static void main(String[] args) throws Exception {
     ProxyConfig cfg = ProxyConfig.builder()
