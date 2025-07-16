@@ -69,7 +69,7 @@ public class Upstream {
       }
     };
     // TODO: parameter
-    int maxConnections = 1000;
+    int maxConnections = 0;
     if (maxConnections <= 0) {
       pool = new SimpleChannelPool(bootstrap,
         channelHandler,

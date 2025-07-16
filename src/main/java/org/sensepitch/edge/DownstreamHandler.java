@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -20,6 +21,8 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 
+import java.net.InetSocketAddress;
+
 /**
  * @author Jens Wilke
  */
@@ -30,7 +33,7 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
   private final UpstreamRouter upstreamRouter;
   private final ProxyMetrics metrics;
   // private ChannelFuture upstreamFuture;
-  private Future<Channel> upstreamChannel;
+  private Future<Channel> upstreamChannelFuture;
   private boolean requestProcessed;
 
   public DownstreamHandler(UpstreamRouter upstreamRouter, ProxyMetrics metrics) {
@@ -49,31 +52,23 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
       }
       DownstreamProgress.progress(ctx.channel(), "request received");
       Upstream upstream = upstreamRouter.selectUpstream(request);
-      upstreamChannel = upstream.connect(ctx);
+      upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
-      upstreamChannel.addListener((FutureListener<Channel>)
+      upstreamChannelFuture.addListener((FutureListener<Channel>)
         future -> forwardLastContentAndFlush(ctx.channel(), future, (LastHttpContent) msg));
     } else if (msg instanceof HttpContent) {
-      upstreamChannel.addListener((FutureListener<Channel>)
+      upstreamChannelFuture.addListener((FutureListener<Channel>)
         future -> forwardContent(future, (LastHttpContent) msg));
     }
   }
 
   void forwardLastContentAndFlush(Channel downstream, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
-      future.resultNow().writeAndFlush(msg).addListener(new ChannelFutureListener() {
-        @Override
-        public void operationComplete(ChannelFuture future) throws Exception {
-          if (future.isSuccess()) {
-            DownstreamProgress.progress(downstream, "last content received, flushed to upstream");
-            DEBUG.trace(downstream, future.channel(), "last content received, flushed to upstream");
-          }
-        }
-      });
       DownstreamProgress.progress(downstream, "last content, write and flushing to upstream");
+      future.resultNow().writeAndFlush(msg);
     } else {
       Throwable cause = future.cause();
       // TODO: counter!
@@ -117,16 +112,14 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
       ctx.channel().config().setAutoRead(false);
     }
     DEBUG.trace(ctx.channel(), "connecting to upstream contentExpected=" + contentExpected);
-    request.headers().set("X-Forwarded-For", ctx.channel().remoteAddress().toString());
-    request.headers().set("X-Forwarded-Proto", "https");
-    // request.headers().set("X-Forwarded-Port", );
-    upstreamChannel.addListener(future -> {
+    addProxyHeaders(ctx, request);
+    upstreamChannelFuture.addListener(future -> {
       if (future.isSuccess()) {
         if (request instanceof LastHttpContent) {
-          upstreamChannel.resultNow().writeAndFlush(request);
+          upstreamChannelFuture.resultNow().writeAndFlush(request);
           requestProcessed = true;
         } else {
-          upstreamChannel.resultNow().write(request);
+          upstreamChannelFuture.resultNow().write(request);
         }
         if (contentExpected) {
           ctx.channel().config().setAutoRead(true);
@@ -139,25 +132,61 @@ public class DownstreamHandler extends ChannelInboundHandlerAdapter {
   }
 
   /**
+   * Add standard minimal proxy request headers. We don't need to set X-Forwarded-Host, because
+   * this is already set in the Host header, also for https and SNI. We also don't include
+   * code here the support non-standard ports. If additional headers are needed, another
+   * handler can be added depending on configuration.
+   *
+   * @see SniToHostHeader
+   */
+  private static void addProxyHeaders(ChannelHandlerContext ctx, HttpRequest request) {
+    if (ctx.channel().remoteAddress() instanceof InetSocketAddress) {
+      InetSocketAddress addr = (InetSocketAddress) ctx.channel().remoteAddress();
+      request.headers().set("X-Forwarded-For", addr.getAddress().getHostAddress());
+    }
+    request.headers().set("X-Forwarded-Proto", "https");
+  }
+
+  /**
    * Flush if output buffer is full and apply back pressure to upstream.
    */
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=" + ctx.channel().isWritable());
-    if (upstreamChannel == null || !upstreamChannel.isDone()) { return; }
+    if (upstreamChannelFuture == null || !upstreamChannelFuture.isDone()) { return; }
     if (ctx.channel().isWritable()) {
-      upstreamChannel.resultNow().setOption(ChannelOption.AUTO_READ, true);
+      DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=true, start upstream reads");
+      upstreamChannelFuture.resultNow().setOption(ChannelOption.AUTO_READ, true);
     } else {
-      DEBUG.trace(ctx.channel(), "channelWritabilityChanged, flushing");
-      // FIXME: in test we never get the isWritable=true
-      // upstreamChannel.resultNow().setOption(ChannelOption.AUTO_READ, false);
-      ctx.channel().flush();
+      DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=false, queuing flush, stop upstream reads");
+      upstreamChannelFuture.resultNow().setOption(ChannelOption.AUTO_READ, false);
+      // flush task is only created once for the context
+      if (flushTask == null) {
+        flushTask = new Runnable() {
+          @Override
+          public void run() {
+            ctx.channel().writeAndFlush(Unpooled.EMPTY_BUFFER).addListener(new ChannelFutureListener() {
+              @Override
+              public void operationComplete(ChannelFuture future) throws Exception {
+                if (!ctx.channel().isWritable()) {
+                  DEBUG.trace(future.channel(), "flush complete, output buffer still full, queuing another flush");
+                  ctx.executor().execute(flushTask);
+                } else {
+                  DEBUG.trace(future.channel(), "flush complete, output buffer writable");
+                }
+              }
+            });
+          }
+        };
+      }
+      ctx.executor().execute(flushTask);
     }
   }
 
+  private Runnable flushTask;
+
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-    if (upstreamChannel == null) {
+    if (upstreamChannelFuture == null) {
       DEBUG.downstreamError(ctx.channel(), "handshake error", cause);
       metrics.incrementDownstreamHandshakeErrorCount();
     } else {
