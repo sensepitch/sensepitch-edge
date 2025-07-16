@@ -51,10 +51,10 @@ public class StandardOutRequestLogger implements RequestLogger {
     // pattern "0.000" → at least one digit before the dot, exactly three after
     DecimalFormat df = new DecimalFormat("0.000");
     String deltaTime = df.format(delta / 1000.0);
-    String ipLabels = IpTraitsHandler.extract(request);
-    if (ipLabels == null) { ipLabels = "-"; }
+    String ipTraits = IpTraitsHandler.extract(request);
+    if (ipTraits == null) { ipTraits = "-"; }
     System.out.println("RQ0 " +
-      host + " " + remoteHost + " \"" + ipLabels + "\" " + admissionToken + " ["+ time + "] " + requestLine + " " + status + " " + info.contentBytes() + " " + deltaTime + " \"" + bypass + "\" \"" + ua + "\" " + referer);
+      host + " " + remoteHost + " \"" + ipTraits + "\" " + admissionToken + " ["+ time + "] " + requestLine + " " + status + " " + info.contentBytes() + " " + deltaTime + " \"" + bypass + "\" \"" + ua + "\" " + referer);
   }
 
 }
