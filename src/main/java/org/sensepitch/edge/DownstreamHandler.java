@@ -71,7 +71,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     if (future.isSuccess()) {
       DownstreamProgress.progress(downstream, "last content, write and flushing to upstream");
       future.resultNow().writeAndFlush(msg);
+      requestProcessed = true;
     } else {
+      ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
       if (cause instanceof IllegalStateException) {
@@ -113,24 +115,21 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // turn of reading until the upstream connection is established to avoid overflowing
       ctx.channel().config().setAutoRead(false);
     }
-    DEBUG.trace(ctx.channel(), "connecting to upstream contentExpected=" + contentExpected);
     addProxyHeaders(ctx, request);
-    upstreamChannelFuture.addListener(future -> {
-      if (future.isSuccess()) {
-        if (request instanceof LastHttpContent) {
-          upstreamChannelFuture.resultNow().writeAndFlush(request);
-          requestProcessed = true;
-        } else {
+    DEBUG.trace(ctx.channel(), "connecting to upstream contentExpected=" + contentExpected);
+    upstreamChannelFuture.addListener((FutureListener<Channel>)
+      future -> {
+        if (future.isSuccess()) {
           upstreamChannelFuture.resultNow().write(request);
+          if (contentExpected) {
+            ctx.channel().config().setAutoRead(true);
+          }
+        } else {
+          ReferenceCountUtil.release(request);
+          // ignore, only react to an upstream connection problem after receiving LastHttpContent
         }
-        if (contentExpected) {
-          ctx.channel().config().setAutoRead(true);
-        }
-      } else {
-        ReferenceCountUtil.release(request);
-        // ignore, only react to an upstream connection problem after receiving LastHttpContent
       }
-    });
+    );
   }
 
   /**
@@ -191,6 +190,21 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   /**
+   * If the channel becomes inactive, make sure upstream reads are enabled, so
+   * upstream read is completed and the connection is put back into the pool.
+   * Downstream writes will produce errors and the logger will log it once the
+   * listener to the last content write is executed.
+   * That should work okay for small responses. For longer responses it might
+   * be better to close the upstream channel to avoid transferring data needlessly.
+   */
+  @Override
+  public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
+      upstreamChannelFuture.resultNow().config().setAutoRead(true);
+    }
+  }
+
+  /**
    * Remove upstream reference when processing for this request is complete.
    * The upstream channel will go back to the pool, so we need to ensure that we don't
    * have it anymore for throttling.
@@ -205,6 +219,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     super.write(ctx, msg, promise);
   }
 
+  /**
+   * Exception, like connection reset. We keep the upstream untouched.
+   * It will continue to
+   */
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
     if (!requestReceived) {
