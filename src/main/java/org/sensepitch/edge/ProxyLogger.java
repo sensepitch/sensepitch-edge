@@ -4,6 +4,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 
 import java.lang.System.Logger.Level;
+import java.net.InetSocketAddress;
 
 /**
  * @author Jens Wilke
@@ -54,6 +55,12 @@ public interface ProxyLogger {
 
   void downstreamError(Channel downstream, String msg, Throwable cause);
 
+  void upstreamError(Channel downstream, String msg, Throwable cause);
+
+  default String channelId(Channel channel) {
+    return LogTarget.localChannelId(channel);
+  }
+
   abstract class BaseLogger implements ProxyLogger {
 
     private final LogTarget target;
@@ -68,7 +75,25 @@ public interface ProxyLogger {
 
     @Override
     public void downstreamError(Channel downstream, String msg, Throwable cause) {
-      downstreamOnce.report(msg + " (subsequent errors suppressed) " + cause.getMessage());
+      String remoteHost = "-";
+      if (downstream.remoteAddress() instanceof InetSocketAddress) {
+        InetSocketAddress addr = (InetSocketAddress) downstream.remoteAddress();
+        remoteHost = addr.getAddress().getHostAddress();
+      }
+      error(downstream, "DOWNSTREAM ERROR " + msg + " "+ remoteHost + " " + cause);
+      // FIXME
+      // downstreamOnce.report(msg + " (subsequent errors suppressed) " + cause.getMessage());
+    }
+
+    @Override
+    public void upstreamError(Channel upstream, String msg, Throwable cause) {
+      String remoteHost = "-";
+      if (upstream.remoteAddress() instanceof InetSocketAddress) {
+        InetSocketAddress addr = (InetSocketAddress) upstream.remoteAddress();
+        remoteHost = addr.getAddress().getHostAddress();
+      }
+      error(upstream, "UPSTREAM ERROR " + msg + " "+ remoteHost + " " + cause);
+      // FIXME
     }
 
     @Override

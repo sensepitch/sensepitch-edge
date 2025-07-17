@@ -21,6 +21,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import io.netty.util.concurrent.Promise;
@@ -91,6 +92,8 @@ public class Upstream {
   void addHttpHandler(ChannelPipeline  pipeline) {
     // pipeline.addLast(new ReportIoErrorsHandler("upstream"));
     pipeline.addLast(new HttpClientCodec());
+    // FIXME
+    pipeline.addLast(new ReadTimeoutHandler(23));
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO));
   }
 

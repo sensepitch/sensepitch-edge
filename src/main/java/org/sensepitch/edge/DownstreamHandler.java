@@ -12,6 +12,7 @@ import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
@@ -36,6 +37,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private boolean requestReceived;
   private boolean requestProcessed;
   private Runnable flushTask;
+  private HttpRequest request;
 
   public DownstreamHandler(UpstreamRouter upstreamRouter, ProxyMetrics metrics) {
     this.upstreamRouter = upstreamRouter;
@@ -46,33 +48,45 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     DEBUG.traceChannelRead(ctx, msg);
     if (msg instanceof HttpRequest) {
-      HttpRequest request = (HttpRequest) msg;
+      request = (HttpRequest) msg;
       if (DEBUG.isTraceEnabled()) {
         String clientIP = ((SocketChannel) ctx.channel()).remoteAddress().getAddress().getHostAddress();
         DEBUG.trace(ctx.channel(), msg.getClass().getName() + " " + clientIP + " -> " + request.method() + " " + request.uri());
       }
       requestReceived = true;
-      DownstreamProgress.progress(ctx.channel(), "request received");
+      DownstreamProgress.progress(ctx.channel(), "request received, selecting upstream");
       Upstream upstream = upstreamRouter.selectUpstream(request);
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
+      DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener((FutureListener<Channel>)
         future -> forwardLastContentAndFlush(ctx.channel(), future, (LastHttpContent) msg));
+      requestProcessed = true;
     } else if (msg instanceof HttpContent) {
       upstreamChannelFuture.addListener((FutureListener<Channel>)
         future -> forwardContent(future, (LastHttpContent) msg));
     }
   }
 
+  // runs in another tread!
   void forwardLastContentAndFlush(Channel downstream, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
-      DownstreamProgress.progress(downstream, "last content, write and flushing to upstream");
-      future.resultNow().writeAndFlush(msg);
-      requestProcessed = true;
+      String clientIP = ((SocketChannel) downstream).remoteAddress().getAddress().getHostAddress();
+      String upstreamString = DEBUG.channelId(future.resultNow());
+      String requestString = "upstream=" + upstreamString + ", " + request.headers().get(HttpHeaderNames.HOST) + " " + clientIP + " " + request.method() + " " + request.uri();
+      DownstreamProgress.progress(downstream, "write and flushing last content to upstream, " + requestString);
+      future.resultNow().writeAndFlush(msg).addListener(future1 -> {
+        if (future1.isSuccess()) {
+          DownstreamProgress.progress(downstream, "last content flush complete, " + requestString);
+        } else {
+          DownstreamProgress.progress(downstream, "last content flush error, " + requestString + " cause=" + future.cause());
+        }
+      });
     } else {
+      DownstreamProgress.complete(downstream);
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
@@ -84,13 +98,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
       DEBUG.error(downstream, "unknown upstream connection problem", future.cause());
       if (cause.getMessage() != null) {
-        completeWithError(downstream, HttpResponseStatus.valueOf(577, "Upstream connection problem: " + cause.getMessage()));
+        completeWithError(downstream, HttpResponseStatus.valueOf(577, "Upstream connection problem: " + cause));
       } else {
         completeWithError(downstream, HttpResponseStatus.valueOf(577, "Upstream connection problem"));
       }
     }
   }
 
+  // runs in another tread!
   void forwardContent(Future<Channel> future, HttpContent msg) {
     if (future.isSuccess()) {
       future.resultNow().write(msg);
@@ -220,9 +235,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   /**
-   * Exception, like connection reset. We keep the upstream untouched.
-   * It will continue to
+   * Exception reading from the socket, like a connection reset.
    */
+  // FIXME: if request is uncomplete, but upstream connected terminate upstream connection
+  // FIXME: it might be a header parsing error, if channel is still active and no response sent yet, send a reponse
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
     if (!requestReceived) {

@@ -31,6 +31,10 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
+    if (downstream == null) {
+      DEBUG.error(ctx.channel(), msg.getClass().getName() + " -> downstream is null, getting unexpected data from upstream");
+      return;
+    }
     if (msg instanceof HttpResponse) {
       HttpResponse response = (HttpResponse) msg;
       String connection = response.headers().get(HttpHeaderNames.CONNECTION);
@@ -59,17 +63,15 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
         ctx.channel().close();
       }
       if (pool != null) {
+        // disconnect from downstream, if upstream sends us more data we don't expect it
+        downstream = null;
         // even if closed, we should release it
         pool.release(ctx.channel());
         DEBUG.trace(downstream, ctx.channel(), "release upstream to pool");
-        // channel sits in the pool, don't keep resources
-        downstream = null;
+
       }
     } else if (msg instanceof HttpContent) {
-      DEBUG.trace(downstream, ctx.channel(), "write " + msg);
-      downstream.write(msg).addListener(future -> {
-        DEBUG.trace(downstream, ctx.channel(), "write completed " + msg);
-      });
+      downstream.write(msg);
     }
   }
 
@@ -88,11 +90,14 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  // TODO: exceptionCaught not reached, should deal with read exceptions properly
+  // FIXME: improve error handling
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-    DEBUG.trace(downstream, ctx.channel(), "upstream read exception closing downstream");
-    downstream.close();
+    // DEBUG.trace(downstream, ctx.channel(), "upstream read exception closing downstream");
+    DEBUG.upstreamError(ctx.channel(), "downstream=" + DEBUG.channelId(downstream), cause);
+    if (downstream != null) {
+      downstream.close();
+    }
     ctx.close();
   }
 

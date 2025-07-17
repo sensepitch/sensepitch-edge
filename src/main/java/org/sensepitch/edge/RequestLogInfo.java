@@ -11,6 +11,7 @@ import io.netty.handler.codec.http.HttpResponse;
 public interface RequestLogInfo {
 
   Channel channel();
+  String requestId();
   HttpRequest request();
   HttpResponse response();
   long contentBytes();

@@ -34,7 +34,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private Throwable error;
   private HttpHeaders trailingHeaders;
 
-
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception{
     if (msg instanceof HttpRequest) {
@@ -70,6 +69,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     super.write(ctx, msg, promise);
   }
 
+  @Override public String requestId() { return LogTarget.localChannelId(channel); }
   @Override public Channel channel() { return channel; }
   @Override  public Throwable error() { return error; }
   @Override public HttpRequest request() { return request; }
