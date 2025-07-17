@@ -5,6 +5,7 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
@@ -31,6 +32,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private final RequestLogger logger = new StandardOutRequestLogger();
   private Channel channel;
   private Throwable error;
+  private HttpHeaders trailingHeaders;
+
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception{
@@ -51,7 +54,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     if (msg instanceof HttpContent httpContent) {
       contentBytes += httpContent.content().readableBytes();
     }
-    if (msg instanceof LastHttpContent) {
+    if (msg instanceof LastHttpContent lastHttpContent) {
+      trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
       promise.addListener(future -> {
           error = future.cause();
@@ -70,6 +74,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override  public Throwable error() { return error; }
   @Override public HttpRequest request() { return request; }
   @Override public HttpResponse response() { return response; }
+  @Override public HttpHeaders trailingHeaders() { return trailingHeaders; }
   @Override public long contentBytes() { return contentBytes; }
   @Override public long requestStartTime() { return requestStartTime; }
 }

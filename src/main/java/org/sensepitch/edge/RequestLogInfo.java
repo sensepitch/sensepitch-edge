@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import io.netty.channel.Channel;
+import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 
@@ -17,4 +18,7 @@ public interface RequestLogInfo {
 
   /** Non-null if an error happened and the request did not complete successfully. */
   Throwable error();
+
+  /** Trailing headers from LastHttpContent */
+  HttpHeaders trailingHeaders();
 }
