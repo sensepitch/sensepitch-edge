@@ -3,6 +3,7 @@ package org.sensepitch.edge.experiments;
 import org.sensepitch.edge.AdmissionConfig;
 import org.sensepitch.edge.AdmissionTokenGeneratorConfig;
 import org.sensepitch.edge.BypassConfig;
+import org.sensepitch.edge.ConnectionConfig;
 import org.sensepitch.edge.ListenConfig;
 import org.sensepitch.edge.MetricsConfig;
 import org.sensepitch.edge.PrometheusConfig;
@@ -19,6 +20,7 @@ import java.util.List;
 public class ProxyStaticNginx {
 
   public static void main(String[] args) throws Exception {
+    ConnectionConfig config = ConnectionConfig.DEFAULT;
     ProxyConfig cfg = ProxyConfig.builder()
       .metrics(MetricsConfig.builder()
         .enable(true)
@@ -28,6 +30,10 @@ public class ProxyStaticNginx {
           .build())
         .build())
       .listen(ListenConfig.builder()
+        // testing
+        .connection(ConnectionConfig.DEFAULT.toBuilder()
+          .readTimeoutSeconds(3)
+          .build())
         .https(true)
         .port(7443)
         .ssl(SslConfig.builder()

@@ -49,7 +49,7 @@ public class StandardOutRequestLogger implements RequestLogger {
     if (info.error() != null) {
       error = sanitize(info.error().getMessage());
     }
-    System.out.println("RQ0 " +
+    System.out.println("RQ0 " + info.requestId() + " " +
       host + " " + remoteHost + " \"" + ipTraits + "\" " + admissionToken + " ["+ time + "] "
       + requestLine + " " + status + " " + info.contentBytes() + " " + deltaTime + " \""
       + bypass + "\" \"" + ua + "\" " + referer + " \"" + error + "\"");

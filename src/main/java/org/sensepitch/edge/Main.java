@@ -6,7 +6,7 @@ package org.sensepitch.edge;
 public class Main {
 
   public static void main(String[] args) throws Exception {
-    ProxyConfig.ProxyConfigBuilder builder = ProxyConfig.builder();
+    ProxyConfig.Builder builder = ProxyConfig.builder();
     EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", System.getenv(), builder);
     new Proxy(builder.build()).start();
   }

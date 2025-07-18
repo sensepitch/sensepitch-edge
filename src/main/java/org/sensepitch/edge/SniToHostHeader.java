@@ -13,6 +13,7 @@ import io.netty.handler.ssl.SniCompletionEvent;
  *
  * @author Jens Wilke
  */
+// FIXME: not used!!, host header is set always by the client
 public class SniToHostHeader extends ChannelInboundHandlerAdapter {
 
   private String sniHost;

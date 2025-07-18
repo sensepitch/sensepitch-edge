@@ -5,6 +5,7 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
@@ -28,9 +29,15 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private HttpRequest request;
   private HttpResponse response;
   private long requestStartTime;
-  private final RequestLogger logger = new StandardOutRequestLogger();
+  private final RequestLogger logger;
   private Channel channel;
   private Throwable error;
+  private HttpHeaders trailingHeaders;
+  private int requestCount;
+
+  public RequestLoggingHandler(RequestLogger logger) {
+    this.logger = logger;
+  }
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception{
@@ -51,12 +58,14 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     if (msg instanceof HttpContent httpContent) {
       contentBytes += httpContent.content().readableBytes();
     }
-    if (msg instanceof LastHttpContent) {
+    if (msg instanceof LastHttpContent lastHttpContent) {
+      trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
       promise.addListener(future -> {
           error = future.cause();
           try {
             logger.logRequest(this);
+            requestCount++;
           } catch (Throwable e) {
             DEBUG.error(ctx.channel(), "Error logging request", e);
           }
@@ -66,10 +75,12 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     super.write(ctx, msg, promise);
   }
 
+  @Override public String requestId() { return LogTarget.localChannelId(channel) + "/" + requestCount; }
   @Override public Channel channel() { return channel; }
   @Override  public Throwable error() { return error; }
   @Override public HttpRequest request() { return request; }
   @Override public HttpResponse response() { return response; }
+  @Override public HttpHeaders trailingHeaders() { return trailingHeaders; }
   @Override public long contentBytes() { return contentBytes; }
   @Override public long requestStartTime() { return requestStartTime; }
 }

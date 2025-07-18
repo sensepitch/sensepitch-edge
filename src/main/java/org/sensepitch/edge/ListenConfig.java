@@ -10,9 +10,11 @@ import java.util.List;
 @Builder
 public record ListenConfig (
   boolean https,
+  ConnectionConfig connection,
   SslConfig ssl,
   boolean letsEncrypt,
   List<String> domains,
   List<SniConfig> sni,
   int port) {
+
 }

@@ -8,15 +8,21 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.codec.TooLongFrameException;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.ssl.SslHandshakeCompletionEvent;
+import io.netty.handler.timeout.ReadTimeoutException;
+import io.netty.handler.timeout.TimeoutException;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
@@ -34,8 +40,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private final ProxyMetrics metrics;
   private Future<Channel> upstreamChannelFuture;
   private boolean requestReceived;
-  private boolean requestProcessed;
+  private boolean lastContentReceivedFromClient;
+  private boolean sslHandshakeComplete;
   private Runnable flushTask;
+  private HttpRequest request;
 
   public DownstreamHandler(UpstreamRouter upstreamRouter, ProxyMetrics metrics) {
     this.upstreamRouter = upstreamRouter;
@@ -46,33 +54,44 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
     DEBUG.traceChannelRead(ctx, msg);
     if (msg instanceof HttpRequest) {
-      HttpRequest request = (HttpRequest) msg;
+      request = (HttpRequest) msg;
       if (DEBUG.isTraceEnabled()) {
         String clientIP = ((SocketChannel) ctx.channel()).remoteAddress().getAddress().getHostAddress();
         DEBUG.trace(ctx.channel(), msg.getClass().getName() + " " + clientIP + " -> " + request.method() + " " + request.uri());
       }
       requestReceived = true;
-      DownstreamProgress.progress(ctx.channel(), "request received");
+      DownstreamProgress.progress(ctx.channel(), "request received, selecting upstream");
       Upstream upstream = upstreamRouter.selectUpstream(request);
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
+      DownstreamProgress.progress(ctx.channel(), "last content, waiting for upstream");
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener((FutureListener<Channel>)
         future -> forwardLastContentAndFlush(ctx.channel(), future, (LastHttpContent) msg));
+      lastContentReceivedFromClient = true;
     } else if (msg instanceof HttpContent) {
       upstreamChannelFuture.addListener((FutureListener<Channel>)
         future -> forwardContent(future, (LastHttpContent) msg));
     }
   }
 
+  // runs in another tread!
   void forwardLastContentAndFlush(Channel downstream, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
-      DownstreamProgress.progress(downstream, "last content, write and flushing to upstream");
-      future.resultNow().writeAndFlush(msg);
-      requestProcessed = true;
+      String clientIP = ((SocketChannel) downstream).remoteAddress().getAddress().getHostAddress();
+      String upstreamString = DEBUG.channelId(future.resultNow());
+      String requestString = "upstream=" + upstreamString + ", " + request.headers().get(HttpHeaderNames.HOST) + " " + clientIP + " " + request.method() + " " + request.uri();
+      DownstreamProgress.progress(downstream, "write and flushing last content to upstream, " + requestString);
+      future.resultNow().writeAndFlush(msg).addListener((ChannelFutureListener) future1 -> {
+        if (!future1.isSuccess()) {
+          future1.channel().close();
+          completeWithError(downstream, HttpResponseStatus.valueOf(577, "Upstream write problem: " + future1.cause()));
+        }
+      });
     } else {
+      DownstreamProgress.complete(downstream);
       ReferenceCountUtil.release(msg);
       Throwable cause = future.cause();
       // TODO: counter!
@@ -84,13 +103,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
       DEBUG.error(downstream, "unknown upstream connection problem", future.cause());
       if (cause.getMessage() != null) {
-        completeWithError(downstream, HttpResponseStatus.valueOf(577, "Upstream connection problem: " + cause.getMessage()));
+        completeWithError(downstream, HttpResponseStatus.valueOf(577, "Upstream connection problem: " + cause));
       } else {
         completeWithError(downstream, HttpResponseStatus.valueOf(577, "Upstream connection problem"));
       }
     }
   }
 
+  // runs in another tread!
   void forwardContent(Future<Channel> future, HttpContent msg) {
     if (future.isSuccess()) {
       future.resultNow().write(msg);
@@ -101,9 +121,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   void completeWithError(Channel downstream, HttpResponseStatus status) {
+    assert sslHandshakeComplete;
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
+    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     downstream.writeAndFlush(response);
     DownstreamProgress.complete(downstream);
+    downstream.close();
   }
 
   /**
@@ -219,21 +242,50 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     super.write(ctx, msg, promise);
   }
 
+  @Override
+  public void userEventTriggered(ChannelHandlerContext ctx, Object event) throws Exception {
+    if (event instanceof SslHandshakeCompletionEvent sslEvent) {
+      if (sslEvent.isSuccess()) {
+        sslHandshakeComplete = true;
+      }
+    }
+    super.userEventTriggered(ctx, event);
+  }
+
   /**
-   * Exception, like connection reset. We keep the upstream untouched.
-   * It will continue to
+   * Exception reading from the socket, like a connection reset.
    */
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-    if (!requestReceived) {
+    if (!sslHandshakeComplete) {
       DEBUG.downstreamError(ctx.channel(), "handshake error", cause);
       metrics.incrementDownstreamHandshakeErrorCount();
-    } else {
-      if (!requestProcessed) {
-        DEBUG.downstreamError(ctx.channel(), "request error", cause);
+    } else if (!requestReceived || !lastContentReceivedFromClient) {
+      HttpResponseStatus status = HttpResponseStatus.BAD_REQUEST;
+      if (cause instanceof ReadTimeoutException) {
+        status = HttpResponseStatus.REQUEST_TIMEOUT;
+      } else if (cause instanceof TooLongFrameException) {
+        // TODO: interpolated with ChatGPT, needs testing
+        String msg = cause.toString().toLowerCase();
+        if (msg.contains("initial")) {
+          status = HttpResponseStatus.REQUEST_URI_TOO_LONG;        // 414
+        } else if (msg.contains("header")) {
+          status = HttpResponseStatus.REQUEST_HEADER_FIELDS_TOO_LARGE; // 431
+        } else {
+          status = HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE;     // 413
+        }
       } else {
-        DEBUG.downstreamError(ctx.channel(), "processing error", cause);
+        DEBUG.downstreamError(ctx.channel(), "request error, returning status " + status, cause);
       }
+      completeWithError(ctx.channel(), status);
+    } else {
+      // this can be a connection reset while waiting or sending the response
+      DEBUG.downstreamError(ctx.channel(), "processing error", cause);
+      if (upstreamChannelFuture.isDone()) {
+        upstreamChannelFuture.resultNow().close();
+      }
+      DownstreamProgress.complete(ctx.channel());
+      ctx.channel().close();
     }
   }
 

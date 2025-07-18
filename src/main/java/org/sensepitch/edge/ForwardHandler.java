@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -31,6 +32,10 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
+    if (downstream == null) {
+      DEBUG.error(ctx.channel(), msg.getClass().getName() + " -> downstream is null, getting unexpected data from upstream");
+      return;
+    }
     if (msg instanceof HttpResponse) {
       HttpResponse response = (HttpResponse) msg;
       String connection = response.headers().get(HttpHeaderNames.CONNECTION);
@@ -59,23 +64,22 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
         ctx.channel().close();
       }
       if (pool != null) {
+        // disconnect from downstream, if upstream sends us more data we don't expect it
+        downstream = null;
         // even if closed, we should release it
         pool.release(ctx.channel());
         DEBUG.trace(downstream, ctx.channel(), "release upstream to pool");
-        // channel sits in the pool, don't keep resources
-        downstream = null;
+
       }
     } else if (msg instanceof HttpContent) {
-      DEBUG.trace(downstream, ctx.channel(), "write " + msg);
-      downstream.write(msg).addListener(future -> {
-        DEBUG.trace(downstream, ctx.channel(), "write completed " + msg);
-      });
+      downstream.write(msg);
     }
   }
 
   /**
    * Flush if output buffer is full and apply back pressure to downstream
    */
+  // FIXME: backpressure needs to get implemented for sending to upstream
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
     DEBUG.trace(ctx.channel(), "channelWritabilityChanged, isWritable=" + ctx.channel().isWritable());
@@ -88,12 +92,24 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     }
   }
 
-  // TODO: exceptionCaught not reached, should deal with read exceptions properly
+  // FIXME: improve error handling, if downstream is connected we should fire exception there
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-    DEBUG.trace(downstream, ctx.channel(), "upstream read exception closing downstream");
-    downstream.close();
+    // DEBUG.trace(downstream, ctx.channel(), "upstream read exception closing downstream");
+    DEBUG.upstreamError(ctx.channel(), "downstream=" + DEBUG.channelId(downstream), cause);
+    if (downstream != null) {
+      downstream.pipeline().fireExceptionCaught(new UpstreamException(cause));
+      downstream = null;
+    }
     ctx.close();
+  }
+
+  static class UpstreamException extends ChannelException {
+
+    public UpstreamException(Throwable cause) {
+      super(cause);
+    }
+
   }
 
 }

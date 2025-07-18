@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
+import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -12,6 +13,8 @@ import io.netty.handler.ssl.SniHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutHandler;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
 import org.yaml.snakeyaml.DumperOptions;
@@ -32,6 +35,7 @@ public class Proxy implements ProxyContext {
 
   private final ProxyMetrics metrics = new ProxyMetrics();
   private final ProxyConfig config;
+  private final ConnectionConfig connectionConfig;
   private final MetricsBridge metricsBridge;
   private final AdmissionHandler admissionHandler;
   private final SslContext sslContext;
@@ -41,9 +45,15 @@ public class Proxy implements ProxyContext {
   private final UpstreamRouter upstreamRouter;
   private final IpTraitsLookup ipTraitsLookup;
   private final EventLoopGroup eventLoopGroup;
+  private final RequestLogger requestLogger;
 
   public Proxy(ProxyConfig proxyConfig) {
     dumpConfig(proxyConfig);
+    if (proxyConfig.listen().connection() == null) {
+      connectionConfig = ConnectionConfig.DEFAULT;
+    } else {
+      connectionConfig = proxyConfig.listen().connection();
+    }
     eventLoopGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
     config = proxyConfig;
     metricsBridge = initializeMetrics();
@@ -60,6 +70,9 @@ public class Proxy implements ProxyContext {
     } else {
       upstreamRouter = new HostBasedUpstreamRouter(this, proxyConfig.upstream());
     }
+    requestLogger = new DistributingRequestLogger(
+      new StandardOutRequestLogger(),
+      metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
     try {
       if (proxyConfig.ipLookup() != null) {
         ipTraitsLookup = new CombinedIpTraitsLookup(proxyConfig.ipLookup());
@@ -83,10 +96,18 @@ public class Proxy implements ProxyContext {
   }
 
   MetricsBridge initializeMetrics() {
-    if (config.metrics() == null || config.metrics().prometheus() == null) {
+    MetricsConfig metricsConfig = config.metrics();
+    if (metricsConfig == null) {
+      metricsConfig = MetricsConfig.DEFAULT;
+    }
+    PrometheusConfig prometheusConfig = metricsConfig.prometheus();
+    if (prometheusConfig == null) {
+      prometheusConfig = PrometheusConfig.DEFAULT;
+    }
+    if (!metricsConfig.enable()) {
       return new MetricsBridge.NoMetricsExposed();
     }
-    return new PrometheusMetricsBridge(config.metrics().prometheus());
+    return new PrometheusMetricsBridge(prometheusConfig);
   }
 
   SslContext initializeSslContext() {
@@ -146,11 +167,28 @@ public class Proxy implements ProxyContext {
               ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
             }
             ch.pipeline().addLast(new HttpServerCodec());
+            ch.pipeline().addLast(new ClientTimeoutHandler(connectionConfig));
             ch.pipeline().addLast(new HttpServerKeepAliveHandler());
             // ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
             ch.pipeline().addLast(new IpTraitsHandler(ipTraitsLookup));
 //            ch.pipeline().addLast(new ReportIoErrorsHandler("downstream"));
-            ch.pipeline().addLast(new RequestLoggingHandler());
+            // TODO: check and sanitize host header
+            ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+              // strip port from host
+              @Override
+              public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                if (msg instanceof HttpRequest rq) {
+                  String host = rq.headers().get(HttpHeaderNames.HOST);
+                  if (host != null) {
+                    String []sa =  host.split(":");
+                    host = sa[0];
+                    rq.headers().set(HttpHeaderNames.HOST, host);
+                  }
+                }
+                super.channelRead(ctx, msg);
+              }
+            });
+            ch.pipeline().addLast(new RequestLoggingHandler(requestLogger));
             if (redirectHandler != null) {
               ch.pipeline().addLast(redirectHandler);
             }
