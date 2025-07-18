@@ -92,8 +92,8 @@ public class Upstream {
   void addHttpHandler(ChannelPipeline  pipeline) {
     // pipeline.addLast(new ReportIoErrorsHandler("upstream"));
     pipeline.addLast(new HttpClientCodec());
-    // FIXME
-    pipeline.addLast(new ReadTimeoutHandler(23));
+    // FIXME: timeout?
+    // pipeline.addLast(new ReadTimeoutHandler(23));
     // pipeline.addLast(new LoggingHandler(LogLevel.INFO));
   }
 

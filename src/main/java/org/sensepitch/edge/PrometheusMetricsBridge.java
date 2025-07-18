@@ -9,6 +9,7 @@ import io.prometheus.metrics.model.snapshots.MetricSnapshot;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.function.Consumer;
 
 /**
  * @author Jens Wilke
@@ -50,6 +51,19 @@ public class PrometheusMetricsBridge implements MetricsBridge {
       }
     }
     return objectWithMetrics;
+  }
+
+  @Override
+  public <T extends HasMultipleMetrics> T expose(T objectWithMetrics) {
+    Consumer<Collector> consumer = prometheusRegistry::register;
+    objectWithMetrics.registerCollectors(consumer);
+    return objectWithMetrics;
+  }
+
+  @Override
+  public <T extends Collector> T expose(T objectWithPrometheusMetrics) {
+    prometheusRegistry.register(objectWithPrometheusMetrics);
+    return objectWithPrometheusMetrics;
   }
 
   Collector createCounterCollector(String prefix, Object target, Method method) {
