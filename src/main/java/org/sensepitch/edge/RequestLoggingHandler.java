@@ -4,11 +4,13 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.concurrent.Ticker;
 
 /**
  * Listens to incoming and outgoing http messages and collects all relevant information
@@ -34,9 +36,26 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private Throwable error;
   private HttpHeaders trailingHeaders;
   private int requestCount;
+  private Ticker ticker;
+  private long requestStartTimeNanos;
+  private long requestCompleteTimeNanos;
+  private long responseStartedTimeNanos;
+  private long responseReceivedTimeNanos;
 
   public RequestLoggingHandler(RequestLogger logger) {
     this.logger = logger;
+  }
+
+  @Override
+  public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+    ticker = ctx.executor().ticker();
+    super.channelRegistered(ctx);
+  }
+
+  @Override
+  public void channelActive(ChannelHandlerContext ctx) throws Exception {
+    requestStartTime = System.currentTimeMillis();
+    requestStartTimeNanos = ticker.nanoTime();
   }
 
   @Override
@@ -45,8 +64,21 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       request = (HttpRequest) msg;
       contentBytes = 0;
       requestStartTime = System.currentTimeMillis();
+      requestStartTimeNanos = ticker.nanoTime();
+      requestCompleteTimeNanos = responseStartedTimeNanos = 0;
+    }
+    if (msg instanceof LastHttpContent) {
+      requestCompleteTimeNanos = System.currentTimeMillis();
     }
     super.channelRead(ctx, msg);
+  }
+
+  @Override
+  public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+    if (!ctx.channel().isWritable() && responseReceivedTimeNanos == 0) {
+      responseStartedTimeNanos = ticker.nanoTime();
+    }
+    super.channelWritabilityChanged(ctx);
   }
 
   @Override
@@ -54,14 +86,21 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     if (msg instanceof HttpResponse) {
       response = (HttpResponse) msg;
     }
+    if (request == null) {
+      request = constructMockHttpRequest(ctx);
+    }
     // HttpResponse may have content as well
     if (msg instanceof HttpContent httpContent) {
       contentBytes += httpContent.content().readableBytes();
     }
     if (msg instanceof LastHttpContent lastHttpContent) {
+      if (responseStartedTimeNanos == 0) {
+        responseStartedTimeNanos = ticker.nanoTime();
+      }
       trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
       promise.addListener(future -> {
+          responseReceivedTimeNanos = ticker.nanoTime();
           error = future.cause();
           try {
             logger.logRequest(this);
@@ -75,6 +114,16 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     super.write(ctx, msg, promise);
   }
 
+  /**
+   * Construct a mock http request in case we don't have a request, which can happen if
+   * the request was malformed or receive timed out. We don't use a HttpRequest singleton,
+   * maybe we want to add headers, like set the host, if its known.
+   */
+  private HttpRequest constructMockHttpRequest(ChannelHandlerContext ctx) {
+    HttpRequest request = new DefaultFullHttpRequest(NIL_VERSION, NIL_METHOD, "/");
+    return request;
+  }
+
   @Override public String requestId() { return LogTarget.localChannelId(channel) + "/" + requestCount; }
   @Override public Channel channel() { return channel; }
   @Override  public Throwable error() { return error; }
@@ -82,5 +131,10 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override public HttpResponse response() { return response; }
   @Override public HttpHeaders trailingHeaders() { return trailingHeaders; }
   @Override public long contentBytes() { return contentBytes; }
-  @Override public long requestStartTime() { return requestStartTime; }
+  @Override public long requestStartTimeMillis() { return requestStartTime; }
+  @Override public long responseReceivedTimeNanos() { return responseReceivedTimeNanos; }
+  @Override public long responseStartedTimeNanos() { return responseStartedTimeNanos; }
+  @Override public long requestCompleteTimeNanos() { return requestCompleteTimeNanos; }
+  @Override public long requestStartTimeNanos() { return requestStartTimeNanos; }
+
 }
