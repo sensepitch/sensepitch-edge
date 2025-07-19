@@ -7,7 +7,14 @@ import java.util.concurrent.atomic.LongAdder;
  */
 public class ProxyMetrics implements HasMetrics {
 
-  private LongAdder connectionResetCounter = new LongAdder();
+  private LongAdder ingressRequestReceiveTimeout = new LongAdder();
+  public long getIngressRequestReceiveTimeout() { return ingressRequestReceiveTimeout.longValue(); }
+  public void incrementIngressRequestReceiveTimeout() { ingressRequestReceiveTimeout.increment(); }
+
+  private LongAdder ingressKeepAliveTimeout = new LongAdder();
+  public long getIngressKeepAliveTimeout() { return ingressKeepAliveTimeout.longValue(); }
+  public void incrementIngressKeepAliveTimeout() { ingressKeepAliveTimeout.increment(); }
+
   private LongAdder downstreamHandshakeErrorCounter = new LongAdder();
 
   public long getDownstreamHandshakeErrorCount() {
@@ -18,6 +25,7 @@ public class ProxyMetrics implements HasMetrics {
     downstreamHandshakeErrorCounter.increment();
   }
 
+  private LongAdder connectionResetCounter = new LongAdder();
   public long getConnectionResetCount() {
     return connectionResetCounter.sum();
   }

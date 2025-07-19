@@ -6,6 +6,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.HttpContent;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
@@ -68,7 +69,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       requestCompleteTimeNanos = responseStartedTimeNanos = 0;
     }
     if (msg instanceof LastHttpContent) {
-      requestCompleteTimeNanos = System.currentTimeMillis();
+      requestCompleteTimeNanos = ticker.nanoTime();
     }
     super.channelRead(ctx, msg);
   }
@@ -97,6 +98,12 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       if (responseStartedTimeNanos == 0) {
         responseStartedTimeNanos = ticker.nanoTime();
       }
+      // not yet received LastHttpContent from ingress, assume it was complete already
+      // special case may happen (in testing), if upstream response is already processed
+      // before we receive the last content
+      if (requestCompleteTimeNanos == 0) {
+        requestCompleteTimeNanos = requestStartTimeNanos;
+      }
       trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
       promise.addListener(future -> {
@@ -121,6 +128,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
    */
   private HttpRequest constructMockHttpRequest(ChannelHandlerContext ctx) {
     HttpRequest request = new DefaultFullHttpRequest(NIL_VERSION, NIL_METHOD, "/");
+    request.headers().set(HttpHeaderNames.HOST, "incomplete");
     return request;
   }
 

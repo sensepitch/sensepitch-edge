@@ -73,7 +73,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
       .labelValues(
         info.request().headers().get(HttpHeaderNames.HOST),
         info.request().method().name(), statusCode + "")
-      .observe(Unit.millisToSeconds(System.currentTimeMillis() - info.requestStartTime()));
+      .observe(Unit.millisToSeconds(System.currentTimeMillis() - info.requestStartTimeMillis()));
   }
 
 }

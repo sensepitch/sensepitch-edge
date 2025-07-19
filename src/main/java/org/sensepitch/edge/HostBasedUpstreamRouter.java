@@ -20,7 +20,7 @@ public class HostBasedUpstreamRouter implements UpstreamRouter {
     host2upstream = new HashMap<>();
     for (UpstreamConfig upCfg : cfg) {
       String host = upCfg.host();
-      Upstream upstream = new Upstream(ctx, upCfg);
+      Upstream upstream = new DefaultUpstream(ctx, upCfg);
       host2upstream.put(host, upstream);
     }
   }
