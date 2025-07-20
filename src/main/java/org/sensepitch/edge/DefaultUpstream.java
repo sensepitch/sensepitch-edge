@@ -46,20 +46,17 @@ public class DefaultUpstream implements Upstream {
       .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
       .option(ChannelOption.SO_KEEPALIVE, true)
       .remoteAddress(target, port);
-    final ChannelPoolHandler channelHandler = new ChannelPoolHandler() {
+    ChannelPoolHandler channelHandler = new ChannelPoolHandler() {
       @Override
       public void channelReleased(Channel ch) throws Exception {
-        LOG.trace(null, ch, "channelReleased, pipeline=" + ch.pipeline().names());
       }
 
       @Override
       public void channelAcquired(Channel ch) throws Exception {
-        LOG.trace(null, ch, "channelAcquired, pipeline=" + ch.pipeline().names());
       }
 
       @Override
       public void channelCreated(Channel ch) throws Exception {
-        LOG.trace(null, ch, "channel created");
         addHttpHandler(ch.pipeline());
         ch.pipeline().addLast("forward", new ForwardHandler(null, null));
       }
@@ -111,22 +108,16 @@ public class DefaultUpstream implements Upstream {
   }
 
   private Future<Channel> getPooledChannel(Channel downstream) {
-    Future<Channel> future = pool.acquire();
-    future.addListener(new FutureListener<Channel>() {
-      @Override
-      public void operationComplete(Future<Channel> future) throws Exception {
-        if (future.isSuccess()) {
-          DownstreamProgress.progress(downstream, "upstream connection established");
-          Channel ch = future.resultNow();
-          if (LOG.isTraceEnabled()) {
-            LOG.trace(downstream, future.resultNow(), "pool acquire complete isActive=" + ch.isActive() + " pipeline=" + ch.pipeline().names());
-          }
-          try {
-            future.resultNow().pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
-          } catch (Throwable t) {
-            LOG.error(downstream, future.resultNow(), "pipeline replace", t);
-          }
+    Future<Channel> future = pool.acquire(downstream.eventLoop().newPromise());
+    future.addListener((FutureListener<Channel>) future1 -> {
+      if (future1.isSuccess()) {
+        DownstreamProgress.progress(downstream, "upstream connection established");
+        Channel ch = future1.resultNow();
+        if (LOG.isTraceEnabled()) {
+          LOG.trace(downstream, future1.resultNow(), "pool acquire complete isActive=" + ch.isActive() + " pipeline=" + ch.pipeline().names());
         }
+        // we need to do this in the lister call back, to set the downstream
+        future1.resultNow().pipeline().replace("forward", "forward", new ForwardHandler(downstream, pool));
       }
     });
     return future;

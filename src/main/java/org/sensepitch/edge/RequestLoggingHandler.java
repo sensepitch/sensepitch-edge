@@ -57,6 +57,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   public void channelActive(ChannelHandlerContext ctx) throws Exception {
     requestStartTime = System.currentTimeMillis();
     requestStartTimeNanos = ticker.nanoTime();
+    super.channelActive(ctx);
   }
 
   @Override
@@ -64,9 +65,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     if (msg instanceof HttpRequest) {
       request = (HttpRequest) msg;
       contentBytes = 0;
-      requestStartTime = System.currentTimeMillis();
-      requestStartTimeNanos = ticker.nanoTime();
-      requestCompleteTimeNanos = responseStartedTimeNanos = 0;
     }
     if (msg instanceof LastHttpContent) {
       requestCompleteTimeNanos = ticker.nanoTime();
@@ -74,6 +72,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     super.channelRead(ctx, msg);
   }
 
+  /**
+   * Set response start time when the output buffer becomes full.
+   */
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
     if (!ctx.channel().isWritable() && responseReceivedTimeNanos == 0) {
@@ -95,14 +96,16 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       contentBytes += httpContent.content().readableBytes();
     }
     if (msg instanceof LastHttpContent lastHttpContent) {
+      long now = ticker.nanoTime();
       if (responseStartedTimeNanos == 0) {
-        responseStartedTimeNanos = ticker.nanoTime();
+        responseStartedTimeNanos = now;
       }
       // not yet received LastHttpContent from ingress, assume it was complete already
       // special case may happen (in testing), if upstream response is already processed
       // before we receive the last content
+      // This can also be a request timeout
       if (requestCompleteTimeNanos == 0) {
-        requestCompleteTimeNanos = requestStartTimeNanos;
+        requestCompleteTimeNanos = now;
       }
       trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
@@ -115,6 +118,10 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
           } catch (Throwable e) {
             DEBUG.error(ctx.channel(), "Error logging request", e);
           }
+          // reset times for keep alive requests
+          requestStartTime = System.currentTimeMillis();
+          requestStartTimeNanos = now;
+          requestCompleteTimeNanos = responseStartedTimeNanos = 0;
         }
       );
     }

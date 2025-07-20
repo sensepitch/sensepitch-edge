@@ -72,10 +72,10 @@ public class TimeoutsTest {
     assertThat(ingressChannel.isActive()).isTrue();
     ticker.advance(9, SECONDS);
     rattle();
-    assertThat(proxyMetrics.getIngressRequestReceiveTimeout()).isEqualTo(0);
+    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(0);
     ticker.advance(1, SECONDS);
     rattle();
-    assertThat(proxyMetrics.getIngressRequestReceiveTimeout()).isEqualTo(1);
+    assertThat(proxyMetrics.ingressReceiveTimeoutFirstRequest.getLongValue()).isEqualTo(1);
     assertThat(ingressChannel.isActive()).isFalse();
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(408);

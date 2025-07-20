@@ -8,7 +8,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.handler.codec.TooLongFrameException;
+import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
@@ -21,13 +21,15 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.ssl.NotSslRecordException;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
-import io.netty.handler.timeout.ReadTimeoutException;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 
+import javax.net.ssl.SSLHandshakeException;
 import java.net.InetSocketAddress;
+import java.net.SocketException;
 
 /**
  * @author Jens Wilke
@@ -93,6 +95,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       String requestString = "upstream=" + upstreamString + ", " + request.headers().get(HttpHeaderNames.HOST) + " " + remoteIp + " " + request.method() + " " + request.uri();
       DownstreamProgress.progress(ctx.channel(), "write and flushing last content to upstream, " + requestString);
       future.resultNow().writeAndFlush(msg).addListener((ChannelFutureListener) future1 -> {
+        // TODO: counter!
         if (!future1.isSuccess()) {
           completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream write problem: " + future1.cause()));
         }
@@ -131,7 +134,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     assert sslHandshakeComplete;
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-    DownstreamProgress.complete(ctx.channel());
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     DownstreamProgress.complete(ctx.channel());
   }
@@ -270,22 +272,69 @@ public class DownstreamHandler extends ChannelDuplexHandler {
    */
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+    // connection reset might include the IP address, not good
+    boolean connectionReset = cause instanceof SocketException &&
+      cause.getMessage() != null &&
+      cause.getMessage().startsWith("Connection reset");
+    Throwable decoderException = null;
+    if (cause instanceof DecoderException) {
+      decoderException = cause.getCause();
+    }
+    // Extract all exception strings from error log:
+    // journalctl -u NAME -n 5000 | grep ERROR | awk 'match($0, /[^ ]+Exception.*/){ print substr($0, RSTART ) }' | sort | uniq
+    //
+    // Commonly seen:
+    // io.netty.handler.codec.DecoderException: io.netty.handler.ssl.NotSslRecordException: not an SSL/TLS record
+    // io.netty.handler.codec.DecoderException: io.netty.handler.ssl.ReferenceCountedOpenSslEngine$OpenSslHandshakeException: error:100000b8:SSL routines:OPENSSL_internal:NO_SHARED_CIPHER
+    // io.netty.handler.codec.DecoderException: io.netty.handler.ssl.ReferenceCountedOpenSslEngine$OpenSslHandshakeException: error:100000f0:SSL routines:OPENSSL_internal:UNSUPPORTED_PROTOCOL
+    // io.netty.handler.codec.DecoderException: io.netty.handler.ssl.ReferenceCountedOpenSslEngine$OpenSslHandshakeException: error:100003f2:SSL routines:OPENSSL_internal:SSLV3_ALERT_UNEXPECTED_MESSAGE
+    // java.net.SocketException: Connection reset
+    // java.net.SocketException: Connection reset 112.254.156.186 java.net.SocketException: Connection reset
+    // java.net.SocketException: Connection reset 2053:c0:3700:6157:a256:3692:31aa:1235 java.net.SocketException: Connection reset
     if (!sslHandshakeComplete) {
-      DEBUG.downstreamError(ctx.channel(), "handshake error", cause);
-      metrics.incrementDownstreamHandshakeErrorCount();
-      completeAndClose(ctx);
-    } else if (!requestReceived || !lastContentReceivedFromClient) {
-      HttpResponseStatus status = new HttpResponseStatus(502, cause.toString());
-      // log always
-      DEBUG.downstreamError(ctx.channel(), "request error, requestReceived=" + requestReceived + ", status: " + status, cause);
-      completeWithError(ctx, status);
-    } else {
-      // this can be a connection reset while waiting or sending the response
-      DEBUG.downstreamError(ctx.channel(), "error sending response to ingress", cause);
-      if (upstreamChannelFuture.isDone()) {
-        upstreamChannelFuture.resultNow().close();
+      // io.netty.handler.ssl.ReferenceCountedOpenSslEngine$OpenSslHandshakeException is subtype of SSLHandshakeException
+      // maybe switch to catch all SSLException
+      if (decoderException instanceof SSLHandshakeException || decoderException instanceof NotSslRecordException) {
+        metrics.ingressConnectionErrorSslHandshake.inc();
+      } else if (connectionReset) {
+          metrics.ingressConnectionResetDuringHandshake.inc();
+      } else {
+        metrics.ingressOtherHandshakeError.inc();
+        DEBUG.downstreamError(ctx.channel(), "handshake error", cause);
       }
       completeAndClose(ctx);
+    } else if (!requestReceived || !lastContentReceivedFromClient) {
+      if (connectionReset) {
+        if (!requestReceived) {
+          metrics.ingressConnectionErrorRequestReceiveConnectionReset.inc();
+        } else {
+          metrics.ingressConnectionErrorContentReceiveConnectionReset.inc();
+        }
+        completeAndClose(ctx);
+      } else {
+        if (!requestReceived) {
+          metrics.ingressConnectionErrorRequestReceiveOther.inc();
+        } else {
+          metrics.ingressConnectionErrorContentReceiveOther.inc();
+        }
+        HttpResponseStatus status = new HttpResponseStatus(502, cause.toString());
+        // log always
+        DEBUG.downstreamError(ctx.channel(), "request error, requestReceived=" + requestReceived + ", status: " + status, cause);
+        completeWithError(ctx, status);
+      }
+    } else {
+      if (connectionReset) {
+        metrics.ingressConnectionErrorRespondingConnectionReset.inc();
+        completeAndClose(ctx);
+      } else {
+        metrics.ingressConnectionErrorRespondingOther.inc();
+        // this can be a connection reset while waiting or sending the response
+        DEBUG.downstreamError(ctx.channel(), "error sending response to ingress", cause);
+        if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
+          upstreamChannelFuture.resultNow().close();
+        }
+        completeAndClose(ctx);
+      }
     }
   }
 

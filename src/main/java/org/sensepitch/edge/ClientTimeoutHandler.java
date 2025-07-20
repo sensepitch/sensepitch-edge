@@ -100,10 +100,10 @@ public class ClientTimeoutHandler extends ReadTimeoutHandler {
   protected void readTimedOut(ChannelHandlerContext ctx) {
     if (!timeoutReachedClosing) {
       timeoutReachedClosing = true;
-      if (waitForSecondRequest) {
-        proxyMetrics.incrementIngressKeepAliveTimeout();
+      if (!waitForSecondRequest) {
+        proxyMetrics.ingressReceiveTimeoutFirstRequest.inc();
       } else {
-        proxyMetrics.incrementIngressRequestReceiveTimeout();
+        proxyMetrics.ingressReceiveTimeoutKeepAlive.inc();
       }
       FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
       response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);

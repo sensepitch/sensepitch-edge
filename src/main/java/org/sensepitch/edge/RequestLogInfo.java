@@ -36,8 +36,14 @@ public interface RequestLogInfo {
   /** Trailing headers from LastHttpContent */
   HttpHeaders trailingHeaders();
 
+  // TODO: calculate the deltas already
+
   long responseReceivedTimeNanos();
 
+  /**
+   * Time stamp when we received the response completely, or, when the output buffer is filled
+   * for completely for the first time.
+   */
   long responseStartedTimeNanos();
 
   long requestCompleteTimeNanos();
