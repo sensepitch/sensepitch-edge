@@ -38,6 +38,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private HttpHeaders trailingHeaders;
   private int requestCount;
   private Ticker ticker;
+  private long connectionEstablishedNanos;
   private long requestStartTimeNanos;
   private long requestCompleteTimeNanos;
   private long responseStartedTimeNanos;
@@ -55,8 +56,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   @Override
   public void channelActive(ChannelHandlerContext ctx) throws Exception {
-    requestStartTime = System.currentTimeMillis();
-    requestStartTimeNanos = ticker.nanoTime();
+    connectionEstablishedNanos = ticker.nanoTime();
     super.channelActive(ctx);
   }
 
@@ -64,7 +64,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception{
     if (msg instanceof HttpRequest) {
       request = (HttpRequest) msg;
-      contentBytes = 0;
+      requestStartTime = System.currentTimeMillis();
+      requestStartTimeNanos = ticker.nanoTime();
     }
     if (msg instanceof LastHttpContent) {
       requestCompleteTimeNanos = ticker.nanoTime();
@@ -87,6 +88,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
     if (msg instanceof HttpResponse) {
       response = (HttpResponse) msg;
+      contentBytes = 0;
     }
     if (request == null) {
       request = constructMockHttpRequest(ctx);
@@ -107,6 +109,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       if (requestCompleteTimeNanos == 0) {
         requestCompleteTimeNanos = now;
       }
+      if (requestStartTimeNanos == 0) {
+        requestStartTimeNanos = now;
+      }
       trailingHeaders = lastHttpContent.trailingHeaders();
       channel = ctx.channel();
       promise.addListener(future -> {
@@ -120,7 +125,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
           }
           // reset times for keep alive requests
           requestStartTime = System.currentTimeMillis();
-          requestStartTimeNanos = now;
+          connectionEstablishedNanos = now;
           requestCompleteTimeNanos = responseStartedTimeNanos = 0;
         }
       );
@@ -147,9 +152,20 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override public HttpHeaders trailingHeaders() { return trailingHeaders; }
   @Override public long contentBytes() { return contentBytes; }
   @Override public long requestStartTimeMillis() { return requestStartTime; }
-  @Override public long responseReceivedTimeNanos() { return responseReceivedTimeNanos; }
-  @Override public long responseStartedTimeNanos() { return responseStartedTimeNanos; }
-  @Override public long requestCompleteTimeNanos() { return requestCompleteTimeNanos; }
-  @Override public long requestStartTimeNanos() { return requestStartTimeNanos; }
+
+  @Override
+  public long requestReceiveTimeDeltaNanos() {
+    return requestCompleteTimeNanos - connectionEstablishedNanos;
+  }
+
+  @Override
+  public long responseTimeDeltaNanos() {
+    return requestCompleteTimeNanos - responseStartedTimeNanos;
+  }
+
+  @Override
+  public long totalTimeDeltaNanos() {
+    return responseReceivedTimeNanos - requestStartTimeNanos;
+  }
 
 }

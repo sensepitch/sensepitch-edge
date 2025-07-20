@@ -36,17 +36,28 @@ public interface RequestLogInfo {
   /** Trailing headers from LastHttpContent */
   HttpHeaders trailingHeaders();
 
-  // TODO: calculate the deltas already
-
-  long responseReceivedTimeNanos();
+  /**
+   * Time from connection establishment until request was received completely.
+   * For a second request in a keep alive connection this includes waiting time.
+   * If the request was never received completely or was erroneous, the end time
+   * is when the error response was generated.
+   */
+  long requestReceiveTimeDeltaNanos();
 
   /**
-   * Time stamp when we received the response completely, or, when the output buffer is filled
-   * for completely for the first time.
+   * Time between the ingress request was received completely and a significant response was
+   * received. Either the response was received completely, or it filled the output buffer, causing
+   * throttling until the client received it. This means the response time does not vary in case
+   * clients have a slow network. If the response from upstream was never received completely
+   * the end time is when the error response was generated.
    */
-  long responseStartedTimeNanos();
+  long responseTimeDeltaNanos();
 
-  long requestCompleteTimeNanos();
+  /**
+   * Total time from starting the request until the response was received completely by the
+   * client. This contains slow network on the client side, however, excludes connection
+   * handshake and transmission of the request headers.
+   */
+  long totalTimeDeltaNanos();
 
-  long requestStartTimeNanos();
 }

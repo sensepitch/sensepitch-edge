@@ -42,9 +42,9 @@ public class StandardOutRequestLogger implements RequestLogger {
     String host = sanitize(request.headers().get(HttpHeaderNames.HOST));
     int status = response.status().code();
     String timing =
-        formatDeltaTime(info.requestCompleteTimeNanos(), info.requestStartTimeNanos()) + "<" +
-        formatDeltaTime(info.responseStartedTimeNanos(), info.requestCompleteTimeNanos()) + "=" +
-        formatDeltaTime(info.responseReceivedTimeNanos(), info.requestStartTimeNanos());
+        formatDeltaTime(info.requestReceiveTimeDeltaNanos()) + "<" +
+        formatDeltaTime(info.responseTimeDeltaNanos()) + "=" +
+        formatDeltaTime(info.totalTimeDeltaNanos());
     String ipTraits = sanitize(IpTraitsHandler.extract(request));
     String error = null;
     if (info.error() != null) {
@@ -62,14 +62,7 @@ public class StandardOutRequestLogger implements RequestLogger {
       + bypass + "\" \"" + ua + "\" " + referer + " \"" + error + "\"");
   }
 
-  String formatDeltaTime(long end, long start) {
-    if (end == 0 || start == 0) {
-      return "-";
-    }
-    long nanoDelta = end - start;
-     if (nanoDelta == 0) {
-       return "0";
-     }
+  String formatDeltaTime(long nanoDelta) {
     long millisDelta = nanoDelta / 1000;
     // pattern "0.000" → at least one digit before the dot, exactly three after
     DecimalFormat df = new DecimalFormat("0.000");
