@@ -127,6 +127,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
           requestStartTime = System.currentTimeMillis();
           connectionEstablishedNanos = now;
           requestCompleteTimeNanos = responseStartedTimeNanos = 0;
+          request = null;
         }
       );
     }
@@ -154,17 +155,17 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override public long requestStartTimeMillis() { return requestStartTime; }
 
   @Override
-  public long requestReceiveTimeDeltaNanos() {
+  public long receiveDurationNanos() {
     return requestCompleteTimeNanos - connectionEstablishedNanos;
   }
 
   @Override
-  public long responseTimeDeltaNanos() {
+  public long responseTimeNanos() {
     return requestCompleteTimeNanos - responseStartedTimeNanos;
   }
 
   @Override
-  public long totalTimeDeltaNanos() {
+  public long totalDurationNanos() {
     return responseReceivedTimeNanos - requestStartTimeNanos;
   }
 

@@ -42,7 +42,7 @@ public interface RequestLogInfo {
    * If the request was never received completely or was erroneous, the end time
    * is when the error response was generated.
    */
-  long requestReceiveTimeDeltaNanos();
+  long receiveDurationNanos();
 
   /**
    * Time between the ingress request was received completely and a significant response was
@@ -51,13 +51,13 @@ public interface RequestLogInfo {
    * clients have a slow network. If the response from upstream was never received completely
    * the end time is when the error response was generated.
    */
-  long responseTimeDeltaNanos();
+  long responseTimeNanos();
 
   /**
    * Total time from starting the request until the response was received completely by the
    * client. This contains slow network on the client side, however, excludes connection
    * handshake and transmission of the request headers.
    */
-  long totalTimeDeltaNanos();
+  long totalDurationNanos();
 
 }

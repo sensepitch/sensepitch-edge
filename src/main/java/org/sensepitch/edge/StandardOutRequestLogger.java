@@ -3,7 +3,6 @@ package org.sensepitch.edge;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
-import io.netty.handler.codec.http.HttpResponseStatus;
 
 import java.net.InetSocketAddress;
 import java.text.DecimalFormat;
@@ -42,9 +41,9 @@ public class StandardOutRequestLogger implements RequestLogger {
     String host = sanitize(request.headers().get(HttpHeaderNames.HOST));
     int status = response.status().code();
     String timing =
-        formatDeltaTime(info.requestReceiveTimeDeltaNanos()) + "<" +
-        formatDeltaTime(info.responseTimeDeltaNanos()) + "=" +
-        formatDeltaTime(info.totalTimeDeltaNanos());
+        formatDeltaTime(info.receiveDurationNanos()) + "<" +
+        formatDeltaTime(info.responseTimeNanos()) + "=" +
+        formatDeltaTime(info.totalDurationNanos());
     String ipTraits = sanitize(IpTraitsHandler.extract(request));
     String error = null;
     if (info.error() != null) {
