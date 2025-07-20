@@ -167,6 +167,8 @@ public class Proxy implements ProxyContext {
               ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
             }
             ch.pipeline().addLast(new HttpServerCodec());
+            // logger sits between codec and rest so it sees header modifications
+            // from timeout and keep alive
             ch.pipeline().addLast(new RequestLoggingHandler(requestLogger));
             ch.pipeline().addLast(new ClientTimeoutHandler(connectionConfig, metrics));
             ch.pipeline().addLast(new HttpServerKeepAliveHandler());
