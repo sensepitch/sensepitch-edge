@@ -67,12 +67,12 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
         // disconnect from downstream, if upstream sends us more data we don't expect it
         downstream = null;
         // even if closed, we should release it
-        pool.release(ctx.channel());
+        pool.release(ctx.channel(), ctx.voidPromise());
         DEBUG.trace(downstream, ctx.channel(), "release upstream to pool");
 
       }
     } else if (msg instanceof HttpContent) {
-      downstream.write(msg);
+      downstream.write(msg, downstream.voidPromise());
     }
   }
 

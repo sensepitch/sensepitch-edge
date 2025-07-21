@@ -2,7 +2,6 @@ package org.sensepitch.edge;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
-import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -13,8 +12,6 @@ import io.netty.handler.ssl.SniHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
-import io.netty.handler.timeout.ReadTimeoutHandler;
-import io.netty.handler.timeout.WriteTimeoutHandler;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
 import org.yaml.snakeyaml.DumperOptions;
@@ -33,6 +30,7 @@ public class Proxy implements ProxyContext {
 
   ProxyLogger LOG = ProxyLogger.get(Proxy.class);
 
+  private final TrackIngressConnectionsHandler trackIngressConnectionsHandler;
   private final ProxyMetrics metrics = new ProxyMetrics();
   private final ProxyConfig config;
   private final ConnectionConfig connectionConfig;
@@ -58,6 +56,7 @@ public class Proxy implements ProxyContext {
     config = proxyConfig;
     metricsBridge = initializeMetrics();
     metricsBridge.expose(metrics);
+    trackIngressConnectionsHandler = metricsBridge.expose(new  TrackIngressConnectionsHandler());
     admissionHandler = new AdmissionHandler(proxyConfig.admission());
     metricsBridge.expose(admissionHandler);
     sslContext = initializeSslContext();
@@ -65,7 +64,7 @@ public class Proxy implements ProxyContext {
     redirectHandler = proxyConfig.redirect() != null ? new RedirectHandler(proxyConfig.redirect()) : null;
     // downstreamHandler = new DownstreamHandler(proxyConfig);
     if (proxyConfig.upstream().size() == 1) {
-      Upstream upstream = new Upstream(this, proxyConfig.upstream().getFirst());
+      Upstream upstream = new DefaultUpstream(this, proxyConfig.upstream().getFirst());
       upstreamRouter = request -> upstream;
     } else {
       upstreamRouter = new HostBasedUpstreamRouter(this, proxyConfig.upstream());
@@ -161,13 +160,17 @@ public class Proxy implements ProxyContext {
         .childHandler(new ChannelInitializer<SocketChannel>() {
           @Override
           protected void initChannel(SocketChannel ch) {
+            ch.pipeline().addLast(trackIngressConnectionsHandler);
             if (sniMapping != null) {
               ch.pipeline().addLast(new SniHandler(sniMapping));
             } else if (sslContext != null) {
               ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
             }
             ch.pipeline().addLast(new HttpServerCodec());
-            ch.pipeline().addLast(new ClientTimeoutHandler(connectionConfig));
+            // logger sits between codec and rest so it sees header modifications
+            // from timeout and keep alive
+            ch.pipeline().addLast(new RequestLoggingHandler(requestLogger));
+            ch.pipeline().addLast(new ClientTimeoutHandler(connectionConfig, metrics));
             ch.pipeline().addLast(new HttpServerKeepAliveHandler());
             // ch.pipeline().addLast(new LoggingHandler(LogLevel.INFO, ByteBufFormat.SIMPLE));
             ch.pipeline().addLast(new IpTraitsHandler(ipTraitsLookup));
@@ -188,7 +191,6 @@ public class Proxy implements ProxyContext {
                 super.channelRead(ctx, msg);
               }
             });
-            ch.pipeline().addLast(new RequestLoggingHandler(requestLogger));
             if (redirectHandler != null) {
               ch.pipeline().addLast(redirectHandler);
             }

@@ -165,6 +165,20 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [ ] upstream health
 - [ ] warmup
 
+## Resources
+
+### Netty
+
+- [Netty, the IO framework that propels them all By Stephane LANDELLE](https://www.youtube.com/watch?v=NvnOg6g4114)
+
+### HTTP 1.1 Connection Management with Keep Alive
+
+Robust keep alive is a bit different from what the HTTP/1.1 standard defines.
+
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/408
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Keep-Alive
+- https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Connection_management_in_HTTP_1.x
+
 ## Put Sensepitch Edge in front of NGINX
 
 Assuming your existing inbound reverse proxy is NGINX, here is an example how to augment

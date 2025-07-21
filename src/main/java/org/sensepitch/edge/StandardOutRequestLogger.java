@@ -40,19 +40,32 @@ public class StandardOutRequestLogger implements RequestLogger {
     String bypass = sanitize(request.headers().get(BypassCheck.HEADER));
     String host = sanitize(request.headers().get(HttpHeaderNames.HOST));
     int status = response.status().code();
-    long delta = System.currentTimeMillis() - info.requestStartTime();
-    // pattern "0.000" → at least one digit before the dot, exactly three after
-    DecimalFormat df = new DecimalFormat("0.000");
-    String deltaTime = df.format(delta / 1000.0);
+    String timing =
+        formatDeltaTime(info.receiveDurationNanos()) + "<" +
+        formatDeltaTime(info.responseTimeNanos()) + "=" +
+        formatDeltaTime(info.totalDurationNanos());
     String ipTraits = sanitize(IpTraitsHandler.extract(request));
-    String error = "-";
+    String error = null;
     if (info.error() != null) {
       error = sanitize(info.error().getMessage());
     }
+    if (error == null && status >= 502) {
+      error = sanitize(response.status().reasonPhrase());
+    }
+    if (error == null) {
+      error = "-";
+    }
     System.out.println("RQ0 " + info.requestId() + " " +
       host + " " + remoteHost + " \"" + ipTraits + "\" " + admissionToken + " ["+ time + "] "
-      + requestLine + " " + status + " " + info.contentBytes() + " " + deltaTime + " \""
+      + requestLine + " " + status + " " + info.contentBytes() + " " + timing + " \""
       + bypass + "\" \"" + ua + "\" " + referer + " \"" + error + "\"");
+  }
+
+  String formatDeltaTime(long nanoDelta) {
+    long millisDelta = nanoDelta / 1000;
+    // pattern "0.000" → at least one digit before the dot, exactly three after
+    DecimalFormat df = new DecimalFormat("0.000");
+    return df.format(millisDelta / 1000.0);
   }
 
   String sanitize(String s) {
