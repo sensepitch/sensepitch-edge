@@ -137,7 +137,27 @@
           </systemPropertyVariables>
         </configuration>
     </plugin>
-    <plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.8.1</version>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombok.version}</version>
+            </path>
+          </annotationProcessorPaths>
+          <compilerArgs>
+            <!-- stop Lombok from searching parent dirs -->
+            <arg>-Alombok.config.stopBubbling=true</arg>
+            <!-- enable toBuilder by default -->
+            <arg>-Alombok.builder.toBuilder=true</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.6.0</version>
