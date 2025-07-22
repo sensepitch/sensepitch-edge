@@ -21,11 +21,27 @@ public interface RequestLogInfo {
   String requestId();
 
   /**
-   * The http request received with augmented headers as it was sent to upstream.
-   * If the request was not received but an error response with status code was
+   * The http request received from the client with augmented headers as it was sent to upstream.
+   * If the request was not received but an error response was
    * generated, this contains a mock request with request method {@link #NIL_METHOD}.
+   *
+   * @return augmented client request or mock, never null
    */
   HttpRequest request();
+
+  /**
+   * Convenience method to retrieve the host from the host request header field.
+   * The host header will be sanitized early on. It is never null and only contains
+   * known values. If the request host is empty, the return value
+   * will be {@link SanitizeHostHandler#HOST_MISSING}. If it is not matching with any
+   * host that is serviced {@link SanitizeHostHandler#HOST_MISMATCH} is returned.
+   * If the client request was not received {@link SanitizeHostHandler#HOST_NIL} is returned.
+   *
+   * @see SanitizeHostHandler
+   * @return the requested host or a replacement token, never {@code null}.
+   */
+  String requestHeaderHost();
+
   HttpResponse response();
   long contentBytes();
   long requestStartTimeMillis();
@@ -37,7 +53,7 @@ public interface RequestLogInfo {
   HttpHeaders trailingHeaders();
 
   /**
-   * Time from connection establishment until request was received completely.
+   * Time from the connection establishment until request was received completely.
    * For a second request in a keep alive connection this includes waiting time.
    * If the request was never received completely or was erroneous, the end time
    * is when the error response was generated.

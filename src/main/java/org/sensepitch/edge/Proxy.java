@@ -22,6 +22,8 @@ import org.yaml.snakeyaml.representer.Representer;
 import javax.net.ssl.SSLException;
 import java.io.File;
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Minimal HTTP/1.1 proxy without aggregation, with keep-alive and basic logging
@@ -44,6 +46,7 @@ public class Proxy implements ProxyContext {
   private final IpTraitsLookup ipTraitsLookup;
   private final EventLoopGroup eventLoopGroup;
   private final RequestLogger requestLogger;
+  private final SanitizeHostHandler sanitizeHostHandler;
 
   public Proxy(ProxyConfig proxyConfig) {
     dumpConfig(proxyConfig);
@@ -61,14 +64,20 @@ public class Proxy implements ProxyContext {
     metricsBridge.expose(admissionHandler);
     sslContext = initializeSslContext();
     sniMapping = initializeSniMapping();
+    Set<String> servicedHosts = new HashSet<>();
     redirectHandler = proxyConfig.redirect() != null ? new RedirectHandler(proxyConfig.redirect()) : null;
+    if (proxyConfig.redirect() != null) {
+      servicedHosts.addAll(proxyConfig.redirect().passDomains());
+    }
     // downstreamHandler = new DownstreamHandler(proxyConfig);
     if (proxyConfig.upstream().size() == 1) {
       Upstream upstream = new DefaultUpstream(this, proxyConfig.upstream().getFirst());
       upstreamRouter = request -> upstream;
     } else {
       upstreamRouter = new HostBasedUpstreamRouter(this, proxyConfig.upstream());
+      servicedHosts.addAll(((HostBasedUpstreamRouter) upstreamRouter).getServicedHosts());
     }
+    sanitizeHostHandler = new SanitizeHostHandler(servicedHosts);
     requestLogger = new DistributingRequestLogger(
       new StandardOutRequestLogger(),
       metricsBridge.expose(new ExposeRequestCountPerStatusCodeHandler()));
@@ -167,8 +176,9 @@ public class Proxy implements ProxyContext {
               ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
             }
             ch.pipeline().addLast(new HttpServerCodec());
+            ch.pipeline().addLast(sanitizeHostHandler);
             // logger sits between codec and rest so it sees header modifications
-            // from timeout and keep alive
+            // from timeout and keep alive below
             ch.pipeline().addLast(new RequestLoggingHandler(requestLogger));
             ch.pipeline().addLast(new ClientTimeoutHandler(connectionConfig, metrics));
             ch.pipeline().addLast(new HttpServerKeepAliveHandler());

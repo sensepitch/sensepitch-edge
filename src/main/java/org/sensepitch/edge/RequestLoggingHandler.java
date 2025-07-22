@@ -141,7 +141,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
    */
   private HttpRequest constructMockHttpRequest(ChannelHandlerContext ctx) {
     HttpRequest request = new DefaultFullHttpRequest(NIL_VERSION, NIL_METHOD, "/");
-    request.headers().set(HttpHeaderNames.HOST, "incomplete");
+    request.headers().set(HttpHeaderNames.HOST, SanitizeHostHandler.HOST_NIL);
     return request;
   }
 
@@ -161,12 +161,17 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   @Override
   public long responseTimeNanos() {
-    return requestCompleteTimeNanos - responseStartedTimeNanos;
+    return responseStartedTimeNanos - requestCompleteTimeNanos;
   }
 
   @Override
   public long totalDurationNanos() {
     return responseReceivedTimeNanos - requestStartTimeNanos;
+  }
+
+  @Override
+  public String requestHeaderHost() {
+    return request.headers().get(HttpHeaderNames.HOST);
   }
 
 }

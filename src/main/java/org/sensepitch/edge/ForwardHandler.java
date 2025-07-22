@@ -39,10 +39,6 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     if (msg instanceof HttpResponse) {
       HttpResponse response = (HttpResponse) msg;
       String connection = response.headers().get(HttpHeaderNames.CONNECTION);
-      DownstreamProgress.progress(downstream, "got response header status=" + response.status().code());
-      if (DEBUG.isTraceEnabled()) {
-        DEBUG.trace(downstream, ctx.channel(), "status=" + response.status() + ", connection=" + connection);
-      }
       closeConnection = connection != null && connection.equalsIgnoreCase("close");
       // if message contains response and content, write below
       if (!(msg instanceof HttpContent)) {
@@ -50,16 +46,11 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       }
     }
     if (msg instanceof LastHttpContent) {
-      Channel downstreamCopy = downstream;
-      DownstreamProgress.progress(downstream, "received last content from upstream, flushing response");
-      downstreamCopy.writeAndFlush(msg).addListener(future -> {
-        if (future.isSuccess()) {
-          DownstreamProgress.complete(downstreamCopy);
-        } else {
-          DownstreamProgress.complete(downstreamCopy);
-          // DownstreamProgress.progress(downstreamCopy, "flush error " + future.cause());
-        }
-      });
+      // Channel downstreamCopy = downstream;
+      // DownstreamProgress.progress(downstream, "received last content from upstream, flushing response");
+      // The write of an empty last content will fail regularly, since the client might have closed
+      // the connection already. Maybe introduce error handling for non empty last contents and requests only.
+      downstream.writeAndFlush(msg, downstream.voidPromise());
       if (closeConnection) {
         ctx.channel().close();
       }
@@ -68,8 +59,6 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
         downstream = null;
         // even if closed, we should release it
         pool.release(ctx.channel(), ctx.voidPromise());
-        DEBUG.trace(downstream, ctx.channel(), "release upstream to pool");
-
       }
     } else if (msg instanceof HttpContent) {
       downstream.write(msg, downstream.voidPromise());

@@ -224,16 +224,18 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /**
    * If the channel becomes inactive, make sure upstream reads are enabled, so
    * upstream read is completed and the connection is put back into the pool.
-   * Downstream writes will produce errors and the logger will log it once the
-   * listener to the last content write is executed.
+   *
    * That should work okay for small responses. For longer responses it might
    * be better to close the upstream channel to avoid transferring data needlessly.
+   *
+   * TODO: track and log if the close was unexpected
    */
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null && upstreamChannelFuture.isDone()) {
       upstreamChannelFuture.resultNow().config().setAutoRead(true);
     }
+    DownstreamProgress.inactive(ctx.channel());
   }
 
   /**
@@ -253,9 +255,14 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     // FIXME: sanitize headers
     if (msg instanceof LastHttpContent) {
       upstreamChannelFuture = null;
+      promise = promise.unvoid().addListener((ChannelFutureListener) future -> {
+        DownstreamProgress.complete(ctx.channel());
+      });
     }
     super.write(ctx, msg, promise);
   }
+
+
 
   @Override
   public void userEventTriggered(ChannelHandlerContext ctx, Object event) throws Exception {
@@ -336,6 +343,17 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         completeAndClose(ctx);
       }
     }
+  }
+
+  @Override
+  public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+    super.handlerRemoved(ctx);
+  }
+
+  // TODO: discuss @Sharable
+  @Override
+  public boolean isSharable() {
+    return super.isSharable();
   }
 
   private static void completeAndClose(ChannelHandlerContext ctx) {
