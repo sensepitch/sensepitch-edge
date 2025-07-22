@@ -30,6 +30,11 @@
       <artifactId>javaparser-symbol-solver-core</artifactId>
       <version>3.27.0</version>
     </dependency>
+    <dependency>
+      <groupId>jakarta.validation</groupId>
+      <artifactId>jakarta.validation-api</artifactId>
+      <version>3.1.1</version>
+    </dependency>
 
     <!-- JUnit 5 for testing -->
     <dependency>

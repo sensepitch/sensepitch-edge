@@ -1,6 +1,8 @@
 package org.sensepitch.edge.experiments;
 
 import org.checkerframework.checker.index.qual.NonNegative;
+
+import jakarta.validation.constraints.Min;
 import lombok.Builder;
 
 /**
@@ -14,6 +16,7 @@ import lombok.Builder;
 @Builder
 public record NestedConfig(
     boolean booleanParam,
+    @Min(0)
     @NonNegative
     int intParam
 ) {
