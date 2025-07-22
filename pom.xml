@@ -124,11 +124,6 @@
           <artifactId>maven-surefire-plugin</artifactId>
           <version>3.5.3</version>
         </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-failsafe-plugin</artifactId>
-          <version>3.5.3</version>
-        </plugin>
       </plugins>
     </pluginManagement>
     <plugins>
@@ -142,44 +137,7 @@
           </systemPropertyVariables>
         </configuration>
     </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <executions>
-          <execution>
-            <goals>
-              <goal>integration-test</goal>
-              <goal>verify</goal>
-            </goals>
-          </execution>
-        </executions>
-        <configuration>
-          <systemPropertyVariables>
-            <java.util.logging.config.file>${project.basedir}/test-logging.properties</java.util.logging.config.file>
-          </systemPropertyVariables>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.1</version>
-        <configuration>
-          <annotationProcessorPaths>
-            <path>
-              <groupId>org.projectlombok</groupId>
-              <artifactId>lombok</artifactId>
-              <version>${lombok.version}</version>
-            </path>
-          </annotationProcessorPaths>
-          <compilerArgs>
-            <!-- stop Lombok from searching parent dirs -->
-            <arg>-Alombok.config.stopBubbling=true</arg>
-            <!-- enable toBuilder by default -->
-            <arg>-Alombok.builder.toBuilder=true</arg>
-          </compilerArgs>
-        </configuration>
-      </plugin>
-      <plugin>
+    <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.6.0</version>
