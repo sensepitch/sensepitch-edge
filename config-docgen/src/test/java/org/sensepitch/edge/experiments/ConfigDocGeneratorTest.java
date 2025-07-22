@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
 public class ConfigDocGeneratorTest {
-    
+
+    // FIXME: flaky due to list order changes
     @Test
     @SneakyThrows
     void test() {

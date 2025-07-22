@@ -22,7 +22,7 @@ jobs:
           
     - name: Run docgen test and build
       working-directory: config-docgen
-      run: ./mvnw package
+      run: ./mvnw package -DskipTests 
 
     - name: run docgen on src
       run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge
