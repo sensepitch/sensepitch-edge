@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
  */
 public class DownstreamProgress {
 
+  static ProxyLogger LOG = ProxyLogger.get(DownstreamProgress.class);
+
   static Map<String, String> MAP = new ConcurrentHashMap<>();
 
   static {
@@ -45,6 +47,15 @@ public class DownstreamProgress {
   public static void complete(Channel channel) {
     Objects.requireNonNull(channel);
     MAP.remove(localChannelId(channel));
+  }
+
+  public static void inactive(Channel channel) {
+    Objects.requireNonNull(channel);
+    String text = MAP.remove(localChannelId(channel));
+    if (text != null) {
+      LOG.error(channel, "Channel " + localChannelId(channel) + " is inactive, but still in progress: " + text);
+      new RuntimeException().printStackTrace();
+    }
   }
 
   private static void print() {

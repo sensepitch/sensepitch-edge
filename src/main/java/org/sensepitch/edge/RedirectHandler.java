@@ -13,10 +13,14 @@ import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 /**
  * Redirect all incoming requests that are not in a domain list to a default target.
+ * For accepted domains that start with www., a redirect will be made for
+ * request arriving without the www. prefix.
  *
  * @author Jens Wilke
  */
@@ -24,11 +28,16 @@ import java.util.Set;
 public class RedirectHandler extends ChannelInboundHandlerAdapter {
 
   private final Set<String> passDomains;
-  private String defaultTarget;
+  private final String defaultTarget;
+  private final Map<String, String> domainRedirects = new HashMap<>();
 
   public RedirectHandler(RedirectConfig cfg) {
     this.passDomains = Set.copyOf(cfg.passDomains());
     this.defaultTarget = cfg.defaultTarget();
+    passDomains.stream()
+      .filter(s -> s.startsWith("www."))
+      .forEach(domain -> domainRedirects.put(domain.substring(4), "https://" + domain));
+    passDomains.forEach(domain -> domainRedirects.remove(domain));
   }
 
   @Override
@@ -37,7 +46,11 @@ public class RedirectHandler extends ChannelInboundHandlerAdapter {
       String host =  ((HttpRequest) msg).headers().get(HttpHeaderNames.HOST);
       if (host == null || !passDomains.contains(host)) {
         FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FOUND);
-        response.headers().set(HttpHeaderNames.LOCATION, defaultTarget);
+        String target = domainRedirects.get(host);
+        if (target == null) {
+          target = defaultTarget;
+        }
+        response.headers().set(HttpHeaderNames.LOCATION, target);
         ctx.writeAndFlush(response);
         discardFollowingContent(ctx);
         return;

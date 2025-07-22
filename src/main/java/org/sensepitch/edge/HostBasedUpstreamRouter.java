@@ -6,6 +6,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Select the upstream by host header or SNI
@@ -29,6 +30,10 @@ public class HostBasedUpstreamRouter implements UpstreamRouter {
   public Upstream selectUpstream(HttpRequest request) {
     String host = request.headers().get(HttpHeaderNames.HOST);
     return host2upstream.get(host);
+  }
+
+  public Set<String> getServicedHosts() {
+    return host2upstream.keySet();
   }
 
 }

@@ -62,7 +62,10 @@ public class StandardOutRequestLogger implements RequestLogger {
   }
 
   String formatDeltaTime(long nanoDelta) {
-    long millisDelta = nanoDelta / 1000;
+    long millisDelta = nanoDelta / 1000 / 1000;
+    if (millisDelta == 0) {
+      return "0";
+    }
     // pattern "0.000" → at least one digit before the dot, exactly three after
     DecimalFormat df = new DecimalFormat("0.000");
     return df.format(millisDelta / 1000.0);

@@ -141,6 +141,7 @@ In the unsaturated scenario, which will be the normal mode of operation, the lat
 - [x] upstream backpressure
 - [ ] POC production testing
 - [ ] explain PoW admission
+- [ ] use delombok, so JavaDoc has proper documentation in the builder
 - [ ] block requests that are not GET and POST if not admitted or crawler bypassed
 - [ ] expose allocator statistics via prometheus
 - [ ] expose upstream connection pool statistics via prometheus
