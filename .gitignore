@@ -53,3 +53,4 @@ dependency-reduced-pom.xml
 _site
 .jekyll-cache
 .jekyll-metadata
+vendor
