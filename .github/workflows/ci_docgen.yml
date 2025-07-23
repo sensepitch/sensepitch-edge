@@ -44,18 +44,30 @@ jobs:
       run: ./mvnw package -DskipTests 
 
 
-    - name: create frontmatter
-      run: |
-        cat << EOF > jekyll_pages/config.markdown
-        ---
-        layout: page
-        title: Config
-        permalink: /config/
-        ---
-        EOF
+    - name: Create output directory
+      run: mkdir -p jekyll_pages/config
 
-    - name: run docgen on src
-      run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge | tee -a jekyll_pages/config.markdown
+    - name: Generate config documentation
+      run: |
+        # Find all *Config.java files and process them
+        find ./src/main/java/org/sensepitch/edge -name "*Config.java" | while read -r config_file; do
+          # Extract the class name from the file path
+          class_name=$(basename "$config_file" .java)
+          # Create markdown filename from class name (convert to lowercase with hyphens)
+          markdown_file="jekyll_pages/config/${class_name,,}.markdown"
+          
+          # Create frontmatter
+          echo "---" > "$markdown_file"
+          echo "layout: record" >> "$markdown_file"
+          echo "title: ${class_name}" >> "$markdown_file"
+          echo "permalink: /config/${class_name,,}/" >> "$markdown_file"
+          echo "---" >> "$markdown_file"
+          echo "" >> "$markdown_file"
+          
+          # Run docgen for this file and append to markdown
+          java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar "$config_file" >> "$markdown_file"
+          echo "Generated documentation for $class_name"
+        done
 
     - name: Setup Ruby
       uses: ruby/setup-ruby@v1
