@@ -13,9 +13,9 @@ import jakarta.validation.constraints.Size;
  * 
  * This configuration..
  * 
- * @param stringParam String parameter, very important
- * @param listParam List<NestedConfig> parameter
- * @param objectParam NestedConfig parameter
+ * @param stringParam very important
+ * @param listParam list of nested configs
+ * @param objectParam nested config
  *
  * @author Jens Wilke
  */

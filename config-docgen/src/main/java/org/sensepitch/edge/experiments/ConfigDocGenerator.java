@@ -10,6 +10,7 @@ import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.javadoc.JavadocBlockTag;
 
 import java.nio.file.*;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class ConfigDocGenerator {
@@ -26,44 +27,40 @@ public class ConfigDocGenerator {
             parser.getParserConfiguration().setLanguageLevel(LanguageLevel.JAVA_21);
             CompilationUnit cu = parser.parse(filePath).getResult().get();
             cu.findAll(RecordDeclaration.class).forEach(javaRecord -> {
-                
                 if (!javaRecord.getNameAsString().endsWith("Config")) {
                     return;
                 }
-
-                System.out.println("## " + javaRecord.getNameAsString());
-                System.out.println("- Description: " + javaRecord.getJavadoc().map(it -> it.getDescription().toText()).orElse(""));
-                System.out.println("- Parameters:");
+                System.out.println("# " + javaRecord.getNameAsString());
+                System.out.println();
+                // Description
+                Optional<String> description = javaRecord.getJavadoc().map(it -> it.getDescription().toText());
+                description.ifPresent(it -> {
+                    System.out.println(it);
+                    System.out.println();                
+                });
+                // Parameters section
+                System.out.println();                
+                System.out.println("## Parameters:");
+                System.out.println();
                 for (Parameter param : javaRecord.getParameters()) {
-                    NodeList<AnnotationExpr> annotationNodes = param.getAnnotations();
-                    String annotations = annotationNodes.stream().map(it -> {
-                        String name = it.getName().getIdentifier();
-                        if (it.isNormalAnnotationExpr()) {
-                            var pairs = it.asNormalAnnotationExpr().getPairs();
-                            String members = pairs.stream()
-                                .map(p -> p.getName().asString() + " = " + p.getValue())
-                                .collect(Collectors.joining(", "));
-                            return name + (members.isEmpty() ? "" : "(" + members + ")");
-                        } else if (it.isSingleMemberAnnotationExpr()) {
-                            var value = it.asSingleMemberAnnotationExpr().getMemberValue();
-                            return name + "(" + value + ")";
-                        } else {
-                            return name;
-                        }
-                    }).collect(Collectors.joining(", "));
                     String fieldName = param.getNameAsString();
                     Type fieldType = param.getType();
-                    String fieldDescription = javaRecord
-                            .getJavadoc()
-                            .map(javaDoc -> javaDoc.getBlockTags().stream()
-                                    .filter(block -> block.getType().equals(JavadocBlockTag.Type.PARAM))
-                                    .filter(block -> block.getName().get().equals(fieldName))
-                                    .findFirst()
-                                    .map(block -> block.getContent().toText()).orElse(""))
-                            .orElse("");
-                    System.out.println("    - " + fieldName + " (" + fieldType + ") : " + fieldDescription + " (" + annotations + ")");
+                    Optional<String> customDescription = javaRecord
+                    .getJavadoc()
+                    .map(javaDoc -> javaDoc.getBlockTags().stream()
+                            .filter(block -> block.getType().equals(JavadocBlockTag.Type.PARAM))
+                            .filter(block -> block.getName().get().equals(fieldName))
+                            .findFirst()
+                            .map(block -> block.getContent().toText()))
+                    .orElse(Optional.empty());
+                    System.out.println();
+                    System.out.println("### " + fieldName + " `" + fieldType + "`");
+                    System.out.println();
+                    customDescription.ifPresent(it -> {
+                        System.out.println(it);
+                        System.out.println();
+                    });
                 }
-                System.out.println();
             });
         } catch (Exception e) {
             e.printStackTrace();

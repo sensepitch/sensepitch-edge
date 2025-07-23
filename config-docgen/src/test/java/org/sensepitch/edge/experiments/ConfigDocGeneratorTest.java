@@ -14,49 +14,72 @@ public class ConfigDocGeneratorTest {
         java.io.PrintStream originalOut = System.out;
         System.setOut(new java.io.PrintStream(out));
         try {
-            ConfigDocGenerator.main(new String[] {"."});
+            ConfigDocGenerator.main(new String[] { "." });
         } finally {
             System.setOut(originalOut);
         }
         String output = out.toString();
 
-        String heading = "# Config\n\n";
-        String javadocContent = "Configuration\n\nThis configuration..\n\n";
-        String parameters = """
-## Parameters:
+        String expected = """
+                # Config
 
-### stringParam `String`
+                Configuration
 
-very important
+                This configuration..
 
-### listParam `List<NestedConfig>`
 
-List of nested configs
+                ## Parameters:
 
-### objectParam `NestedConfig`
 
-Nested config
+                ### stringParam `String`
 
-""";
-        String nestedConfigToMarkdown = """
-# NestedConfig
+                very important
 
-Nested config
 
-## Parameters:
+                ### listParam `List<NestedConfig>`
 
-### booleanParam `boolean`
+                list of nested configs
 
-### intParam `int`
 
-""";
-        assertThat(output).contains(
-"""
-%s
-%s
-%s
-%s
-""".formatted(heading, javadocContent, parameters, nestedConfigToMarkdown)
-        );
+                ### objectParam `NestedConfig`
+
+                nested config
+
+                # NestedConfig
+
+                Nested config
+
+
+                ## Parameters:
+
+
+                ### booleanParam `boolean`
+
+                boolean parameter
+
+
+                ### intParam `int`
+
+                int parameter
+
+                """;
+
+        try {
+            assertThat(output).contains(expected);
+        } catch (AssertionError e) {
+            String[] expectedLines = expected.split("\\r?\\n");
+            String[] actualLines = output.split("\\r?\\n");
+            int max = Math.max(expectedLines.length, actualLines.length);
+            System.err.println("======= LINE BY LINE DIFF =======");
+            for (int i = 0; i < max; i++) {
+                String exp = i < expectedLines.length ? expectedLines[i] : "<missing>";
+                String act = i < actualLines.length ? actualLines[i] : "<missing>";
+                String mark = exp.equals(act) ? " " : "!";
+                System.err.printf("%s [%03d] E: '%s'%n", mark, i+1, exp);
+                System.err.printf("%s [%03d] A: '%s'%n", mark, i+1, act);
+            }
+            System.err.println("======= END DIFF =======");
+            throw e;
+        }
     }
 }
