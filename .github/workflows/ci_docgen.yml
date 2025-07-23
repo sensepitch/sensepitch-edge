@@ -42,7 +42,7 @@ jobs:
           output_file="jekyll_pages/test-results/${test_name}.markdown"
           
           echo "---" > "$output_file"
-          echo "layout: page" >> "$output_file"
+          echo "layout: serenity-test-outcome" >> "$output_file"
           echo "title: $(jq -r '.name' "$json_file" | sed 's/()//')" >> "$output_file"
           echo "permalink: /test-results/${test_name}/" >> "$output_file"
           echo "---" >> "$output_file"

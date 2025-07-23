@@ -7,7 +7,11 @@ permalink: /config/
 
 ## Examples
 
-FIXME
+{% assign example_pages = site.pages | sort: 'title' | where: 'layout', 'serenity-test-outcome' %}
+
+{% for page in example_pages %}
+- [{{ page.title }}]({{ page.url | relative_url }})
+{% endfor %}
 
 ## All Configuration
 
