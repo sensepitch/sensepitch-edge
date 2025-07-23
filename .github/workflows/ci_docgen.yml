@@ -31,6 +31,14 @@ jobs:
         java-version: 21
         distribution: 'temurin'
           
+    - name: Cache Maven repository
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
     - name: Run docgen test and build
       working-directory: config-docgen
       run: ./mvnw package -DskipTests 
@@ -45,14 +53,6 @@ jobs:
         permalink: /config/
         ---
         EOF
-
-    - name: Cache Maven repository
-      uses: actions/cache@v4
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
 
     - name: run docgen on src
       run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge | tee -a jekyll_pages/config.markdown
