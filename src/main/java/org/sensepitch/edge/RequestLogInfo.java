@@ -33,9 +33,9 @@ public interface RequestLogInfo {
    * Convenience method to retrieve the host from the host request header field.
    * The host header will be sanitized early on. It is never null and only contains
    * known values. If the request host is empty, the return value
-   * will be {@link SanitizeHostHandler#HOST_MISSING}. If it is not matching with any
-   * host that is serviced {@link SanitizeHostHandler#HOST_MISMATCH} is returned.
-   * If the client request was not received {@link SanitizeHostHandler#HOST_NIL} is returned.
+   * will be {@link SanitizeHostHandler#MISSING_HOST}. If it is not matching with any
+   * host that is serviced {@link SanitizeHostHandler#UNKNOWN_HOST} is returned.
+   * If the client request was not received {@link SanitizeHostHandler#NIL_HOST} is returned.
    *
    * @see SanitizeHostHandler
    * @return the requested host or a replacement token, never {@code null}.

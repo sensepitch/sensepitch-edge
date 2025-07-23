@@ -78,7 +78,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
    */
   @Override
   public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-    if (!ctx.channel().isWritable() && responseReceivedTimeNanos == 0) {
+    if (!ctx.channel().isWritable() && responseStartedTimeNanos == 0) {
       responseStartedTimeNanos = ticker.nanoTime();
     }
     super.channelWritabilityChanged(ctx);
@@ -141,7 +141,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
    */
   private HttpRequest constructMockHttpRequest(ChannelHandlerContext ctx) {
     HttpRequest request = new DefaultFullHttpRequest(NIL_VERSION, NIL_METHOD, "/");
-    request.headers().set(HttpHeaderNames.HOST, SanitizeHostHandler.HOST_NIL);
+    request.headers().set(HttpHeaderNames.HOST, SanitizeHostHandler.NIL_HOST);
     return request;
   }
 

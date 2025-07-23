@@ -7,8 +7,8 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
 
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Augments the host header and sets only well-known values.
@@ -29,21 +29,25 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
    * Alternative host that is set when the host from the client does not match any
    * of the serviced hosts.
    */
-  public static final String HOST_MISMATCH = "mismatch";
+  public static final String UNKNOWN_HOST = "unknown_host";
   /**
    * Alternative host that is set in case the host header was absent.
    */
-  public static final String HOST_MISSING = "missing";
+  public static final String MISSING_HOST = "missing_host";
   /**
    * Alternative host that is set if we never received a header. This value is
    * used within the {@link RequestLoggingHandler} but defined here for completeness.
    */
-  public static final String HOST_NIL = "nil";
+  public static final String NIL_HOST = "nil_host";
 
-  private final Set<String> servicedHosts = new HashSet<>();
+  public static final Set<String> SPECIAL_HOSTS = Set.of(UNKNOWN_HOST, MISSING_HOST, NIL_HOST);
+
+  private final Set<String> servicedHosts;
 
   public SanitizeHostHandler(Collection<String> servicedHosts) {
-    this.servicedHosts.addAll(servicedHosts);
+    this.servicedHosts =
+      servicedHosts.stream().filter(s -> !SPECIAL_HOSTS.contains(s))
+      .collect(Collectors.toSet());
   }
 
   @Override
@@ -51,9 +55,9 @@ public class SanitizeHostHandler extends ChannelInboundHandlerAdapter {
     if (msg instanceof HttpRequest request) {
       String host = request.headers().get(HttpHeaderNames.HOST);
       if (host == null) {
-        request.headers().set(HttpHeaderNames.HOST, HOST_MISSING);
+        request.headers().set(HttpHeaderNames.HOST, MISSING_HOST);
       } else if (!servicedHosts.contains(host)) {
-        request.headers().set(HttpHeaderNames.HOST, HOST_MISMATCH);
+        request.headers().set(HttpHeaderNames.HOST, UNKNOWN_HOST);
       }
     }
     super.channelRead(ctx, msg);
