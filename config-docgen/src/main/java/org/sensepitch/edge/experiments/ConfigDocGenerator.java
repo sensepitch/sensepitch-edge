@@ -15,10 +15,12 @@ import java.util.stream.Collectors;
 
 public class ConfigDocGenerator {
     public static void main(String[] args) throws Exception {
-        Path srcDir = Paths.get(args[0]);
-        Files.walk(srcDir)
-                .filter(p -> p.toString().endsWith(".java"))
-                .forEach(ConfigDocGenerator::processFile);
+        Path filePath = Paths.get(args[0]);
+        // ensure file exists
+        if (!Files.exists(filePath)) {
+            throw new IllegalArgumentException("No such file: " + filePath + " files here are: " + Files.list(filePath.getParent()).collect(Collectors.toList()));
+        }
+        processFile(filePath);
     }
 
     static void processFile(Path filePath) {
@@ -26,10 +28,7 @@ public class ConfigDocGenerator {
             JavaParser parser = new JavaParser();
             parser.getParserConfiguration().setLanguageLevel(LanguageLevel.JAVA_21);
             CompilationUnit cu = parser.parse(filePath).getResult().get();
-            cu.findAll(RecordDeclaration.class).forEach(javaRecord -> {
-                if (!javaRecord.getNameAsString().endsWith("Config")) {
-                    return;
-                }
+            cu.findFirst(RecordDeclaration.class).ifPresent(javaRecord -> {
                 System.out.println("# " + javaRecord.getNameAsString());
                 System.out.println();
                 // Description
