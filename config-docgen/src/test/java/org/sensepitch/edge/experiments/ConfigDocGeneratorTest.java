@@ -20,8 +20,8 @@ public class ConfigDocGeneratorTest {
         }
         String output = out.toString();
 
-        String heading = "# Config";
-        String javadocContent = "Configuration\n\nThis configuration..";
+        String heading = "# Config\n\n";
+        String javadocContent = "Configuration\n\nThis configuration..\n\n";
         String parameters = """
 ## Parameters:
 
