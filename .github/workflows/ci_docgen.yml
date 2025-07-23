@@ -73,15 +73,17 @@ jobs:
         ruby-version: '3.1'
 
     - name: Install dependencies
+      working-directory: jekyll_pages
       run: bundle install
 
     - name: Build Jekyll site
+      working-directory: jekyll_pages
       run: bundle exec jekyll build
 
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: ./_site
+        path: jekyll_pages/_site
 
     - name: Deploy to GitHub Pages
       id: deployment
