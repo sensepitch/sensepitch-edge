@@ -24,5 +24,16 @@ jobs:
       working-directory: config-docgen
       run: ./mvnw package -DskipTests 
 
+
+    - name: create frontmatter
+      run: |
+        cat << EOF > config.markdown
+        ---
+        layout: page
+        title: Config
+        permalink: /config/
+        ---
+        EOF
+
     - name: run docgen on src
-      run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge
+      run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge | tee -a config.markdown
