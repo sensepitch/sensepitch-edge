@@ -38,7 +38,7 @@ jobs:
 
     - name: create frontmatter
       run: |
-        cat << EOF > config.markdown
+        cat << EOF > jekyll_pages/config.markdown
         ---
         layout: page
         title: Config
@@ -55,7 +55,7 @@ jobs:
           ${{ runner.os }}-maven-
 
     - name: run docgen on src
-      run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge | tee -a config.markdown
+      run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge | tee -a jekyll_pages/config.markdown
 
     
 
