@@ -57,7 +57,10 @@ jobs:
     - name: run docgen on src
       run: java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar ./src/main/java/org/sensepitch/edge | tee -a jekyll_pages/config.markdown
 
-    
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.1'
 
     - name: Cache Ruby gems
       uses: actions/cache@v4
@@ -66,11 +69,6 @@ jobs:
         key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
         restore-keys: |
           ${{ runner.os }}-gems-
-
-    - name: Setup Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: '3.1'
 
     - name: Install dependencies
       working-directory: jekyll_pages
