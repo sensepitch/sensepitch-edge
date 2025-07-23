@@ -40,7 +40,7 @@ public class Proxy implements ProxyContext {
   private final AdmissionHandler admissionHandler;
   private final SslContext sslContext;
   private final Mapping<String, SslContext> sniMapping;
-  private final RedirectHandler redirectHandler;
+  private final SkippingChannelInboundHandlerAdapter redirectHandler;
   // private final DownstreamHandler downstreamHandler;
   private final UpstreamRouter upstreamRouter;
   private final IpTraitsLookup ipTraitsLookup;
@@ -65,7 +65,7 @@ public class Proxy implements ProxyContext {
     sslContext = initializeSslContext();
     sniMapping = initializeSniMapping();
     Set<String> servicedHosts = new HashSet<>();
-    redirectHandler = proxyConfig.redirect() != null ? new RedirectHandler(proxyConfig.redirect()) : null;
+    redirectHandler = proxyConfig.redirect() != null ? new UnservicedHandler(proxyConfig.redirect()) : null;
     if (proxyConfig.redirect() != null) {
       servicedHosts.addAll(proxyConfig.redirect().passDomains());
     }
