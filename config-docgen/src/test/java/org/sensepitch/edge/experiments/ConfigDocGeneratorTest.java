@@ -19,25 +19,44 @@ public class ConfigDocGeneratorTest {
             System.setOut(originalOut);
         }
         String output = out.toString();
-        
+
+        String heading = "# Config";
+        String javadocContent = "Configuration\n\nThis configuration..";
+        String parameters = """
+## Parameters:
+
+### stringParam `String`
+
+very important
+
+### listParam `List<NestedConfig>`
+
+List of nested configs
+
+### objectParam `NestedConfig`
+
+Nested config
+
+""";
+        String nestedConfigToMarkdown = """
+# NestedConfig
+
+Nested config
+
+## Parameters:
+
+### booleanParam `boolean`
+
+### intParam `int`
+
+""";
         assertThat(output).contains(
 """
-## Config
-- Description: Configuration
-
-This configuration..
-- Parameters:
-    - stringParam (String) : String parameter, very important (NotBlank)
-    - listParam (List<NestedConfig>) : List<NestedConfig> parameter (Size(min = 1))
-    - objectParam (NestedConfig) : NestedConfig parameter (NotNull)
-
-## NestedConfig
-- Description: Nested config
-- Parameters:
-    - booleanParam (boolean) : boolean parameter ()
-    - intParam (int) : int parameter (Min(0), NonNegative)
-
-"""
+%s
+%s
+%s
+%s
+""".formatted(heading, javadocContent, parameters, nestedConfigToMarkdown)
         );
     }
 }
