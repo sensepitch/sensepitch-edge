@@ -31,6 +31,42 @@ jobs:
         java-version: 21
         distribution: 'temurin'
           
+    - name: run tests
+      run: ./mvnw test
+
+    - name: Convert Serenity results to markdown
+      run: |
+        mkdir -p jekyll_pages/test-results
+        find target/site/serenity -name '*.json' -not -name 'manifest.json' -not -name 'serenity-summary.json' | while read -r json_file; do
+          test_name=$(jq -r '.name | split("(")[0]' "$json_file" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -d '()')
+          output_file="jekyll_pages/test-results/${test_name}.markdown"
+          
+          echo "---" > "$output_file"
+          echo "layout: page" >> "$output_file"
+          echo "title: $(jq -r '.name' "$json_file" | sed 's/()//')" >> "$output_file"
+          echo "permalink: /test-results/${test_name}/" >> "$output_file"
+          echo "---" >> "$output_file"
+          echo "" >> "$output_file"
+          
+          echo "# Test Result: $(jq -r '.name' "$json_file")" >> "$output_file"
+          echo "" >> "$output_file"
+          echo "## Details" >> "$output_file"
+          echo "- **Status:** $(jq -r '.result' "$json_file")" >> "$output_file"
+          echo "- **Duration:** $(jq -r '.duration' "$json_file") ms" >> "$output_file"
+          echo "- **Start Time:** $(jq -r '.startTime' "$json_file")" >> "$output_file"
+          echo "" >> "$output_file"
+          
+          echo "## Test Steps" >> "$output_file"
+          jq -rc '.testSteps[]' "$json_file" | while read -r step; do
+            echo "### Step $(jq -r '.description' <<< "$step")" >> "$output_file"
+            echo -n "**Result:** $(jq -r '.result' <<< "$step") " >> "$output_file"
+            echo "**Duration:** $(jq -r '.duration' <<< "$step") ms" >> "$output_file"
+          done
+          
+          echo "Generated documentation for test: $test_name"
+          cat "$output_file"
+        done
+
     - name: Cache Maven repository
       uses: actions/cache@v4
       with:
