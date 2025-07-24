@@ -40,7 +40,7 @@ jobs:
     - name: Upload JAR artifact
       uses: actions/upload-artifact@v4
       with:
-        name: sensepitch-edge-jar
+        name: sensepitch-edge-with-dependencies.jar
         path: target/sensepitch-edge-*-with-dependencies.jar
         retention-days: 7
         
