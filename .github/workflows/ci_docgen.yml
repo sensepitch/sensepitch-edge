@@ -43,7 +43,7 @@ jobs:
           test_name=$(jq -r '.name | split("(")[0]' "$json_file" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -d '()')
           output_file="jekyll_pages/test-results/${test_name}.markdown"
           
-          humanReadableName=$(jq -r '.name' "$json_file" |  tr -c '[:alnum:][:space:]' ' ' | tr -s ' ')
+          humanReadableName=$(jq -r '.name' "$json_file" | sed -E 's/([a-z0-9])([A-Z])/\1 \2/g' | tr -c '[:alnum:][:space:]' ' ' | tr '[:upper:]' '[:lower:]' | tr -s ' ')
 
           echo "---" > "$output_file"
           echo "layout: serenity-test-outcome" >> "$output_file"
@@ -65,8 +65,8 @@ jobs:
 
           jq -rc '.testSteps[]' "$json_file" | while read -r step; do
             echo "### $(jq -r '.description' <<< "$step")" >> "$output_file"
-            echo -n "**Result:** $(jq -r '.result' <<< "$step") " >> "$output_file"
-            echo "**Duration:** $(jq -r '.duration' <<< "$step") ms" >> "$output_file"
+            # echo -n "**Result:** $(jq -r '.result' <<< "$step") " >> "$output_file"
+            # echo "**Duration:** $(jq -r '.duration' <<< "$step") ms" >> "$output_file"
           done
           
           echo "Generated documentation for test: $test_name"
