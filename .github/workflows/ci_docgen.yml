@@ -54,15 +54,14 @@ jobs:
 
           echo "---" > "$output_file"
           echo "layout: serenity-test-outcome" >> "$output_file"
-          echo "title: ${test_status} ${humanReadableName}" >> "$output_file"
+          echo "title: ${humanReadableName} ${test_status}" >> "$output_file"
           echo "permalink: /test-results/${test_name}/" >> "$output_file"
           echo "---" >> "$output_file"
           echo "" >> "$output_file"
 
-          echo "# ${test_status} ${humanReadableName}" >> "$output_file"
+          echo "# ${humanReadableName} ${test_status}" >> "$output_file"
           echo "" >> "$output_file"
-
-
+          echo "- **Test:** $(jq -r '.testCaseName' "$json_file")" >> "$output_file"
           echo "- **Start Time:** $(jq -r '.startTime' "$json_file")" >> "$output_file"
           echo "" >> "$output_file"
           
