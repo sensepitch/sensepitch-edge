@@ -43,30 +43,35 @@ jobs:
           test_name=$(jq -r '.name | split("(")[0]' "$json_file" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -d '()')
           output_file="jekyll_pages/test-results/${test_name}.markdown"
           
-          humanReadableName=$(jq -r '.name' "$json_file" | sed -E 's/([a-z0-9])([A-Z])/\1 \2/g' | tr -c '[:alnum:][:space:]' ' ' | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+          humanReadableName=$(jq -r '.title' "$json_file")
+
+          test_status=$(jq -r '.result' "$json_file")
+          if [ "$test_status" = "SUCCESS" ]; then
+            test_status="✅"
+          else
+            test_status="❌"
+          fi
 
           echo "---" > "$output_file"
           echo "layout: serenity-test-outcome" >> "$output_file"
-          echo "title: ${humanReadableName}" >> "$output_file"
+          echo "title: ${test_status} ${humanReadableName}" >> "$output_file"
           echo "permalink: /test-results/${test_name}/" >> "$output_file"
           echo "---" >> "$output_file"
           echo "" >> "$output_file"
-          
-          echo "# ${humanReadableName}" >> "$output_file"
+
+          echo "# ${test_status} ${humanReadableName}" >> "$output_file"
           echo "" >> "$output_file"
-          echo "## Result" >> "$output_file"
-          echo "- **Status:** $(jq -r '.result' "$json_file")" >> "$output_file"
-          echo "- **Duration:** $(jq -r '.duration' "$json_file") ms" >> "$output_file"
+
+
           echo "- **Start Time:** $(jq -r '.startTime' "$json_file")" >> "$output_file"
           echo "" >> "$output_file"
           
           echo "## Steps" >> "$output_file"
           echo "" >> "$output_file"
 
-          jq -rc '.testSteps[]' "$json_file" | while read -r step; do
+          jq -rc '.testSteps[]' "$json_file" | while read -r step; do            
             echo "### $(jq -r '.description' <<< "$step")" >> "$output_file"
-            # echo -n "**Result:** $(jq -r '.result' <<< "$step") " >> "$output_file"
-            # echo "**Duration:** $(jq -r '.duration' <<< "$step") ms" >> "$output_file"
+            echo "" >> "$output_file"
           done
           
           echo "Generated documentation for test: $test_name"
