@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Set default logging level to INFO for application code -->
+    <logger name="org.sensepitch" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+    <!-- Silence verbose logging from other libraries 
+    <logger name="org" level="WARN"/>
+    <logger name="com" level="WARN"/>
+    <logger name="io" level="WARN"/>
+    <logger name="net" level="WARN"/>
+
+    -->
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+</configuration>

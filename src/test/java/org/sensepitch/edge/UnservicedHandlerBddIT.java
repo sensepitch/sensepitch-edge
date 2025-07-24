@@ -24,7 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import java.util.List;
 
 @ExtendWith(SerenityJUnit5Extension.class)
-class UnservicedHandlerBDDTest {
+class UnservicedHandlerBddIT {
 
   // aliases for status codes for better readability
   static final HttpResponseStatus STATUS_400_BAD_REQUEST = HttpResponseStatus.BAD_REQUEST;

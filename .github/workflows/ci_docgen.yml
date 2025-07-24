@@ -32,12 +32,14 @@ jobs:
         distribution: 'temurin'
           
     - name: run tests
-      run: ./mvnw test
+      run: |
+        # Run serenity bdd tests in verify phase, but exclude all in test phase
+        ./mvnw verify -Dsurefire.includes=^$
 
     - name: Convert Serenity results to markdown
       run: |
         mkdir -p jekyll_pages/test-results
-        find target/site/serenity -name '*.json' -not -name 'manifest.json' -not -name 'serenity-summary.json' | while read -r json_file; do
+        find target/serenity-reports -name '*.json' -not -name 'manifest.json' -not -name 'serenity-summary.json' | while read -r json_file; do
           test_name=$(jq -r '.name | split("(")[0]' "$json_file" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -d '()')
           output_file="jekyll_pages/test-results/${test_name}.markdown"
           
