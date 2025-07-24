@@ -23,7 +23,10 @@ jobs:
       with:
         java-version: ${{ matrix.java-version }}
         distribution: 'temurin'
-        
+
+# Switch off caching, .m2 on our self hosted worker nodes
+# stays between jobs
+#         
 #    - name: Cache Maven dependencies
 #      uses: actions/cache@v4
 #      with:
