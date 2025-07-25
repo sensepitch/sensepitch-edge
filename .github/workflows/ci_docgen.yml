@@ -1,0 +1,146 @@
+name: Generate Docs
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'temurin'
+          
+    - name: run tests
+      run: |
+        # Run serenity bdd tests in verify phase, but exclude all in test phase
+        ./mvnw verify -Dsurefire.includes=^$
+
+    - name: Convert Serenity results to markdown
+      run: |
+        mkdir -p jekyll_pages/test-results
+        find target/serenity-reports -name '*.json' -not -name 'manifest.json' -not -name 'serenity-summary.json' | while read -r json_file; do
+          test_name=$(jq -r '.name | split("(")[0]' "$json_file" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -d '()')
+          output_file="jekyll_pages/test-results/${test_name}.markdown"
+          
+          humanReadableName=$(jq -r '.title' "$json_file")
+
+          test_status=$(jq -r '.result' "$json_file")
+          if [ "$test_status" = "SUCCESS" ]; then
+            test_status="✅"
+          else
+            test_status="❌"
+          fi
+
+          echo "---" > "$output_file"
+          echo "layout: serenity-test-outcome" >> "$output_file"
+          echo "title: ${humanReadableName} ${test_status}" >> "$output_file"
+          echo "permalink: /test-results/${test_name}/" >> "$output_file"
+          echo "---" >> "$output_file"
+          echo "" >> "$output_file"
+
+          echo "# ${humanReadableName} ${test_status}" >> "$output_file"
+          echo "" >> "$output_file"
+          echo "- **Test:** $(jq -r '.testCaseName' "$json_file")" >> "$output_file"
+          echo "- **Start Time:** $(jq -r '.startTime' "$json_file")" >> "$output_file"
+          echo "" >> "$output_file"
+          
+          echo "## Steps" >> "$output_file"
+          echo "" >> "$output_file"
+
+          jq -rc '.testSteps[]' "$json_file" | while read -r step; do            
+            echo "### $(jq -r '.description' <<< "$step")" >> "$output_file"
+            echo "" >> "$output_file"
+          done
+          
+          echo "Generated documentation for test: $test_name"
+          cat "$output_file"
+        done
+
+    - name: Cache Maven repository
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Run docgen test and build
+      working-directory: config-docgen
+      run: ./mvnw package -DskipTests 
+
+
+    - name: Create output directory
+      run: mkdir -p jekyll_pages/config
+
+    - name: Generate config documentation
+      run: |
+        # Find all *Config.java files and process them
+        find ./src/main/java/org/sensepitch/edge -name "*Config.java" | while read -r config_file; do
+          # Extract the class name from the file path
+          class_name=$(basename "$config_file" .java)
+          # Create markdown filename from class name (convert to lowercase with hyphens)
+          markdown_file="jekyll_pages/config/${class_name,,}.markdown"
+          
+          # Create frontmatter
+          echo "---" > "$markdown_file"
+          echo "layout: record" >> "$markdown_file"
+          echo "title: ${class_name}" >> "$markdown_file"
+          echo "permalink: /config/${class_name,,}/" >> "$markdown_file"
+          echo "---" >> "$markdown_file"
+          echo "" >> "$markdown_file"
+          
+          # Run docgen for this file and append to markdown
+          java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar "$config_file" >> "$markdown_file"
+          echo "Generated documentation for $class_name"
+        done
+
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.1'
+
+    - name: Cache Ruby gems
+      uses: actions/cache@v4
+      with:
+        path: vendor/bundle
+        key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-gems-
+
+    - name: Install dependencies
+      working-directory: jekyll_pages
+      run: bundle install
+
+    - name: Build Jekyll site
+      working-directory: jekyll_pages
+      run: bundle exec jekyll build
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: jekyll_pages/_site
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
