@@ -87,7 +87,7 @@ jobs:
 
     - name: Run docgen test and build
       working-directory: config-docgen
-      run: ./mvnw package -DskipTests 
+      run: ./mvnw package
 
 
     - name: Create output directory
