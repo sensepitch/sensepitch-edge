@@ -66,25 +66,28 @@ public class Main {
 
                     // Annotations
                     try (AnnotationReflectionService annotationService = new AnnotationReflectionService(jarPath)) {
-                        param.getAnnotations().stream()
+                        List<String> documentedAnnotations = param.getAnnotations().stream()
                                 .filter(it -> {
                                     String annName = it.getNameAsString();
                                     Optional<String> fqnOpt = cu.getImports().stream()
                                             .map(imp -> imp.getNameAsString())
                                             .filter(imp -> imp.endsWith("." + annName) || imp.equals(annName))
                                             .findFirst();
-                                    String fqn = fqnOpt.orElse("java.lang.annotation." + annName);
+                                    String fqn = fqnOpt.orElse(
+                                            annName.equals("Deprecated") ? "java.lang.Deprecated"
+                                                    : "java.lang.annotation." + annName);
                                     boolean documented = annotationService.isDocumented(fqn);
                                     return documented;
-                                })
-                                .forEach(it -> {
-                                    System.out.println("- `" + it.toString() + "`");
-                                    System.out.println();
-                                });
+                                }).map(it -> it.getNameAsString()).sorted().toList();
+                        if (!documentedAnnotations.isEmpty()) {
+                            documentedAnnotations.stream().forEachOrdered(it -> {
+                                System.out.println("- `" + it.toString() + "`");
+                            });
+                            System.out.println();
+                        }
                     } catch (Exception e) {
                         System.err.println("Failed to process annotations: " + e.getMessage());
                     }
-
 
                     customDescription.ifPresent(it -> {
                         System.out.println(it);

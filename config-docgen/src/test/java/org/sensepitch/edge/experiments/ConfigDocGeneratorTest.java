@@ -103,13 +103,13 @@ public class ConfigDocGeneratorTest {
 
                                 ### fieldss `String`       
 
-                                - `@MyDocumentedAnnotation`
+                                - `MyDocumentedAnnotation`
 
-                                
+
                                 ### fieldss2 `List<String>`
 
-                                - `@Size(min = 1, max = 10)`
-                                - `@Deprecated`
+                                - `Deprecated`
+                                - `Size(min = 1, max = 10)`
 
                                 """)                                                         
         );
