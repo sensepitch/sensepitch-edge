@@ -18,7 +18,7 @@ public class ConfigDocGeneratorTest {
         java.io.PrintStream originalOut = System.out;
         System.setOut(new java.io.PrintStream(out));
         try {
-            ConfigDocGenerator.main(new String[] { file });
+            Main.main(new String[] { file, "./src/main/resources/config-docgen-with-dependencies.jar" });
         } finally {
             System.setOut(originalOut);
         }
@@ -45,7 +45,7 @@ public class ConfigDocGeneratorTest {
     static Stream<Arguments> docGenCases() {
         return Stream.of(
                 Arguments.of(
-                        "./src/test/java/org/sensepitch/edge/experiments/Config.java",
+                        "./src/main/java/org/sensepitch/edge/experiments/Config.java",
                         """
                                 # Config
 
@@ -72,7 +72,7 @@ public class ConfigDocGeneratorTest {
                                 nested config
                                 """),
                 Arguments.of(
-                        "./src/test/java/org/sensepitch/edge/experiments/NestedConfig.java",
+                        "./src/main/java/org/sensepitch/edge/experiments/NestedConfig.java",
                         """
                                 # NestedConfig
 
@@ -93,7 +93,7 @@ public class ConfigDocGeneratorTest {
 
                                 """),
                 Arguments.of(
-                        "./src/test/java/org/sensepitch/edge/experiments/AnnotatedFieldsConfig.java",
+                        "./src/main/java/org/sensepitch/edge/experiments/AnnotatedFieldsConfig.java",
                         """
                                 # AnnotatedFieldsConfig
 
@@ -101,7 +101,15 @@ public class ConfigDocGeneratorTest {
                                 ## Parameters:
 
 
-                                ### fieldss `String`                                                                                
+                                ### fieldss `String`       
+
+                                - `@MyDocumentedAnnotation`
+
+                                
+                                ### fieldss2 `List<String>`
+
+                                - `@Size(min = 1, max = 10)`
+                                - `@Deprecated`
 
                                 """)                                                         
         );
