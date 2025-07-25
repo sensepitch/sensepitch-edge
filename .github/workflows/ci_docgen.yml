@@ -111,7 +111,7 @@ jobs:
           echo "" >> "$markdown_file"
           
           # Run docgen for this file and append to markdown
-          java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar "$config_file" >> "$markdown_file"
+          java -jar config-docgen/target/sensepitch-edge-config-docgen-1.0-SNAPSHOT-with-dependencies.jar "$config_file" "target/sensepitch-.*-with-dependencies.jar" >> "$markdown_file"
           echo "Generated documentation for $class_name"
         done
 
