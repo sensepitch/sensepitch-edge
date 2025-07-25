@@ -136,6 +136,10 @@ jobs:
       working-directory: jekyll_pages
       run: bundle exec jekyll build
 
+    - name: Add serenity reports
+      run: |
+        cp -r target/serenity-reports/* jekyll_pages/serenity-reports/
+
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
