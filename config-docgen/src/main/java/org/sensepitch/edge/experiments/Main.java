@@ -78,10 +78,25 @@ public class Main {
                                                     : "java.lang.annotation." + annName);
                                     boolean documented = annotationService.isDocumented(fqn);
                                     return documented;
-                                }).map(it -> it.getNameAsString()).sorted().toList();
+                                })
+                                .map(it -> {
+                                    if (it.isNormalAnnotationExpr()) {
+                                        var nae = it.asNormalAnnotationExpr();
+                                        String params = nae.getPairs().stream()
+                                                .map(p -> p.getNameAsString() + " = " + p.getValue().toString())
+                                                .collect(java.util.stream.Collectors.joining(", "));
+                                        return params.isEmpty() ? nae.getNameAsString() : nae.getNameAsString() + "(" + params + ")";
+                                    } else if (it.isSingleMemberAnnotationExpr()) {
+                                        var sae = it.asSingleMemberAnnotationExpr();
+                                        return sae.getNameAsString() + "(" + sae.getMemberValue().toString() + ")";
+                                    } else {
+                                        return it.getNameAsString();
+                                    }
+                                })
+                                .sorted().toList();
                         if (!documentedAnnotations.isEmpty()) {
                             documentedAnnotations.stream().forEachOrdered(it -> {
-                                System.out.println("- `" + it.toString() + "`");
+                                System.out.println("- `" + it + "`");
                             });
                             System.out.println();
                         }
