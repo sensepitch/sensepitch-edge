@@ -183,7 +183,41 @@
           </execution>
         </executions>
       </plugin>
-
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-site-plugin</artifactId>
+        <version>3.12.1</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.11.2</version>
+        <configuration>
+            <doclet>com.github.dakusui.mddoclet.MdDoclet</doclet>
+            <docletArtifact>
+                <groupId>com.github.moneyforward.mddoclet</groupId>
+                <artifactId>mddoclet</artifactId>
+                <version>1.2.4-SNAPSHOT</version>
+            </docletArtifact>
+            <useStandardDocletOptions>false</useStandardDocletOptions>
+            <additionalOptions>
+                <additionalOption>-overview ${project.basedir}/src/main/javadoc/overview.md</additionalOption>
+                <additionalOption>-d ${project.build.outputDirectory}/JavaMarkdown</additionalOption>
+                <additionalOption>--source-path ${project.build.sourceDirectory}</additionalOption>
+                <additionalOption>-base-path /docs/default/Component/autotest-ca/3-APISpecification</additionalOption>
+                <additionalOption>-target-packages '.*#.*example.*'</additionalOption>
+            </additionalOptions>
+        </configuration>
+        <executions>
+            <execution>
+                <id>attach-javadocs</id>
+                <phase>pre-site</phase>
+                <goals>
+                    <goal>jar</goal>
+                </goals>
+            </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 

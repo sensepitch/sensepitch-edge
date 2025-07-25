@@ -174,6 +174,10 @@ public class AdmissionHandler extends ChannelInboundHandlerAdapter implements Ha
     ctx.pipeline().replace(this, "discard", inboundHandler);
   }
 
+  /**
+   * provide metrics for this handler
+   */
+  @Deprecated
   public Metrics getMetrics() {
     return new Metrics();
   }
