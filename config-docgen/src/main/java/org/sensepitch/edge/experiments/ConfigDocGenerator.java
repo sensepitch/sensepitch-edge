@@ -31,12 +31,23 @@ public class ConfigDocGenerator {
             cu.findFirst(RecordDeclaration.class).ifPresent(javaRecord -> {
                 System.out.println("# " + javaRecord.getNameAsString());
                 System.out.println();
+                
                 // Description
                 Optional<String> description = javaRecord.getJavadoc().map(it -> it.getDescription().toText());
                 description.ifPresent(it -> {
                     System.out.println(it);
                     System.out.println();                
                 });
+
+                // Annotations
+                javaRecord.getAnnotations().stream()
+                // TODO now: filter for documented annotations
+                .filter(it -> false)                
+                .forEach(it -> {
+                    System.out.println(it.toString());
+                    System.out.println();
+                });
+
                 // Parameters section
                 System.out.println();                
                 System.out.println("## Parameters:");

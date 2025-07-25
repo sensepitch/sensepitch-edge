@@ -4,10 +4,6 @@ import lombok.Builder;
 
 import java.util.List;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
-
 /**
  * Configuration
  * 
@@ -21,11 +17,8 @@ import jakarta.validation.constraints.Size;
  */
 @Builder
 public record Config(
-  @NotBlank
   String stringParam,
-  @Size(min = 1)
   List<NestedConfig> listParam,
-  @NotNull
   NestedConfig objectParam
 ) { 
 

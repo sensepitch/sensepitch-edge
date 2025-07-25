@@ -91,8 +91,19 @@ public class ConfigDocGeneratorTest {
 
                                 int parameter
 
-                                """)
+                                """),
+                Arguments.of(
+                        "./src/test/java/org/sensepitch/edge/experiments/AnnotatedFieldsConfig.java",
+                        """
+                                # AnnotatedFieldsConfig
 
+
+                                ## Parameters:
+
+
+                                ### fieldss `String`                                                                                
+
+                                """)                                                         
         );
     }
 }
