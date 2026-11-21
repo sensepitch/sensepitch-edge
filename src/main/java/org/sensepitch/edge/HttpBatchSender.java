@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.util.concurrent.Ticker;
 import io.prometheus.metrics.core.datapoints.CounterDataPoint;
 import io.prometheus.metrics.core.datapoints.DistributionDataPoint;
 import java.io.IOException;
@@ -11,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.time.InstantSource;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -171,6 +173,34 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// [CircuitBreakerMetrics]; the `name` is the destination
   static final String BREAKER_COMPONENT = "requestLog";
 
+  /// Runs a task after a delay; tests replace it with one they move forward themselves
+  ///
+  /// @author Jens Wilke
+  interface Timer {
+
+    /// Uses the shared timer of [CompletableFuture], no thread of its own
+    static Timer production() {
+      return (task, delay, unit) -> CompletableFuture.delayedExecutor(delay, unit).execute(task);
+    }
+
+    /// Runs `task` after `delay` in `unit`
+    void schedule(Runnable task, long delay, TimeUnit unit);
+  }
+
+  /// Posts a request; a test replaces it with a future it completes itself
+  ///
+  /// @author Jens Wilke
+  interface Transport {
+
+    /// Posts with `httpClient`, discarding the response body
+    static Transport of(HttpClient httpClient) {
+      return request -> httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding());
+    }
+
+    /// Posts `request`, the returned future is completed with the response or a failure
+    CompletableFuture<HttpResponse<Void>> post(HttpRequest request);
+  }
+
   private static final double NANOS_PER_SECOND = TimeUnit.SECONDS.toNanos(1);
 
   private final Object lock = new Object();
@@ -199,6 +229,9 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private final CounterDataPoint sentBytes;
   private final DistributionDataPoint postDuration;
   private final HttpClient httpClient;
+  private final Ticker clock;
+  private final Timer timer;
+  private final Transport transport;
 
   /// Compress the bodies, see [GzipCompressor]
   private final boolean gzip;
@@ -257,6 +290,18 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private boolean ageReported;
 
   HttpBatchSender(Settings settings, BatchPayload<B> payload, RequestLogMetrics metrics) {
+    this(settings, payload, metrics, null, null, null);
+  }
+
+  /// With explicit clock, timer and transport, for deterministic tests; `null` keeps the
+  /// production default of each
+  HttpBatchSender(
+      Settings settings,
+      BatchPayload<B> payload,
+      RequestLogMetrics metrics,
+      Ticker clock,
+      Timer timer,
+      Transport transport) {
     this.name = settings.name();
     this.payload = payload;
     this.timeout = settings.timeout();
@@ -294,8 +339,13 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
             new CircuitBreaker(
                 settings.backoff(),
                 timeout.toMillis() + 1_000,
-                metrics.circuitBreakers.events(BREAKER_COMPONENT, name)));
+                metrics.circuitBreakers.events(BREAKER_COMPONENT, name),
+                clock == null ? Ticker.systemTicker() : clock,
+                InstantSource.system()));
     httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
+    this.clock = clock == null ? Ticker.systemTicker() : clock;
+    this.timer = timer == null ? Timer.production() : timer;
+    this.transport = transport == null ? Transport.of(httpClient) : transport;
     metrics.add(this);
     metrics.circuitBreakers.add(BREAKER_COMPONENT, name, endpoint.breaker());
     scheduleFlush();
@@ -455,8 +505,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
 
   /// Runs [#flush()] after the flush interval
   private void scheduleFlush() {
-    CompletableFuture.delayedExecutor(flushIntervalNanos, TimeUnit.NANOSECONDS)
-        .execute(this::flush);
+    timer.schedule(this::flush, flushIntervalNanos, TimeUnit.NANOSECONDS);
   }
 
   /// Takes the partly filled batches of all threads, queues them for packing, and dispatches,
@@ -508,7 +557,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private void dispatch() {
     List<Post<B>> next;
     synchronized (lock) {
-      discardAged(System.nanoTime());
+      discardAged(clock.nanoTime());
       next = takeDispatchable();
     }
     for (Post<B> post : next) {
@@ -632,9 +681,9 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   private void post(
       Post<B> post, HttpRequest.BodyPublisher body, long wireBytes, GzipCompressor compressor) {
     HttpRequest request = requestTemplate.copy().POST(body).build();
-    long start = System.nanoTime();
-    httpClient
-        .sendAsync(request, HttpResponse.BodyHandlers.discarding())
+    long start = clock.nanoTime();
+    transport
+        .post(request)
         .whenComplete(
             (response, failure) -> {
               if (compressor != null) {
@@ -643,7 +692,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
               complete(
                   post,
                   wireBytes,
-                  System.nanoTime() - start,
+                  clock.nanoTime() - start,
                   failure != null
                       ? failure(failure)
                       : result(response.statusCode(), Backoff.retryAfterMillis(response)));
@@ -786,7 +835,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// flush or completion
   private void scheduleProbe(long delayNanos) {
     // when the backoff is over, the breaker lets a probe through
-    CompletableFuture.delayedExecutor(delayNanos, TimeUnit.NANOSECONDS).execute(this::dispatch);
+    timer.schedule(this::dispatch, delayNanos, TimeUnit.NANOSECONDS);
   }
 
   /// The batches of the post are no longer waiting: sent or dropped

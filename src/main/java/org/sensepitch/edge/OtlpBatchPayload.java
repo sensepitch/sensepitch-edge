@@ -9,6 +9,7 @@ import static org.sensepitch.edge.OtlpEncoding.SCOPE_LOGS_SCHEMA_URL;
 import static org.sensepitch.edge.OtlpEncoding.SCOPE_LOGS_SCOPE;
 import static org.sensepitch.edge.OtlpEncoding.SCOPE_NAME;
 
+import io.netty.util.concurrent.Ticker;
 import java.util.List;
 import java.util.Map;
 
@@ -39,10 +40,19 @@ final class OtlpBatchPayload implements BatchPayload<OtlpBatch> {
   /// `ResourceLogs.schema_url` field, follows the `ScopeLogs`
   private final byte[] resourceSchemaField;
 
+  private final Ticker clock;
+
   /// @param resourceAttributes configured attributes, see [OtlpLogDestination#encodeResource(Map)]
   /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
   OtlpBatchPayload(Map<String, String> resourceAttributes, int sampleHeadersInterval) {
+    this(resourceAttributes, sampleHeadersInterval, null);
+  }
+
+  /// With the clock that stamps the age of a batch, for tests
+  OtlpBatchPayload(
+      Map<String, String> resourceAttributes, int sampleHeadersInterval, Ticker clock) {
     this.sampleHeadersInterval = sampleHeadersInterval;
+    this.clock = clock == null ? Ticker.systemTicker() : clock;
     resourceField =
         new ProtobufWriter()
             .bytes(RESOURCE_LOGS_RESOURCE, OtlpLogDestination.encodeResource(resourceAttributes))
@@ -63,7 +73,7 @@ final class OtlpBatchPayload implements BatchPayload<OtlpBatch> {
 
   @Override
   public OtlpBatch newBatch(int batchBytes) {
-    return new OtlpBatch(batchBytes);
+    return new OtlpBatch(batchBytes, clock);
   }
 
   /// Frames each record as a `ScopeLogs.log_records` entry

@@ -1,5 +1,7 @@
 package org.sensepitch.edge;
 
+import io.netty.util.concurrent.Ticker;
+
 /// A buffer of encoded OTLP records, each framed as a `ScopeLogs.log_records` entry, so the buffer
 /// can be sent as it is, see [OtlpBatchPayload].
 ///
@@ -11,7 +13,8 @@ final class OtlpBatch extends Batch {
 
   final ProtobufWriter writer;
 
-  OtlpBatch(int batchBytes) {
+  OtlpBatch(int batchBytes, Ticker clock) {
+    super(clock);
     writer = new ProtobufWriter(batchBytes + SLACK);
   }
 

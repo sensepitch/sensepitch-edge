@@ -6,19 +6,30 @@ import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.util.concurrent.Ticker;
 import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLSession;
+import net.morimekta.testing.concurrent.FakeClock;
+import net.morimekta.testing.concurrent.ImmediateScheduledExecutor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -29,8 +40,16 @@ import org.junit.jupiter.api.Timeout;
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class HttpBatchSenderTest {
 
+  static final long FLUSH_MILLIS = 100;
+  static final long AGE_MILLIS = 200;
+  static final long INITIAL_RETRY_MILLIS = 10;
+
   /// Records as text lines
   static final class TextBatch extends Batch {
+
+    TextBatch(Ticker clock) {
+      super(clock);
+    }
 
     final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 
@@ -48,9 +67,15 @@ class HttpBatchSenderTest {
   /// One line with the path per record, the body is the lines of all batches
   static final class TextPayload implements BatchPayload<TextBatch> {
 
+    private final Ticker clock;
+
+    TextPayload(Ticker clock) {
+      this.clock = clock;
+    }
+
     @Override
     public TextBatch newBatch(int batchBytes) {
-      return new TextBatch();
+      return new TextBatch(clock);
     }
 
     @Override
@@ -89,6 +114,21 @@ class HttpBatchSenderTest {
       int batchBytes,
       long maxBufferedBytes,
       int maxConcurrentRequests) {
+    return textSender(
+        endpoint, headers, batchBytes, maxBufferedBytes, maxConcurrentRequests, null, null, null);
+  }
+
+  /// Sender of text lines on a fake clock, a timer the test moves and a transport whose answers
+  /// the test completes
+  static HttpBatchSender<TextBatch> textSender(
+      String endpoint,
+      Map<String, String> headers,
+      int batchBytes,
+      long maxBufferedBytes,
+      int maxConcurrentRequests,
+      Ticker clock,
+      HttpBatchSender.Timer timer,
+      HttpBatchSender.Transport transport) {
     return new HttpBatchSender<>(
         new HttpBatchSender.Settings(
             "text",
@@ -102,9 +142,12 @@ class HttpBatchSenderTest {
             OUT_OF_REACH_MILLIS,
             false,
             OtlpConfig.DEFAULT_COMPRESSION_LEVEL,
-            new Backoff(10, 50)),
-        new TextPayload(),
-        new RequestLogMetrics());
+            new Backoff(10, 50, bound -> 0)),
+        new TextPayload(clock == null ? Ticker.systemTicker() : clock),
+        new RequestLogMetrics(),
+        clock,
+        timer,
+        transport);
   }
 
   /// Ends the batcher of the calling thread, finishes the sender and waits until it stopped, the
@@ -162,7 +205,7 @@ class HttpBatchSenderTest {
                 true,
                 OtlpConfig.DEFAULT_COMPRESSION_LEVEL,
                 new Backoff(10, 50)),
-            new TextPayload(),
+            new TextPayload(Ticker.systemTicker()),
             metrics);
     assertThat(sender.compressionExecutorStopped()).isFalse();
     assertThat(gaugedDestinations(metrics)).contains("text");
@@ -181,6 +224,217 @@ class HttpBatchSenderTest {
     assertThat(seen.get(TIMEOUT_SECONDS, TimeUnit.SECONDS))
         .as("executor stopped, gauged destinations, breaker removed when stopped completes")
         .containsExactly(true, List.of(), true);
+  }
+
+  /// Drives Netty's ticker and the scheduled tasks from the same test clock.
+  static final class FakeSenderTime implements Ticker {
+    private final FakeClock clock = new FakeClock();
+    private final Instant start = clock.instant();
+    private final ScheduledExecutorService scheduler = new ImmediateScheduledExecutor(clock);
+
+    @Override
+    public long initialNanoTime() {
+      return 0;
+    }
+
+    @Override
+    public long nanoTime() {
+      // FakeClock.nanoTime() advances on reads, so use the scheduler's instant for exact deadlines.
+      return Duration.between(start, clock.instant()).toNanos();
+    }
+
+    @Override
+    public void sleep(long delay, TimeUnit unit) {
+      clock.tick(delay, unit);
+    }
+
+    /// Moves the clock and runs any tasks that are due.
+    void advanceMillis(long millis) {
+      clock.tick(millis, TimeUnit.MILLISECONDS);
+    }
+  }
+
+  /// The transport of a deterministic sender, it records requests and lets the test answer them
+  static final class ControlledTransport implements HttpBatchSender.Transport {
+
+    private final List<CompletableFuture<HttpResponse<Void>>> pending = new ArrayList<>();
+    private final List<HttpRequest> requests = new ArrayList<>();
+
+    @Override
+    public CompletableFuture<HttpResponse<Void>> post(HttpRequest request) {
+      requests.add(request);
+      CompletableFuture<HttpResponse<Void>> answer = new CompletableFuture<>();
+      pending.add(answer);
+      return answer;
+    }
+
+    void succeed(int status) {
+      pending.removeFirst().complete(response(status));
+    }
+
+    void fail(Throwable failure) {
+      pending.removeFirst().completeExceptionally(failure);
+    }
+
+    HttpRequest onlyRequest() {
+      assertThat(requests).hasSize(1);
+      return requests.getFirst();
+    }
+
+    private static HttpResponse<Void> response(int status) {
+      return new HttpResponse<>() {
+        @Override
+        public int statusCode() {
+          return status;
+        }
+
+        @Override
+        public HttpRequest request() {
+          throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public HttpHeaders headers() {
+          return HttpHeaders.of(Map.of(), (first, second) -> true);
+        }
+
+        @Override
+        public Void body() {
+          return null;
+        }
+
+        @Override
+        public Optional<HttpResponse<Void>> previousResponse() {
+          return Optional.empty();
+        }
+
+        @Override
+        public URI uri() {
+          throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<SSLSession> sslSession() {
+          return Optional.empty();
+        }
+
+        @Override
+        public HttpClient.Version version() {
+          return HttpClient.Version.HTTP_1_1;
+        }
+      };
+    }
+  }
+
+  /// The flush timer runs in the test thread, collects the partial batch and posts it through the
+  /// controlled transport, without a server, timer or wait on another thread.
+  @Test
+  void flushRunsOnTheFakeTimerAndPostsAPartialBatch() {
+    FakeSenderTime clock = new FakeSenderTime();
+    ControlledTransport transport = new ControlledTransport();
+    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 1_000);
+    ThreadBatcher<TextBatch> batcher = sender.newBatcher();
+    batcher.log(request("/flushed"));
+    assertThat(transport.requests).as("nothing posts before the interval").isEmpty();
+    clock.advanceMillis(FLUSH_MILLIS);
+    assertThat(batcher.records()).as("the flush took the batch").isZero();
+    assertThat(transport.onlyRequest().uri().getPath()).isEqualTo("/lines");
+    transport.succeed(204);
+    batcher.close();
+    sender.finish();
+    assertThat(sender.stopped()).isDone();
+  }
+
+  /// A batch parked behind the only request in flight is dropped and counted when it is older
+  /// than the age limit at a flush; no request has to be posted to discover that.
+  @Test
+  void flushDropsAnAgedBatchOnTheFakeClock() {
+    FakeSenderTime clock = new FakeSenderTime();
+    ControlledTransport transport = new ControlledTransport();
+    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 4);
+    ThreadBatcher<TextBatch> firstBatcher = sender.newBatcher();
+    firstBatcher.log(request("/a"));
+    firstBatcher.log(request("/b"));
+    ThreadBatcher<TextBatch> secondBatcher = sender.newBatcher();
+    secondBatcher.log(request("/aged"));
+    assertThat(transport.requests).as("the full batch posts right away").hasSize(1);
+    clock.advanceMillis(FLUSH_MILLIS);
+    assertThat(transport.requests).as("the only request slot is taken").hasSize(1);
+    clock.advanceMillis(AGE_MILLIS + 1);
+    assertThat(sender.droppedCount())
+        .as("the parked batch was older than the age limit")
+        .isEqualTo(1);
+    assertThat(sender.bufferedBytes())
+        .as("only the in-flight batch is buffered")
+        .isEqualTo("/a\n/b\n".length());
+    firstBatcher.close();
+    secondBatcher.close();
+    sender.finish();
+    assertThat(sender.stopped()).as("the in-flight request still blocks the sender").isNotDone();
+    transport.succeed(204);
+    assertThat(sender.stopped()).isDone();
+  }
+
+  /// After a retryable answer the timer schedules one probe after the backoff. When it fires, the
+  /// breaker lets exactly that request through and a successful answer drains the queue.
+  @Test
+  void probeIsScheduledOnTheFakeTimer() {
+    FakeSenderTime clock = new FakeSenderTime();
+    ControlledTransport transport = new ControlledTransport();
+    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 1_000);
+    ThreadBatcher<TextBatch> batcher = sender.newBatcher();
+    batcher.log(request("/probe"));
+    batcher.close();
+    sender.finish();
+    assertThat(transport.requests).hasSize(1);
+    transport.fail(new java.net.ConnectException("refused"));
+    // The deterministic random provider selects the lower half of the nominal retry delay.
+    clock.advanceMillis(INITIAL_RETRY_MILLIS / 2 - 1);
+    assertThat(transport.requests).hasSize(1);
+    clock.advanceMillis(1);
+    assertThat(transport.requests).as("the probe goes out after the backoff").hasSize(2);
+    transport.succeed(204);
+    assertThat(sender.droppedCount()).isZero();
+    assertThat(sender.stopped()).isDone();
+  }
+
+  /// The payload keeps its production default when it is created without the test clock, and
+  /// stamps batches with the clock it is given otherwise
+  @Test
+  void otlpPayloadClockDefaultsToTheSystemTicker() {
+    OtlpBatchPayload defaultPayload = new OtlpBatchPayload(Map.of(), 0);
+    OtlpBatch defaultBatch = defaultPayload.newBatch(4_096);
+    defaultBatch.added();
+    assertThat(defaultBatch.firstRecordNanos).isPositive();
+
+    FakeSenderTime clock = new FakeSenderTime();
+    OtlpBatchPayload deterministicPayload = new OtlpBatchPayload(Map.of(), 0, clock);
+    OtlpBatch deterministicBatch = deterministicPayload.newBatch(4_096);
+    deterministicBatch.added();
+    assertThat(deterministicBatch.firstRecordNanos).isEqualTo(clock.nanoTime());
+  }
+
+  private static HttpBatchSender<TextBatch> deterministicSender(
+      FakeSenderTime clock, ControlledTransport transport, int batchBytes) {
+    return new HttpBatchSender<>(
+        new HttpBatchSender.Settings(
+            "text",
+            URI.create(UNREACHABLE),
+            Map.of(),
+            Duration.ofSeconds(5),
+            batchBytes,
+            1024,
+            1,
+            AGE_MILLIS,
+            FLUSH_MILLIS,
+            false,
+            OtlpConfig.DEFAULT_COMPRESSION_LEVEL,
+            new Backoff(INITIAL_RETRY_MILLIS, 50, bound -> 0)),
+        new TextPayload(clock),
+        new RequestLogMetrics(),
+        clock,
+        clock.scheduler::schedule,
+        transport);
   }
 
   @Test
@@ -207,10 +461,10 @@ class HttpBatchSenderTest {
   /// the `HttpBatchSender*` full-coverage rule flake.
   @Test
   void postKeepsTheAgeOfTheOldestRecord() {
-    TextBatch newer = new TextBatch();
+    TextBatch newer = new TextBatch(Ticker.systemTicker());
     newer.added();
     newer.firstRecordNanos = 200;
-    TextBatch older = new TextBatch();
+    TextBatch older = new TextBatch(Ticker.systemTicker());
     older.added();
     older.firstRecordNanos = 100;
     HttpBatchSender.Post<TextBatch> post = HttpBatchSender.Post.of(List.of(newer, older));

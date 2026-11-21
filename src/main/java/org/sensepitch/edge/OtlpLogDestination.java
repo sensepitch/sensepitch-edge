@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import static org.sensepitch.edge.OtlpEncoding.RESOURCE_ATTRIBUTES;
 import static org.sensepitch.edge.OtlpEncoding.stringAttribute;
 
+import io.netty.util.concurrent.Ticker;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.URI;
@@ -40,10 +41,25 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
   /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
   public OtlpLogDestination(
       String name, OtlpConfig config, RequestLogMetrics metrics, int sampleHeadersInterval) {
+    this(name, config, metrics, sampleHeadersInterval, Ticker.systemTicker(), null, null);
+  }
+
+  /// With the test seams of [HttpBatchSender], for deterministic tests
+  OtlpLogDestination(
+      String name,
+      OtlpConfig config,
+      RequestLogMetrics metrics,
+      int sampleHeadersInterval,
+      Ticker clock,
+      Timer timer,
+      Transport transport) {
     super(
         settings(name, config),
-        new OtlpBatchPayload(config.resourceAttributes(), sampleHeadersInterval),
-        metrics);
+        new OtlpBatchPayload(config.resourceAttributes(), sampleHeadersInterval, clock),
+        metrics,
+        clock,
+        timer,
+        transport);
     this.sampleHeadersInterval = sampleHeadersInterval;
   }
 
