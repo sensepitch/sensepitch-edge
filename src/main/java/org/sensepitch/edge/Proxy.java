@@ -94,6 +94,9 @@ public class Proxy implements ProxyContext {
   /// Published by `start` and read by shutdown without the reload lock
   private volatile Channel serverChannel;
 
+  /// The plain HTTP listener, `null` when `listen.httpPort` is `0` (disabled)
+  private volatile Channel httpServerChannel;
+
   /// Completed when the shutdown is done, set under `lock` by the first [#shutdown()] call.
   /// Read without the lock by [#isShuttingDown()].
   private final AtomicReference<CompletableFuture<Void>> shutdown = new AtomicReference<>();
@@ -254,6 +257,7 @@ public class Proxy implements ProxyContext {
     ListenConfig now = cfg.listen();
     warnIfChanged("listen.address", was.address(), now.address());
     warnIfChanged("listen.httpsPort", was.httpsPort(), now.httpsPort());
+    warnIfChanged("listen.httpPort", was.httpPort(), now.httpPort());
     warnIfChanged("listen.connection", was.connection(), now.connection());
     warnIfChanged("metrics", config.metrics(), cfg.metrics());
     warnIfChanged("ja4", config.ja4(), cfg.ja4());
@@ -475,6 +479,7 @@ public class Proxy implements ProxyContext {
       int port = config.listen().httpsPort();
       ChannelFuture f = sb.bind(new InetSocketAddress(addr, port)).sync();
       serverChannel = f.channel();
+      bindPlainHttpListener(addr);
       LOG.info("Open SSL: " + OpenSsl.versionString());
       LOG.info("Proxy listening on " + addr + ":" + port);
       LOG.trace("tracing enabled");
@@ -484,6 +489,33 @@ public class Proxy implements ProxyContext {
     } finally {
       shutdown();
     }
+  }
+
+  /// Binds the plain HTTP listener when [ListenConfig#httpPort()] is set, reusing the accept
+  /// group of the HTTPS listener, and publishes it as [#httpServerChannel]. The listener only
+  /// answers with an HTTPS redirect, see [HttpToHttpsRedirectHandler].
+  private void bindPlainHttpListener(String addr) throws InterruptedException {
+    int httpPort = config.listen().httpPort();
+    if (httpPort == 0) {
+      return;
+    }
+    ServerBootstrap httpSb = new ServerBootstrap();
+    httpSb
+        .group(bossGroup, eventLoopGroup)
+        .channel(NioServerSocketChannel.class)
+        .childHandler(
+            new ChannelInitializer<SocketChannel>() {
+              @Override
+              protected void initChannel(SocketChannel ch) {
+                ChannelPipeline pipeline = ch.pipeline();
+                pipeline.addLast(trackIngressConnectionsHandler);
+                pipeline.addLast(new HttpServerCodec());
+                pipeline.addLast(new HttpToHttpsRedirectHandler(config.listen().httpsPort()));
+              }
+            });
+    ChannelFuture httpFuture = httpSb.bind(new InetSocketAddress(addr, httpPort)).sync();
+    httpServerChannel = httpFuture.channel();
+    LOG.info("Proxy redirecting HTTP to HTTPS on " + addr + ":" + httpPort);
   }
 
   /// Reports shutdown as soon as it starts, before the listener closes, for admin readiness probes.
@@ -537,8 +569,13 @@ public class Proxy implements ProxyContext {
     long connectionsDeadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis - drainMillis);
     long deadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis);
     awaitAcceptGrace(start + TimeUnit.MILLISECONDS.toNanos(active.shutdownAcceptGraceMillis()));
-    if (serverChannel != null) {
-      serverChannel.close().syncUninterruptibly();
+    if (serverChannel != null || httpServerChannel != null) {
+      if (serverChannel != null) {
+        serverChannel.close().syncUninterruptibly();
+      }
+      if (httpServerChannel != null) {
+        httpServerChannel.close().syncUninterruptibly();
+      }
       bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
     }
     if (!trackIngressConnectionsHandler

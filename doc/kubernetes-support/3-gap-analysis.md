@@ -10,7 +10,7 @@ Source paths are relative to `src/main/java/org/sensepitch/edge/`.
 | Area | Existing | Gap |
 |---|---|---|
 | Root | `ProxyConfig` with `listen`, `sites`, `upstreams`, `protection`, `fallback`, … | New optional Gateway API section (listeners, routes, resolved backends) |
-| Listeners | `ListenConfig`: one HTTPS port (`httpsPort`, default 17443), one address | Multiple listeners, plain HTTP listeners, per-listener hostname |
+| Listeners | `ListenConfig`: one HTTPS port (`httpsPort`, default 17443) plus an optional plain HTTP port (`httpPort`, default 0) that redirects to HTTPS, one address | Multiple listeners beyond these two, per-listener hostname |
 | Sites | `SiteConfig` keyed by exact host, optional `uri` prefix ending in `*` | Wildcard hostnames are rejected (`SiteSelector`); need route-level hostnames |
 | Paths | `PathRouteConfig`: exact path or string prefix (`PrefixTree`) | Segment-aware PathPrefix; OR/AND match semantics; precedence across routes |
 | Header match | Only cookie-name overrides (`RoutingOverrideConfig.whenCookie`) | Exact header matching |
@@ -76,7 +76,7 @@ out on purpose.
 | `listen.hosts` (extra hosts redirected to `www.` by `UnservicedHost`) | Route for the bare host with `RequestRedirect` `hostname: www…`, status 301 | One small route per host |
 | `unservicedHost.defaultLocation` | Catch-all route without hostnames on a listener without hostname: an `Exact /` rule redirects to `/`, a `PathPrefix /` rule redirects with `ReplaceFullPath /NOT_FOUND` | Works, but HTTPS needs a default certificate on that listener |
 | `listen.httpsPort` | Gateway HTTPS listener | Gateway ports are the public ports (443). The edge listens on a container port, so the Service or the snapshot must map 443 to it |
-| `listen.letsEncrypt` | `certificateRefs` to Secrets issued by cert-manager (Gateway API support) | HTTP-01 needs an HTTP listener, which the edge does not have yet. DNS-01 avoids that |
+| `listen.letsEncrypt` | `certificateRefs` to Secrets issued by cert-manager (Gateway API support) | HTTP-01 needs a route for the ACME challenge on the plain HTTP listener (item 12), which the edge does not have yet. DNS-01 avoids that |
 | Upstream outside the cluster (`target: 127.0.0.1:3080` for a path still served by old infrastructure) | Service without selector plus a manually maintained EndpointSlice | Works because the controller resolves EndpointSlices. `ExternalName` Services stay unsupported |
 | Maintenance mode (swap the config file, restart) | Edit the HTTPRoute; the change is picked up without a restart | Needs a direct response, see gaps |
 

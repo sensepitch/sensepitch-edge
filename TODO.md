@@ -170,12 +170,14 @@ build on its kind deployment check in CI.
   configuration read are recorded by `ConfigFiles` and watched by `ConfigFileWatcher`, so a
   renewed certificate Secret (cert-manager) reloads; the ConfigMap symlink swap is tested.
   See [doc/design/config-files.md](doc/design/config-files.md).
-- [ ] 5. plain HTTP listener and several listeners (`ListenConfig` has one HTTPS port), with the
-  HTTP to HTTPS forward (there is no plain HTTP listener yet)
+- [x] 5. plain HTTP listener: `listen.httpPort` (default `0` = disabled, backward compatible)
+  binds a second listener on `listen.address` and answers every request with a `308 Permanent
+  Redirect` to `https://<host>[:<httpsPort>]<path[?query]>`; the port is omitted at `443`, the
+  `Host` header is normalized (port and trailing dot removed), a missing or unusable host is
+  `400`. Covered by `HttpToHttpsRedirectHandlerBDDTest` and `PlainHttpListenerIT`.
   - P1: with direct node ingress the edge owns port 80 on the node, no other server answers it.
-    Confirm the redirect status and host/port behavior. Also needed for an HTTP-01 challenge
-    (item 12). The listener model should stay compatible with the Gateway API listeners
-    (NOT-YET.md), without waiting for them.
+    Also needed for an HTTP-01 challenge (item 12). The listener model stays compatible with the
+    Gateway API listeners (NOT-YET.md), without waiting for them. Several listeners remain open.
 - [ ] 9. node ingress mode in the chart: DaemonSet on labelled ingress nodes, ports 80 and 443 on
   the node addresses. Decide how the ports are bound:
   - P1.

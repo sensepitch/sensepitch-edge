@@ -26,6 +26,10 @@ import lombok.Builder;
 ///   ```
 ///
 ///   Environment variable: `SENSEPITCH_EDGE_LISTEN_ADDRESS=192.168.1.100`
+/// @param httpPort plain HTTP port for the HTTP to HTTPS forward, `0` disables the listener
+///   (the default). When set, [Proxy] binds a second listener on the same `address` that
+///   answers every request with a permanent redirect to the HTTPS URL on
+///   [#httpsPort()]. Default is {@value #DEFAULT_HTTP_PORT}.
 /// @author Jens Wilke
 @Builder(toBuilder = true)
 public record ListenConfig(
@@ -36,17 +40,26 @@ public record ListenConfig(
     List<String> hosts,
     List<SniConfig> snis,
     String address,
-    int httpsPort) {
+    int httpsPort,
+    int httpPort) {
 
   public static final String DEFAULT_LETS_ENCRYPT_PREFIX = "/etc/letsencrypt/live/";
   public static final String DEFAULT_BIND_ADDRESS = "0.0.0.0";
   public static final int DEFAULT_HTTPS_PORT = 17443;
+  public static final int DEFAULT_HTTP_PORT = 0;
+
+  public ListenConfig {
+    if (httpPort < 0) {
+      throw new IllegalArgumentException("httpPort must be >= 0, was: " + httpPort);
+    }
+  }
 
   public static final ListenConfig DEFAULT =
       ListenConfig.builder()
           .address(DEFAULT_BIND_ADDRESS)
           .letsEncryptPrefix(DEFAULT_LETS_ENCRYPT_PREFIX)
           .httpsPort(DEFAULT_HTTPS_PORT)
+          .httpPort(DEFAULT_HTTP_PORT)
           .build();
 
   /// The key and certificate files of a host in the Let's Encrypt directory layout, see

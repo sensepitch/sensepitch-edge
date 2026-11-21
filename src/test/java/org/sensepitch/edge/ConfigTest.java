@@ -270,6 +270,16 @@ public class ConfigTest {
     ProxyConfig cfg = Main.parseConfig("listen:\n  httpsPort: 8443\n");
     assertEquals(8443, cfg.listen().httpsPort());
     assertEquals(ListenConfig.DEFAULT.address(), cfg.listen().address());
+    assertEquals(ListenConfig.DEFAULT_HTTP_PORT, cfg.listen().httpPort());
+  }
+
+  /// `0` disables the plain HTTP listener, negative values are rejected instead of a bind
+  /// failure at startup.
+  @Test
+  public void negativeHttpPortIsRejected() {
+    RuntimeException ex =
+        assertThrows(RuntimeException.class, () -> Main.parseConfig("listen:\n  httpPort: -1\n"));
+    assertThat(ex).hasStackTraceContaining("httpPort must be >= 0, was: -1");
   }
 
   /// A map entry without value, like `www.example.com:` in the README, is an empty record.

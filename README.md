@@ -604,8 +604,9 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
   sending what it buffered to its own endpoint in the background, without delaying the reload. Each event loop writes an end marker
   into it after the switch, so a record logged just before the switch is sent as well. It ends
   when everything is sent, or dropped after `otlp.maximumUnsentLogAgeMillis` during an outage.
-- **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.connection`,
-  `metrics`, `ja4` and `traceContext` are logged as a warning and ignored.
+- **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.httpPort`,
+  `listen.connection`, `metrics`, `ja4` and `traceContext` are logged as a warning and
+  ignored.
 - **Invalid configuration:** the error is logged and the active configuration stays. The files
   the rejected configuration tried to read are watched as well, a missing one too, so fixing or
   creating such a file, e.g. a certificate written in two steps, retries the reload without
