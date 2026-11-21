@@ -33,6 +33,13 @@ public class Deflector {
   public static final String CHALLENGE_ANSWER_URL = "/.sensepitch.challenge.complete";
   public static final String CHALLENGE_STEP_URL = "/.sensepitch.challenge.step";
   public static final String CHALLENGE_RESOURCES_URL = "/.sensepitch.challenge.files";
+
+  /// Placeholder in the challenge template for the line naming the host, see
+  /// [#connectingToLine].
+  static final String CONNECTING_TO_PLACEHOLDER = "{{CONNECTING_TO}}";
+
+  private static final String CONNECTING_TO_HTML = "Connecting to:<br/>%s<br/><br/>";
+
   public static final String htmlTemplate = ResourceLoader.loadTextFile("challenge/challenge.html");
   public static final String TOKEN_COOKIE_NAME = "sensepitch-tk";
   public static final String CHALLENGE_COOKIE_NAME = "sensepitch-ch";
@@ -206,6 +213,8 @@ public class Deflector {
     msg = msg.replace("{{VERIFY_URL}}", CHALLENGE_ANSWER_URL);
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
     msg = msg.replace("{{MAX_ITERATIONS}}", Integer.toString(powMaxIterations));
+    // last, so nothing of the host is taken for a placeholder or resource path
+    msg = msg.replace(CONNECTING_TO_PLACEHOLDER, connectingToLine(request));
     // from the channel allocator, so the plaintext is already in direct memory for BoringSSL,
     // see the comment in ResourceFiles. buffer() rather than directBuffer() to keep honouring
     // -Dio.netty.noPreferDirect.
@@ -227,6 +236,38 @@ public class Deflector {
       addCookie(response, TOKEN_COOKIE_NAME, "", false, 0);
     }
     ctx.writeAndFlush(response);
+  }
+
+  /// Names the requested host on the challenge page, so the visitor sees which site checks the
+  /// browser. The `Host` header is sanitized already, see [SanitizeHostHandler], it is escaped
+  /// anyway, since a pipeline without that handler would pass on what the client sent.
+  ///
+  /// @return the HTML line with the host, or empty if the request has no usable host, e.g. one of
+  ///   [SanitizeHostHandler#SPECIAL_HOSTS]
+  private static String connectingToLine(HttpRequest request) {
+    String host = request.headers().get(HttpHeaderNames.HOST);
+    if (host == null || host.isBlank() || SanitizeHostHandler.SPECIAL_HOSTS.contains(host)) {
+      return "";
+    }
+    return CONNECTING_TO_HTML.formatted(escapeHtml(host));
+  }
+
+  /// Escapes text for HTML element content and quoted attribute values; neither the JDK nor
+  /// Netty offer this.
+  private static String escapeHtml(String text) {
+    StringBuilder sb = new StringBuilder(text.length());
+    for (int i = 0; i < text.length(); i++) {
+      char c = text.charAt(i);
+      switch (c) {
+        case '&' -> sb.append("&amp;");
+        case '<' -> sb.append("&lt;");
+        case '>' -> sb.append("&gt;");
+        case '"' -> sb.append("&quot;");
+        case '\'' -> sb.append("&#39;");
+        default -> sb.append(c);
+      }
+    }
+    return sb.toString();
   }
 
   /// Advances the verified history of the request or starts it with the admission that just

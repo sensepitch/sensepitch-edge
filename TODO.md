@@ -128,11 +128,6 @@ are listed under Bugs.
   - P2: also the `SIGTERM` path.
   - The workflow "Flaky tests" (`.github/workflows/flaky-tests.yml`) counts failures over ten
     runs each evening; take the failure rates from its run summary.
-- [ ] The challenge page shows a fixed host: `challenge/challenge.html` has
-  `Connecting to: www.packingpanic.com` hard-coded, so every protected site names that host to
-  its visitors. Fill in the requested host with the template placeholders `Deflector` already
-  replaces (`{{ENDPOINT}}`, `{{PREFIX}}`), escaped for HTML, or drop the line; test it.
-  - P1: visible to every challenged visitor of every site.
 
 ## Kubernetes, direct node ingress
 
@@ -361,6 +356,10 @@ logging) is in [NOT-YET.md](NOT-YET.md).
   - P2 before an image is published (Kubernetes item 2): a public image needs a license.
 
 ## Done
+
+- [x] Show the requested host on the challenge page (2026-11-21). `Deflector` HTML-escapes the
+  sanitized host and omits the line when there is no usable host. Covered by
+  `ChallengePageHostBDDTest`.
 
 - [x] Complete config records, plan in
   [plans/complete-config-records.md](plans/complete-config-records.md) (2026-11-20). Builders
