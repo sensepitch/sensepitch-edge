@@ -357,6 +357,10 @@ logging) is in [NOT-YET.md](NOT-YET.md).
 
 ## Done
 
+- [x] Release the request-log sender before completing `stopped` (2026-11-21). The sender shuts down
+  its HTTP client and compression executor and removes its metrics registrations before notifying
+  waiters. Covered by `HttpBatchSenderTest.stoppedCompletesAfterTheSenderIsReleased`.
+
 - [x] Show the requested host on the challenge page (2026-11-21). `Deflector` HTML-escapes the
   sanitized host and omits the line when there is no usable host. Covered by
   `ChallengePageHostBDDTest`.

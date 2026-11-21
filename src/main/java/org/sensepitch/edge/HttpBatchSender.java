@@ -72,8 +72,9 @@ import java.util.concurrent.atomic.AtomicLong;
 ///
 /// End: [#finish()] refuses new threads. Each thread ends its batcher itself, see
 /// [ThreadBatcher#close()]: an event loop when it terminates, or when a reload asks it to. The
-/// sender stops when it is finishing, all batchers are closed and nothing waits anymore, and
-/// completes [#stopped()]. Who waits for that, and how long, is up to the caller.
+/// sender stops when it is finishing, all batchers are closed and nothing waits anymore. It
+/// releases its HTTP client, compression thread and gauges, and then completes [#stopped()]. Who
+/// waits for that, and how long, is up to the caller.
 ///
 /// Concurrency: one private lock guards the queue and the requests in flight. It is taken per
 /// batch and per completion, never per record. The bytes and records waiting are atomic counters,
@@ -231,6 +232,10 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// either registered before or refused after. Volatile for the read in `stopIfDone()`.
   private volatile boolean finishing;
 
+  /// Set once by `stopIfDone()`, so the sender releases its resources only once
+  private final AtomicBoolean stopping = new AtomicBoolean();
+
+  /// Completed after the resources were released, see [#stopped()]
   private final CompletableFuture<Void> stopped = new CompletableFuture<>();
 
   // guarded by lock
@@ -439,8 +444,9 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
     return stopped;
   }
 
-  /// Completed when the sender stopped after [#finish()]: all batchers closed and all batches
-  /// sent or dropped
+  /// Completed when the sender stopped after [#finish()]: all batchers closed, all batches sent
+  /// or dropped, and the HTTP client, the compression thread and the gauges released. A dependent
+  /// action sees the released sender.
   public CompletableFuture<Void> stopped() {
     return stopped;
   }
@@ -460,7 +466,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
       collectPartialBatches();
       dispatch();
     } finally {
-      if (!stopped.isDone()) {
+      if (!stopping.get()) {
         scheduleFlush();
       }
     }
@@ -553,21 +559,32 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
   /// counts as waiting from its reservation until it is sent or dropped, so this covers the
   /// queue, the requests in flight, and a batch on its way from a batcher. Once true, it stays
   /// true: new batchers are refused, and only batchers reserve batches.
+  ///
+  /// Releases everything before it completes [#stopped()], so whoever waits for it sees a
+  /// released sender. Completing the future first would run its waiters while the compression
+  /// thread, the HTTP client and the gauges are still live.
   private void stopIfDone() {
-    if (finishing && batchers.isEmpty() && bufferedRecords.get() == 0 && stopped.complete(null)) {
-      httpClient.shutdownNow();
-      // e.g. removed by a configuration reload, the gauges stop reporting it
-      metrics.remove(this);
-      metrics.circuitBreakers.remove(endpoint.breaker());
-      if (compressionExecutor != null) {
-        // only reached with nothing in flight, so no compression task is queued or running
-        compressionExecutor.shutdown();
+    if (finishing
+        && batchers.isEmpty()
+        && bufferedRecords.get() == 0
+        && stopping.compareAndSet(false, true)) {
+      try {
+        httpClient.shutdownNow();
+        // e.g. removed by a configuration reload, the gauges stop reporting it
+        metrics.remove(this);
+        metrics.circuitBreakers.remove(endpoint.breaker());
+        if (compressionExecutor != null) {
+          // only reached with nothing in flight, so no compression task is queued or running
+          compressionExecutor.shutdown();
+        }
+        // nothing is in flight anymore, so no compressor is in use
+        for (GzipCompressor compressor : compressors) {
+          compressor.end();
+        }
+        compressors.clear();
+      } finally {
+        stopped.complete(null);
       }
-      // nothing is in flight anymore, so no compressor is in use
-      for (GzipCompressor compressor : compressors) {
-        compressor.end();
-      }
-      compressors.clear();
     }
   }
 

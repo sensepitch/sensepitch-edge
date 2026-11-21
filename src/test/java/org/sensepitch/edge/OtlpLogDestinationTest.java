@@ -404,10 +404,14 @@ class OtlpLogDestinationTest {
     for (int i = 0; i < 100; i++) {
       logger.logRequest(request("/compressed/" + i));
     }
+    // runs in the thread that stops the sender, here the completion of the post
+    CompletableFuture<Boolean> stoppedWhenCompleted =
+        destination.stopped().thenApply(ignored -> destination.compressionExecutorStopped());
     HttpBatchSenderTest.close(destination);
     Received post = receive();
     assertThat(post.headers()).containsEntry("content-encoding", "gzip");
     assertThat(post.paths()).hasSize(100).startsWith("/compressed/0");
+    assertThat(stoppedWhenCompleted.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
     assertThat(destination.compressionExecutorStopped()).isTrue();
   }
 

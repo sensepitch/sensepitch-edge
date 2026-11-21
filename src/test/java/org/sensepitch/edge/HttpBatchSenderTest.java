@@ -6,11 +6,13 @@ import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
+import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -112,6 +114,23 @@ class HttpBatchSenderTest {
     sender.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
   }
 
+  /// Destinations the queue gauges of the metrics report
+  static List<String> gaugedDestinations(RequestLogMetrics metrics) {
+    List<String> destinations = new ArrayList<>();
+    metrics.registerCollectors(
+        collector -> {
+          if (collector.collect() instanceof GaugeSnapshot gauge) {
+            for (GaugeSnapshot.GaugeDataPointSnapshot point : gauge.getDataPoints()) {
+              String destination = point.getLabels().get(RequestLogMetrics.DESTINATION_LABEL);
+              if (destination != null) {
+                destinations.add(destination);
+              }
+            }
+          }
+        });
+    return destinations;
+  }
+
   /// No log server listens on port 1, connecting fails at once
   static final String UNREACHABLE = "http://127.0.0.1:1/lines";
 
@@ -119,6 +138,49 @@ class HttpBatchSenderTest {
     TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
     info.request().setUri(path);
     return info;
+  }
+
+  /// Whoever waits for [HttpBatchSender#stopped()] sees a released sender: the compression thread
+  /// is shut down, and neither the queue gauges nor the breaker gauges report it anymore. A
+  /// dependent action runs in the thread that completes the future, so it sees the state at the
+  /// moment of completion.
+  @Test
+  void stoppedCompletesAfterTheSenderIsReleased() throws Exception {
+    RequestLogMetrics metrics = new RequestLogMetrics();
+    HttpBatchSender<TextBatch> sender =
+        new HttpBatchSender<>(
+            new HttpBatchSender.Settings(
+                "text",
+                URI.create(UNREACHABLE),
+                Map.of(),
+                Duration.ofSeconds(5),
+                OtlpConfig.MIN_BATCH_BYTES,
+                64L * 1024 * 1024,
+                2,
+                OUT_OF_REACH_MILLIS,
+                OUT_OF_REACH_MILLIS,
+                true,
+                OtlpConfig.DEFAULT_COMPRESSION_LEVEL,
+                new Backoff(10, 50)),
+            new TextPayload(),
+            metrics);
+    assertThat(sender.compressionExecutorStopped()).isFalse();
+    assertThat(gaugedDestinations(metrics)).contains("text");
+    assertThat(metrics.circuitBreakers.find(HttpBatchSender.BREAKER_COMPONENT, "text")).isNotNull();
+    CompletableFuture<List<Object>> seen =
+        sender
+            .stopped()
+            .thenApply(
+                ignored ->
+                    List.of(
+                        sender.compressionExecutorStopped(),
+                        gaugedDestinations(metrics),
+                        metrics.circuitBreakers.find(HttpBatchSender.BREAKER_COMPONENT, "text")
+                            == null));
+    close(sender);
+    assertThat(seen.get(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        .as("executor stopped, gauged destinations, breaker removed when stopped completes")
+        .containsExactly(true, List.of(), true);
   }
 
   @Test
