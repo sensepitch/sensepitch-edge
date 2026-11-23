@@ -37,7 +37,7 @@ class OtlpLogDestinationIT {
 
   final OtlpLogDestinationTest fixture = new OtlpLogDestinationTest();
 
-  @RegisterExtension LogCapture logs = fixture.logs;
+  @RegisterExtension LogCapture logs = LogCapture.ofAllThreads();
 
   @BeforeEach
   void startServer() throws IOException {
@@ -185,7 +185,7 @@ class OtlpLogDestinationIT {
     assertThat(fixture.deliveredPaths()).as("all, once, in order").isEqualTo(expected);
     assertThat(fixture.destination.droppedCount()).isZero();
     assertThat(fixture.counter("sensepitch_request_log_export_failed")).isZero();
-    assertThat(fixture.logs.messages(OtlpLogDestination.class))
+    assertThat(logs.messages(OtlpLogDestination.class))
         .anySatisfy(m -> assertThat(m).contains("Buffering records and retrying"))
         .anySatisfy(m -> assertThat(m).contains("recovered after"));
     await("buffered batches released", () -> fixture.bufferedBytesGauge() == 0);

@@ -40,18 +40,15 @@ are listed under Bugs.
     `System.nanoTime()` for the age of a batch; and the transport, now `httpClient.sendAsync` in
     `post`, so a test completes a request itself with a status, a `Retry-After` or an
     `IOException`. Production defaults stay as they are, no config change.
-  - Candidates: `OtlpLogDestinationTest` (3.6 s and `@Isolated`; 27 of its 34 tests run against a
-    log server, about 20 of them test sender logic: retry, give up, outage, buffer limit,
-    breaker probes, aging, slow start, concurrency limit), `ReloadableRequestLoggerTest` (3.3 s
-    on 2026-11-16; since 2026-11-18 it sets 10 to 50 ms retry delays, real time still),
-    `RequestLoggerFactoryTest`,
-    `HttpBatchSenderTest`,
+  - Candidates: `ReloadableRequestLoggerTest` (3.3 s on 2026-11-16; since 2026-11-18 it sets 10
+    to 50 ms retry delays, real time still), `RequestLoggerFactoryTest`,
     `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
+  - Done 2026-11-23: `OtlpLogDestinationTest` runs its sender scenarios (retry, give up, outage,
+    buffer limit, breaker, slow start window, flush) on `FakeTime` with a `ControlledTransport`,
+    in the test thread. It captures the log per thread and is no longer `@Isolated`; 1.3 s, was
+    3.6 s. The wire format (compression, headers, the exported record) stays against the real
+    log server, which `OtlpLogDestinationIT` also uses. Unit test coverage unchanged per class.
   - Survey 2026-11-23, by readiness for `FakeTime`:
-    - Ready, the seam exists: `OtlpLogDestinationTest`, through the package private constructor
-      with clock, timer and transport, as `OtlpOutageBDDTest` shows with `FakeTime` and
-      `ControlledTransport`. The load sensitive expiry and probe timing checks went first; the
-      remaining sender logic scenarios follow, at the level that owns the rule (see `AGENTS.md`).
     - Need a seam first: `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (they build
       the destination via the public constructor), `AsyncRequestLogWriterTest` and
       `ConfigFileWatcherTest` (no clock or scheduler seam; the watcher also waits on the file
@@ -115,7 +112,7 @@ are listed under Bugs.
   - P1, test speed and clarity: `LogCapture`/`LogSink` and `RequestLogCapture` cannot wait for
     an entry, so `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`, `awaitHandshakeErrors`),
     `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
-    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll.
+    `ReloadableRequestLoggerTest` poll.
   - Remedy: a blocking wait for an entry on the captures, see "Instance scoped diagnostic
     logging" below; test log servers that signal each post with a `Semaphore` or queue (several
     have a `received` queue already), a latch in the reload callback. `TestingParameters.await`

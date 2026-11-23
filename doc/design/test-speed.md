@@ -82,7 +82,7 @@ comment giving the reason. JUnit then runs it while no other class runs. Today t
 
 | Class | Reason |
 |---|---|
-| `OtlpLogDestinationTest`, `ConfigFileWatcherTest`, `AsyncRequestLogWriterTest`, `ProxyShutdownIT`, `ExternalTcpIT` | capture the log of all threads |
+| `ConfigFileWatcherTest`, `AsyncRequestLogWriterTest`, `OtlpLogDestinationIT`, `ProxyShutdownIT`, `ExternalTcpIT` | capture the log of all threads |
 | `LoggingTest`, `Log4jOutputTest` | capture what arrives in Log4j2, change a Log4j2 level |
 | `MetricsAndMemoryTest` | asserts on memory counters of the JVM |
 
@@ -91,7 +91,8 @@ The first two groups are enforced: `LogCapture.ofAllThreads()` and
 class is not `@Isolated`. A new test cannot bring the cross talk back by accident.
 
 Isolation is the expensive answer, an isolated class contributes its full duration to the wall
-clock. `OtlpLogDestinationTest` alone is 3.6 s. The better answer is to remove the shared state,
+clock. `OtlpLogDestinationTest` alone was 3.6 s; on simulated time it captures per thread, is no
+longer isolated and takes 1.3 s (2026-11-23). The better answer is to remove the shared state,
 see [Planned improvements](#planned-improvements).
 
 ### The log is captured per thread, not from Log4j2
@@ -375,9 +376,9 @@ build.
 ## Limitations
 
 - The unit test phase is bounded by the isolated classes, which run one after the other, and by
-  the two classes waiting on real timers, `OtlpLogDestinationTest` and
-  `ReloadableRequestLoggerTest`. The selective move left them at 2.461 s and 1.458 s in one run
-  on 2026-11-17; this is an observed cost, not a stable bound.
+  the class still waiting on real timers, `ReloadableRequestLoggerTest` (1.458 s in one run on
+  2026-11-17; this is an observed cost, not a stable bound). `OtlpLogDestinationTest` moved to
+  simulated time on 2026-11-23.
 - Parallel execution is checked by repetition, not proven: 10 and 25 green runs in a row. A race
   between tests that needs rarer timing can still be there.
 - `LogCapture` only sees the loggers of the proxy. Netty, JUL and other libraries are visible
@@ -398,8 +399,10 @@ build.
   transport. A test then completes requests and advances time from its own thread, which makes
   it fast and deterministic, lets it use the per thread log capture, and removes its
   `@Isolated`. This is the largest gain left. A few real tests stay as `*IT` in addition.
-  The OTLP batch expiry and probe timing scenarios now run in `OtlpOutageBDDTest` on the
-  shared `FakeTime` and `ControlledTransport`. `OtlpLogDestinationIT` checks recovery over real HTTP.
+  Done for the OTLP destination (2026-11-23): `OtlpOutageBDDTest` and the sender scenarios of
+  `OtlpLogDestinationTest` run on the shared `FakeTime` and `ControlledTransport`, the latter
+  no longer `@Isolated`. `OtlpLogDestinationIT` checks recovery over real HTTP. Left:
+  `ReloadableRequestLoggerTest`, see `TODO.md`.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 
