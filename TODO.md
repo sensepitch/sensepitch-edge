@@ -87,12 +87,13 @@ are listed under Bugs.
   - P1, test speed and clarity: `LogCapture`/`LogSink` and `RequestLogCapture` cannot wait for
     an entry, so `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`, `awaitHandshakeErrors`),
     `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
-    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll, as does
-    `ConfigFileWatcherTest.waitUntilReloads`.
+    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` poll.
   - Remedy: a blocking wait for an entry on the captures, see "Instance scoped diagnostic
     logging" below; test log servers that signal each post with a `Semaphore` or queue (several
     have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
     stays where no hook exists.
+  - Done 2026-11-23: `ConfigFileWatcherTest` waits for watcher checks using a semaphore in its
+    fixture.
 - [ ] Instance scoped diagnostic logging, plan in
   [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
   - P1, test speed and clarity, no operator visible change: non-trace loggers become instance

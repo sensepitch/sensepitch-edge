@@ -1,7 +1,8 @@
 package org.sensepitch.edge;
 
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.sensepitch.edge.TestingParameters.await;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -12,7 +13,9 @@ import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,8 +30,44 @@ class ConfigFileWatcherTest {
 
   final AtomicInteger reloads = new AtomicInteger();
 
+  /// Keeps check notifications until the test can recheck its reload condition.
+  private final Semaphore checkedEvents = new Semaphore(0);
+
+  /// Signals after a check has finished, including any reload it caused.
   ConfigFileWatcher watcher(Path file) {
-    return new ConfigFileWatcher(file);
+    return new ConfigFileWatcher(file) {
+      @Override
+      void checkForChange() {
+        super.checkForChange();
+        checkedEvents.release();
+      }
+    };
+  }
+
+  /// Waits for the watched change instead of polling the reload count, then checks that the
+  /// change caused exactly `expected` reloads, not more
+  void awaitReload(String description, int expected) throws InterruptedException {
+    awaitWatchedCondition(description, () -> reloads.get() >= expected);
+    assertThat(reloads).hasValue(expected);
+  }
+
+  /// Like [awaitReload], for the `applied` counter of a callback that does not count `reloads`
+  void awaitApplied(String description, FakeProxy proxy) throws InterruptedException {
+    awaitWatchedCondition(description, () -> proxy.applied.get() >= 1);
+  }
+
+  /// Waits until the watcher has checked an event that made `condition` true, without polling.
+  /// The test never drives the watcher here. A permit preserves a signal before the wait starts.
+  void awaitWatchedCondition(String description, BooleanSupplier condition)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + TIMEOUT.toNanos();
+    while (!condition.getAsBoolean()) {
+      long remaining = deadline - System.nanoTime();
+      if (remaining <= 0 || !checkedEvents.tryAcquire(remaining, NANOSECONDS)) {
+        assertThat(condition.getAsBoolean()).as(description).isTrue();
+        return;
+      }
+    }
   }
 
   /// Replaces the file by a rename, like editors and Kubernetes do
@@ -42,14 +81,31 @@ class ConfigFileWatcherTest {
 
   final List<String> loaded = new CopyOnWriteArrayList<>();
 
+  /// The thread of each [load], to tell a reload of the watcher thread from one of the test
+  final List<String> loadingThreads = new CopyOnWriteArrayList<>();
+
   ReloadResult load(String content) {
     loaded.add(content);
+    loadingThreads.add(Thread.currentThread().getName());
     reloads.incrementAndGet();
     return ReloadResult.APPLIED;
   }
 
   static String complete(String yaml) {
     return yaml + ConfigFileWatcher.END_MARKER + "\n";
+  }
+
+  @Test
+  void waitingForAWatchEventReturnsAfterTheEvent() throws Exception {
+    Path file = dir.resolve("config.yaml");
+    Files.writeString(file, complete("a: 1\n"));
+    ConfigFileWatcher watcher = watcher(file);
+    watcher.start(this::load, Map::of);
+    replace(file, complete("a: 2\n"));
+
+    awaitReload("changed configuration loaded", 1);
+    assertThat(loaded).containsExactly(complete("a: 2\n"));
+    assertThat(loadingThreads).as("reloaded by the watcher").containsExactly("config-file-watcher");
   }
 
   @Test
@@ -60,7 +116,7 @@ class ConfigFileWatcherTest {
     watcher.start(this::load, Map::of);
     assertThat(reloads).hasValue(0);
     replace(file, complete("a: 2\n"));
-    waitUntilReloads(1);
+    awaitReload("reload after file change", 1);
     assertThat(loaded).containsExactly(complete("a: 2\n"));
     replace(file, complete("a: 2\n"));
     Files.writeString(dir.resolve("unrelated.txt"), "x");
@@ -90,9 +146,9 @@ class ConfigFileWatcherTest {
         },
         Map::of);
     replace(file, complete("a: 2\n"));
-    waitUntilReloads(1);
+    awaitReload("reload after file change", 1);
     replace(file, complete("a: 3\n"));
-    waitUntilReloads(2);
+    awaitReload("second reload attempt", 2);
   }
 
   @Test
@@ -178,7 +234,7 @@ class ConfigFileWatcherTest {
         secret,
         StandardCopyOption.REPLACE_EXISTING,
         StandardCopyOption.ATOMIC_MOVE);
-    waitUntilReloads(1);
+    awaitReload("reload after file change", 1);
   }
 
   /// A rejected reload, e.g. of a renewed certificate whose key is not written yet, is tried
@@ -260,7 +316,7 @@ class ConfigFileWatcherTest {
         Files.writeString(dir.resolve("secrets/tmp"), "secret"),
         secret,
         StandardCopyOption.ATOMIC_MOVE);
-    await("reload applied", () -> proxy.applied.get() >= 1);
+    awaitApplied("reload of created secret", proxy);
     assertThat(proxy.attempts).hasValue(2);
   }
 
@@ -282,7 +338,7 @@ class ConfigFileWatcherTest {
         secret,
         StandardCopyOption.REPLACE_EXISTING,
         StandardCopyOption.ATOMIC_MOVE);
-    waitUntilReloads(before + 1);
+    awaitReload("reload after directory recreation", before + 1);
   }
 
   /// The directory of a file no longer referenced is unregistered, the configuration's is kept
@@ -345,7 +401,7 @@ class ConfigFileWatcherTest {
     Files.createSymbolicLink(newLink, Path.of("..data_v2"));
     Files.move(
         newLink, current, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-    waitUntilReloads(1);
+    awaitReload("reload after file change", 1);
     assertThat(loaded).containsExactly(complete("a: 2\n"));
   }
 
@@ -367,11 +423,5 @@ class ConfigFileWatcherTest {
     assertThat(ConfigFileWatcher.hasEndMarker("#END\na: 1\n")).isFalse();
     assertThat(ConfigFileWatcher.hasEndMarker("a: 1 #END\n")).isFalse();
     assertThat(ConfigFileWatcher.hasEndMarker("")).isFalse();
-  }
-
-  /// Waits for the watch service, including platforms where it polls for changes.
-  void waitUntilReloads(int expected) throws Exception {
-    await("configuration reloaded " + expected + " times", () -> reloads.get() >= expected);
-    assertThat(reloads).hasValue(expected);
   }
 }

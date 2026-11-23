@@ -120,6 +120,12 @@ logging thread; a test reads what its own thread logged.
 - Trace is enabled in tests so the trace code is covered, but trace records are dropped. Trace
   output is a debugging aid and no acceptance criterion, no test asserts on it.
 
+### Config watcher tests wait on their own fixture
+
+[`ConfigFileWatcherTest`](../../src/test/java/org/sensepitch/edge/ConfigFileWatcherTest.java) uses
+a semaphore signalled after each watcher check. The test waits and rechecks its reload assertion
+without running the watcher itself. A permit keeps a notification that arrived before the wait.
+
 ### Serenity: reporting is off, step objects are plain
 
 Serenity is used for the step chains of the `*BDDTest` classes. Its reporting is not used by the
