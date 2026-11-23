@@ -7,7 +7,6 @@ import static org.sensepitch.edge.TestingParameters.await;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -41,8 +40,8 @@ class PlainHttpListenerIT {
   }
 
   void startProxy() throws Exception {
-    httpsPort = freePort();
-    httpPort = freePort();
+    httpsPort = Loopback.freePort();
+    httpPort = Loopback.freePort();
     ProxyConfig config =
         ProxyConfig.builder()
             .listen(
@@ -113,12 +112,6 @@ class PlainHttpListenerIT {
                         new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis()))
             .isInstanceOf(IOException.class);
       }
-    }
-  }
-
-  private static int freePort() throws IOException {
-    try (ServerSocket probe = new ServerSocket(0)) {
-      return probe.getLocalPort();
     }
   }
 

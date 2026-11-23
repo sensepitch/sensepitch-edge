@@ -6,13 +6,13 @@ import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
+import com.sun.management.ThreadMXBean;
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
-import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,19 +56,18 @@ class ReloadableRequestLoggerTest {
   final CountDownLatch exportHeld = new CountDownLatch(1);
 
   /// Requests the OTLP server got, including refused ones
-  final java.util.concurrent.atomic.AtomicInteger attempts =
-      new java.util.concurrent.atomic.AtomicInteger();
+  final AtomicInteger attempts = new AtomicInteger();
 
   HttpServer server;
   ReloadableRequestLogger logger;
 
   @BeforeEach
   void startServer() throws IOException {
-    server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server = Loopback.httpServer();
     server.createContext(
         "/v1/logs",
         exchange -> {
-          ExportLogsServiceRequest request = OtlpLogDestinationTest.decode(exchange);
+          ExportLogsServiceRequest request = OtlpTestSupport.decode(exchange);
           attempts.incrementAndGet();
           CountDownLatch gate = answerGate;
           if (gate != null) {
@@ -133,7 +133,7 @@ class ReloadableRequestLoggerTest {
   List<String> queuedDestinations() {
     PrometheusRegistry registry = new PrometheusRegistry();
     metrics.registerCollectors(registry::register);
-    return new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
+    return new ScrapedMetrics(registry.scrape())
         .containsSnapshot("sensepitch_request_log_queued").getDataPoints().stream()
             .map(point -> point.getLabels().get(RequestLogMetrics.DESTINATION_LABEL))
             .toList();
@@ -323,8 +323,7 @@ class ReloadableRequestLoggerTest {
     OtlpRequestLogger old = new OtlpRequestLogger(destination);
     destination.finish();
     RequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
-    com.sun.management.ThreadMXBean threads =
-        (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+    ThreadMXBean threads = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     long before = threads.getCurrentThreadAllocatedBytes();
     old.logRequest(info);
     long allocated = threads.getCurrentThreadAllocatedBytes() - before;

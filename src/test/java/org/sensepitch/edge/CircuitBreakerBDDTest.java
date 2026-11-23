@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.sun.management.ThreadMXBean;
 import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Ticker;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
@@ -288,8 +289,7 @@ class CircuitBreakerBDDTest {
             new Backoff(1_000, 30_000),
             1_000,
             new RequestLogMetrics().circuitBreakers.events("test", "b"));
-    com.sun.management.ThreadMXBean threads =
-        (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+    ThreadMXBean threads = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     for (int i = 0; i < 20_000; i++) {
       breaker.tryAcquire();
     }

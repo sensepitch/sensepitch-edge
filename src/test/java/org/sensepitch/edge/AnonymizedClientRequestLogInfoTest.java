@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.handler.codec.http.HttpMethod;
 import java.lang.reflect.Method;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,7 @@ class AnonymizedClientRequestLogInfoTest {
     mapped[12] = (byte) 192;
     mapped[14] = 2;
     mapped[15] = 7;
-    InetAddress address = java.net.Inet6Address.getByAddress(null, mapped, -1);
+    InetAddress address = Inet6Address.getByAddress(null, mapped, -1);
     assertThat(AnonymizedClientRequestLogInfo.anonymize(address).getHostAddress())
         .isEqualTo("192.0.2.0");
   }

@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpVersion;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 
 /// The request log fields, named after the OpenTelemetry semantic conventions
@@ -215,7 +217,7 @@ class RequestLogFieldsWriterTest {
         .containsEntry("sensepitch.duration.response_ns", 2_000L)
         .containsEntry("sensepitch.duration.total_ns", 3_000L);
     assertThat(fields.get("sensepitch.request.header_names"))
-        .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.LIST)
+        .asInstanceOf(InstanceOfAssertFactories.LIST)
         .startsWith("host")
         .contains("cookie");
   }
@@ -230,9 +232,7 @@ class RequestLogFieldsWriterTest {
             .withRoute("/api/*")
             .withConfigId("0123456789abcdef")
             .withProtectionOutcome("passed");
-    info.response()
-        .headers()
-        .set(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE, "text/html");
+    info.response().headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html");
     assertThat(fields(info).fields)
         .containsEntry("sensepitch.request.outcome", "fallback")
         .containsEntry("sensepitch.upstream.status", 503L)
@@ -379,12 +379,12 @@ class RequestLogFieldsWriterTest {
   @Test
   void protocolVersions() {
     TestRequestLogInfo http10 = TestRequestLogInfo.of(HttpMethod.GET, 200);
-    http10.request().setProtocolVersion(io.netty.handler.codec.http.HttpVersion.HTTP_1_0);
+    http10.request().setProtocolVersion(HttpVersion.HTTP_1_0);
     assertThat(fields(http10).fields)
         .containsEntry("network.protocol.name", "http")
         .containsEntry("network.protocol.version", "1.0");
     TestRequestLogInfo other = TestRequestLogInfo.of(HttpMethod.GET, 200);
-    other.request().setProtocolVersion(io.netty.handler.codec.http.HttpVersion.valueOf("SPDY/3.1"));
+    other.request().setProtocolVersion(HttpVersion.valueOf("SPDY/3.1"));
     assertThat(fields(other).fields)
         .containsEntry("network.protocol.name", "spdy")
         .containsEntry("network.protocol.version", "3.1");
@@ -416,7 +416,7 @@ class RequestLogFieldsWriterTest {
     sink.optionalNumber("zero", 0);
     sink.optionalNumber("negative", -1);
     sink.optionalString("present", "x");
-    sink.optionalAddress("present.address", java.net.InetAddress.getByName("192.0.2.7"));
+    sink.optionalAddress("present.address", InetAddress.getByName("192.0.2.7"));
     sink.optionalNumber("positive", 443);
     assertThat(sink.fields)
         .containsExactly(

@@ -9,8 +9,10 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.logs.v1.LogRecord;
-import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -46,11 +48,11 @@ class ProxyOptionsTest {
   @Test
   void stdoutAndOtlpDestinations() throws Exception {
     BlockingQueue<ExportLogsServiceRequest> posts = new LinkedBlockingQueue<>();
-    HttpServer collector = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    HttpServer collector = Loopback.httpServer();
     collector.createContext(
         "/v1/logs",
         exchange -> {
-          posts.add(OtlpLogDestinationTest.decode(exchange));
+          posts.add(OtlpTestSupport.decode(exchange));
           exchange.sendResponseHeaders(200, -1);
           exchange.close();
         });
@@ -93,7 +95,7 @@ class ProxyOptionsTest {
           .contains("http.request.method", "url.path");
       String spanId =
           steps.requestLog.lines().getFirst().replaceAll(".*\"span_id\":\"([0-9a-f]+)\".*", "$1");
-      assertThat(java.util.HexFormat.of().formatHex(record.getSpanId().toByteArray()))
+      assertThat(HexFormat.of().formatHex(record.getSpanId().toByteArray()))
           .as("both destinations report the same request")
           .isEqualTo(spanId);
       steps.proxy.shutdown();
@@ -139,13 +141,13 @@ class ProxyOptionsTest {
     ProxyConfig config =
         COMMON_CONFIG.toBuilder()
             .sites(
-                java.util.Map.of(
+                Map.of(
                     "example.com",
                     SiteConfig.builder()
                         .response(text)
                         .protection(noProtection)
                         .paths(
-                            java.util.Map.of(
+                            Map.of(
                                 "/api/*", PathRouteConfig.builder().response(text).build(),
                                 "/exact", PathRouteConfig.builder().response(text).build()))
                         .build(),
@@ -165,7 +167,7 @@ class ProxyOptionsTest {
     steps.when_requesting("unserviced-domain.com", "/");
     steps.finish_and_check_for_leaks();
     var json = new com.fasterxml.jackson.databind.ObjectMapper();
-    List<String> routes = new java.util.ArrayList<>();
+    List<String> routes = new ArrayList<>();
     for (String line : steps.requestLog.lines()) {
       var record = json.readTree(line);
       routes.add(record.has("http.route") ? record.get("http.route").asText() : null);

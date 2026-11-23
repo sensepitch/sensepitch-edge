@@ -1,16 +1,15 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.sensepitch.edge.OtlpLogDestinationTest.decode;
 import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
-import static org.sensepitch.edge.OtlpLogDestinationTest.request;
+import static org.sensepitch.edge.OtlpTestSupport.decode;
+import static org.sensepitch.edge.TestRequestLogInfo.request;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
-import java.net.InetSocketAddress;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -41,7 +40,7 @@ class OtlpSlowStartIT {
     CountDownLatch probeArrived = new CountDownLatch(1);
     CountDownLatch twoRequestsInFlight = new CountDownLatch(1);
     Semaphore answers = new Semaphore(0);
-    HttpServer held = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    HttpServer held = Loopback.httpServer();
     held.setExecutor(Executors.newCachedThreadPool());
     held.createContext(
         "/v1/logs",
@@ -120,7 +119,7 @@ class OtlpSlowStartIT {
     PrometheusRegistry registry = new PrometheusRegistry();
     destination.metrics().registerCollectors(registry::register);
     return (long)
-        new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
+        new ScrapedMetrics(registry.scrape())
             .counter(
                 "sensepitch_request_log_export_retries", "destination", destination.destination())
             .getValue();

@@ -2,9 +2,9 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.OtlpLogDestinationTest.awaitQuietly;
-import static org.sensepitch.edge.OtlpLogDestinationTest.decode;
 import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
-import static org.sensepitch.edge.OtlpLogDestinationTest.request;
+import static org.sensepitch.edge.OtlpTestSupport.decode;
+import static org.sensepitch.edge.TestRequestLogInfo.request;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
@@ -13,13 +13,14 @@ import static org.sensepitch.edge.TestingParameters.await;
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,16 +53,13 @@ class OtlpLogDestinationIT {
   @Test
   void concurrentRequestsUpToTheLimit() throws Exception {
     int limit = 3;
-    java.util.concurrent.atomic.AtomicInteger inFlight =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.atomic.AtomicInteger maxInFlight =
-        new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.atomic.AtomicInteger records =
-        new java.util.concurrent.atomic.AtomicInteger();
+    AtomicInteger inFlight = new AtomicInteger();
+    AtomicInteger maxInFlight = new AtomicInteger();
+    AtomicInteger records = new AtomicInteger();
     CountDownLatch limitReached = new CountDownLatch(limit);
     CountDownLatch release = new CountDownLatch(1);
-    HttpServer slow = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-    slow.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
+    HttpServer slow = Loopback.httpServer();
+    slow.setExecutor(Executors.newCachedThreadPool());
     slow.createContext(
         "/v1/logs",
         exchange -> {

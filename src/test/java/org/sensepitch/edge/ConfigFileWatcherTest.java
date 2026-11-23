@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -291,7 +292,7 @@ class ConfigFileWatcherTest {
     }
 
     Map<Path, ConfigFiles.Fingerprint> referencedFiles() {
-      Map<Path, ConfigFiles.Fingerprint> files = new java.util.HashMap<>(active);
+      Map<Path, ConfigFiles.Fingerprint> files = new HashMap<>(active);
       files.putAll(candidate);
       return files;
     }

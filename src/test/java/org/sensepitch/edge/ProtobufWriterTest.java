@@ -2,7 +2,9 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /// Encoding examples from the Protocol Buffers documentation
@@ -78,7 +80,7 @@ class ProtobufWriterTest {
           "plain", "äöü ß", "€ 中文", "emoji \uD83D\uDE00 end", "lone \uD83D x", "\uDE00"
         }) {
       ProtobufWriter writer = new ProtobufWriter().string(1, value);
-      byte[] expected = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+      byte[] expected = value.getBytes(StandardCharsets.UTF_8);
       ProtobufWriter reference = new ProtobufWriter().bytes(1, expected);
       assertThat(writer.toByteArray()).as(value).isEqualTo(reference.toByteArray());
     }
@@ -93,10 +95,9 @@ class ProtobufWriterTest {
   @Test
   void hexBytes() {
     assertThat(hex(new ProtobufWriter().hexBytes(1, "00f0Aa"))).isEqualTo("0a0300f0aa");
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> new ProtobufWriter().hexBytes(1, "abc"))
+    Assertions.assertThatThrownBy(() -> new ProtobufWriter().hexBytes(1, "abc"))
         .isInstanceOf(IllegalArgumentException.class);
-    org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ProtobufWriter().hexBytes(1, "zz"))
+    Assertions.assertThatThrownBy(() -> new ProtobufWriter().hexBytes(1, "zz"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -108,7 +109,7 @@ class ProtobufWriterTest {
     writer.truncate(mark);
     writer.raw(new byte[] {0x10, 0x01});
     assertThat(hex(writer)).isEqualTo("0896011001");
-    org.assertj.core.api.Assertions.assertThatThrownBy(() -> writer.truncate(100))
+    Assertions.assertThatThrownBy(() -> writer.truncate(100))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

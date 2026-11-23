@@ -264,7 +264,8 @@ public class ConfigTest {
     assertThat(assertThrows(IllegalArgumentException.class, () -> Main.parseConfig("")))
         .hasMessageEndingWith("a mapping is expected, found nothing");
     assertThat(ex)
-        .hasMessageContaining("SslConfig: a mapping is expected, found a scalar in line 2")
+        .hasMessageContaining(
+            SslConfig.class.getSimpleName() + ": a mapping is expected, found a scalar in line 2")
         .hasMessageNotContaining("top-secret");
   }
 

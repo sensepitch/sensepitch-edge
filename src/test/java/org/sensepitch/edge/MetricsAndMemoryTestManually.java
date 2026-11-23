@@ -8,24 +8,10 @@ import io.netty.buffer.ByteBufAllocatorMetric;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.buffer.UnpooledByteBufAllocator;
-import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.instrumentation.jvm.JvmMetrics;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
-import io.prometheus.metrics.model.snapshots.CounterSnapshot;
-import io.prometheus.metrics.model.snapshots.DataPointSnapshot;
-import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
-import io.prometheus.metrics.model.snapshots.Labels;
-import io.prometheus.metrics.model.snapshots.MetricSnapshot;
-import io.prometheus.metrics.model.snapshots.MetricSnapshots;
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.StringReader;
 import java.lang.foreign.Arena;
 import java.lang.ref.Reference;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Test;
@@ -77,14 +63,14 @@ class MetricsAndMemoryTestManually {
     // initialize Netty classes for buffers
     ByteBuf dummyBuf = Unpooled.directBuffer(123);
     dummyBuf.release();
-    Snapshots s0 = snapshots();
+    ScrapedMetrics s0 = snapshots();
     printMetrics(s0);
     ByteBufAllocatorMetric metric = UnpooledByteBufAllocator.DEFAULT.metric();
     long usedBefore = metric.usedDirectMemory();
     new NettyAllocatorMetrics().registerCollectors(reg::register);
     ByteBuf buf = Unpooled.directBuffer(sampleAllocation);
     try {
-      Snapshots s1 = snapshots();
+      ScrapedMetrics s1 = snapshots();
       printMetrics(s1);
       assertThat(s1.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
           .as("the JVM direct pool does not see buffers allocated through java.lang.foreign")
@@ -133,10 +119,10 @@ class MetricsAndMemoryTestManually {
     // initialize Netty classes for buffers
     ByteBuf dummyBuf = Unpooled.directBuffer(123);
     dummyBuf.release();
-    Snapshots s0 = snapshots();
+    ScrapedMetrics s0 = snapshots();
     printMetrics(s0);
     ByteBuf buf = Unpooled.directBuffer(sampleAllocation);
-    Snapshots s1 = snapshots();
+    ScrapedMetrics s1 = snapshots();
     printMetrics(s1);
     try {
       assertThat(s1.gauge("process_virtual_memory_bytes").getValue())
@@ -162,10 +148,10 @@ class MetricsAndMemoryTestManually {
     // let the allocator set up its arenas and thread caches first
     ByteBuf dummyBuf = PooledByteBufAllocator.DEFAULT.directBuffer(123);
     dummyBuf.release();
-    Snapshots s0 = snapshots();
+    ScrapedMetrics s0 = snapshots();
     ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(sampleAllocation);
     try {
-      Snapshots s1 = snapshots();
+      ScrapedMetrics s1 = snapshots();
       printMetrics(s1);
       assertThat(s1.gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
           .as("the JVM direct pool does not see the chunks of the pooled allocator")
@@ -186,13 +172,13 @@ class MetricsAndMemoryTestManually {
   void nativeMemoryTrackingDoesNotSeeLinkedPooledAllocatorMemory() {
     JvmMetrics.builder().register(reg);
     final int sampleAllocation = 100 * 1024 * 1024;
-    Snapshots s0 = snapshots();
+    ScrapedMetrics s0 = snapshots();
     assertThat(s0.getPrometheusExpositionText().contains("jvm_native_memory_committed_bytes"))
         .as("needs -XX:NativeMemoryTracking=summary")
         .isTrue();
     ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(sampleAllocation);
     try {
-      Snapshots s1 = snapshots();
+      ScrapedMetrics s1 = snapshots();
       printMetrics(s1);
       assertThat(s1.gauge("jvm_native_memory_committed_bytes", "pool", "Other").getValue())
           .as("native memory tracking does not see direct libc allocations")
@@ -263,7 +249,7 @@ class MetricsAndMemoryTestManually {
   private static final Logger LOG = LogManager.getLogger(MetricsAndMemoryTestManually.class);
 
   /// Diagnostic output, enable with level `DEBUG` for this class in `log4j2-test.xml`
-  private static void printMetrics(Snapshots s) {
+  private static void printMetrics(ScrapedMetrics s) {
     if (!LOG.isDebugEnabled()) {
       return;
     }
@@ -274,81 +260,7 @@ class MetricsAndMemoryTestManually {
     LOG.debug(s.getLinesContaining("jvm_native_memory_committed_bytes{pool=\"Other\"}"));
   }
 
-  Snapshots snapshots() {
-    return new Snapshots(reg.scrape());
-  }
-
-  // FIXME: move this top level, used by other classes
-  static class Snapshots {
-
-    MetricSnapshots snapshots;
-    Map<String, MetricSnapshot> name2snapshot = new HashMap<>();
-    String prometheusText;
-
-    Snapshots(MetricSnapshots snapshots) {
-      this.snapshots = snapshots;
-      snapshots.forEach(
-          snapshot -> {
-            name2snapshot.put(snapshot.getMetadata().getName(), snapshot);
-          });
-      PrometheusTextFormatWriter pw = PrometheusTextFormatWriter.builder().build();
-      ByteArrayOutputStream out = new ByteArrayOutputStream();
-      try {
-        pw.write(out, snapshots);
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-      prometheusText = out.toString();
-    }
-
-    MetricSnapshot containsSnapshot(String metricName) {
-      MetricSnapshot snapshot = name2snapshot.get(metricName);
-      assertThat(snapshot).isNotNull().describedAs("snapshot available for metric %s", metricName);
-      return snapshot;
-    }
-
-    DataPointSnapshot datapoint(String metricName) {
-      MetricSnapshot snapshot = containsSnapshot(metricName);
-      assertThat(snapshot.getDataPoints().size()).isEqualTo(1);
-      DataPointSnapshot dataPointSnapshot = snapshot.getDataPoints().getFirst();
-      return dataPointSnapshot;
-    }
-
-    DataPointSnapshot datapoint(String metricName, String... labelKeyValues) {
-      Labels labels = Labels.of(labelKeyValues);
-      MetricSnapshot snapshot = containsSnapshot(metricName);
-      return snapshot.getDataPoints().stream()
-          .filter(dataPointSnapshot -> labels.equals(dataPointSnapshot.getLabels()))
-          .findFirst()
-          .get();
-    }
-
-    GaugeSnapshot.GaugeDataPointSnapshot gauge(String metricName, String... labelKeyValues) {
-      return (GaugeSnapshot.GaugeDataPointSnapshot) datapoint(metricName, labelKeyValues);
-    }
-
-    CounterSnapshot.CounterDataPointSnapshot counter(String metricName) {
-      return (CounterSnapshot.CounterDataPointSnapshot) datapoint(metricName);
-    }
-
-    CounterSnapshot.CounterDataPointSnapshot counter(String metricName, String... labelKeyValues) {
-      return (CounterSnapshot.CounterDataPointSnapshot) datapoint(metricName, labelKeyValues);
-    }
-
-    String getPrometheusExpositionText() {
-      return prometheusText;
-    }
-
-    String getLinesContaining(String match) {
-      return new BufferedReader(new StringReader(prometheusText))
-          .lines()
-          .filter(line -> line.contains(match))
-          .collect(Collectors.joining("\n"));
-    }
-
-    @Override
-    public String toString() {
-      return prometheusText;
-    }
+  ScrapedMetrics snapshots() {
+    return new ScrapedMetrics(reg.scrape());
   }
 }

@@ -2,6 +2,9 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.sensepitch.edge.OtlpTestSupport.attributes;
+import static org.sensepitch.edge.OtlpTestSupport.gunzip;
+import static org.sensepitch.edge.TestRequestLogInfo.request;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
@@ -12,15 +15,15 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.common.v1.AnyValue;
-import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.logs.v1.LogRecord;
 import io.opentelemetry.proto.logs.v1.ResourceLogs;
 import io.opentelemetry.proto.logs.v1.ScopeLogs;
-import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import io.opentelemetry.proto.resource.v1.Resource;
 import io.prometheus.metrics.model.snapshots.HistogramSnapshot;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
@@ -97,7 +100,7 @@ class OtlpLogDestinationTest {
 
   @BeforeEach
   void startServer() throws IOException {
-    server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server = Loopback.httpServer();
     port = server.getAddress().getPort();
     startServerOn(server);
   }
@@ -119,7 +122,9 @@ class OtlpLogDestinationTest {
                   exchange.getRequestHeaders().getFirst("Content-Type"),
                   headers,
                   ExportLogsServiceRequest.parseFrom(
-                      "gzip".equals(headers.get("content-encoding")) ? gunzip(body) : body),
+                      OtlpConfig.GZIP.equals(headers.get("content-encoding"))
+                          ? gunzip(body)
+                          : body),
                   answer.status(),
                   System.nanoTime()));
           CountDownLatch gate = answerGate;
@@ -177,12 +182,6 @@ class OtlpLogDestinationTest {
         "otlp", config.toBuilder().initialRetryDelayMillis(10).maxRetryDelayMillis(50).build());
   }
 
-  static TestRequestLogInfo request(String path) {
-    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
-    info.request().setUri(path);
-    return info;
-  }
-
   /// Size of a record of the info, as framed in a batch
   static int framedSize(RequestLogInfo info) {
     int size = OtlpRequestLogSink.encode(info).length;
@@ -200,40 +199,41 @@ class OtlpLogDestinationTest {
     return paths;
   }
 
+  /// A counter of the destination by its name, e.g. the sent records
   long counter(String name) {
-    PrometheusRegistry registry = new PrometheusRegistry();
-    destination.metrics().registerCollectors(registry::register);
     return (long)
-        new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
-            .counter(name, "destination", destination.destination())
+        scrape()
+            .counter(name, RequestLogMetrics.DESTINATION_LABEL, destination.destination())
             .getValue();
   }
 
-  MetricsAndMemoryTestManually.Snapshots scrape() {
-    PrometheusRegistry registry = new PrometheusRegistry();
-    destination.metrics().registerCollectors(registry::register);
-    return new MetricsAndMemoryTestManually.Snapshots(registry.scrape());
+  /// One scrape of the metrics of the destination under test
+  ScrapedMetrics scrape() {
+    return OtlpTestSupport.scrape(destination);
   }
 
   /// A circuit breaker counter of this destination, e.g. `calls` with `kind`, `successful`
   long breakerCounter(String metric, String... labels) {
-    String[] keyValues = new String[labels.length + 4];
-    keyValues[0] = "component";
-    keyValues[1] = "requestLog";
-    keyValues[2] = "name";
-    keyValues[3] = "otlp";
-    System.arraycopy(labels, 0, keyValues, 4, labels.length);
-    return (long) scrape().counter(CircuitBreakerMetrics.PREFIX + metric, keyValues).getValue();
+    return (long)
+        scrape().counter(CircuitBreakerMetrics.PREFIX + metric, breakerLabels(labels)).getValue();
   }
 
+  /// A circuit breaker gauge of this destination, e.g. `state` with `state`, `closed`
   double breakerGauge(String metric, String... labels) {
-    String[] keyValues = new String[labels.length + 4];
-    keyValues[0] = "component";
-    keyValues[1] = "requestLog";
-    keyValues[2] = "name";
-    keyValues[3] = "otlp";
-    System.arraycopy(labels, 0, keyValues, 4, labels.length);
-    return scrape().gauge(CircuitBreakerMetrics.PREFIX + metric, keyValues).getValue();
+    return scrape().gauge(CircuitBreakerMetrics.PREFIX + metric, breakerLabels(labels)).getValue();
+  }
+
+  /// The labels of the breaker of this destination, followed by the given ones
+  static String[] breakerLabels(String... labels) {
+    String[] keyValues = {
+      CircuitBreakerMetrics.COMPONENT_LABEL,
+      HttpBatchSender.BREAKER_COMPONENT,
+      CircuitBreakerMetrics.NAME_LABEL,
+      "otlp"
+    };
+    String[] all = Arrays.copyOf(keyValues, keyValues.length + labels.length);
+    System.arraycopy(labels, 0, all, keyValues.length, labels.length);
+    return all;
   }
 
   /// An in-flight reply during maintenance is counted without announcing recovery.
@@ -394,13 +394,7 @@ class OtlpLogDestinationTest {
   }
 
   long bufferedBytesGauge() {
-    PrometheusRegistry registry = new PrometheusRegistry();
-    destination.metrics().registerCollectors(registry::register);
-    return (long)
-        new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
-            .gauge(
-                "sensepitch_request_log_buffered_bytes", "destination", destination.destination())
-            .getValue();
+    return OtlpTestSupport.bufferedBytesGauge(destination);
   }
 
   @Test
@@ -712,7 +706,7 @@ class OtlpLogDestinationTest {
       assertThat(logged.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("workers logged").isTrue();
       assertThat(transport.requests()).as("nothing posted before the flush").isEmpty();
       clock.advanceMillis(built.flushIntervalMillis());
-      posted = transport.requests().stream().map(OtlpOutageBDDTest::paths).toList();
+      posted = transport.requests().stream().map(OtlpTestSupport::paths).toList();
     } finally {
       release.countDown();
     }
@@ -727,6 +721,7 @@ class OtlpLogDestinationTest {
     return posted;
   }
 
+  /// Keeps a logging worker alive until the test releases it, from a lambda that cannot throw
   static void awaitQuietly(CountDownLatch latch) {
     try {
       assertThat(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("worker released").isTrue();
@@ -860,46 +855,18 @@ class OtlpLogDestinationTest {
   @Test
   void resourceDefaultsAndOverrides() throws Exception {
     Map<String, AnyValue> defaults =
-        attributes(
-            io.opentelemetry.proto.resource.v1.Resource.parseFrom(
-                    OtlpLogDestination.encodeResource(null))
-                .getAttributesList());
+        attributes(Resource.parseFrom(OtlpLogDestination.encodeResource(null)).getAttributesList());
     assertThat(defaults.get("service.name").getStringValue()).isEqualTo("sensepitch-edge");
     assertThat(defaults.get("service.instance.id").getStringValue())
         .isEqualTo(OtlpLogDestination.instanceId())
         .isNotBlank();
     Map<String, AnyValue> configured =
         attributes(
-            io.opentelemetry.proto.resource.v1.Resource.parseFrom(
+            Resource.parseFrom(
                     OtlpLogDestination.encodeResource(
                         Map.of("service.name", "edge-eu", "service.instance.id", "edge-1")))
                 .getAttributesList());
     assertThat(configured.get("service.name").getStringValue()).isEqualTo("edge-eu");
     assertThat(configured.get("service.instance.id").getStringValue()).isEqualTo("edge-1");
-  }
-
-  // helpers, also used by other tests that run a log server
-
-  /// The request of a post, decompressed if the sender compressed it
-  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange)
-      throws IOException {
-    return decode(exchange, exchange.getRequestBody().readAllBytes());
-  }
-
-  static ExportLogsServiceRequest decode(com.sun.net.httpserver.HttpExchange exchange, byte[] body)
-      throws IOException {
-    boolean gzip = "gzip".equals(exchange.getRequestHeaders().getFirst("Content-Encoding"));
-    return ExportLogsServiceRequest.parseFrom(gzip ? gunzip(body) : body);
-  }
-
-  static byte[] gunzip(byte[] body) throws IOException {
-    try (java.util.zip.GZIPInputStream in =
-        new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(body))) {
-      return in.readAllBytes();
-    }
-  }
-
-  static Map<String, AnyValue> attributes(List<KeyValue> keyValues) {
-    return keyValues.stream().collect(Collectors.toMap(KeyValue::getKey, KeyValue::getValue));
   }
 }

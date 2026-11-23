@@ -3,12 +3,12 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 
+import com.sun.management.ThreadMXBean;
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
-import java.net.InetSocketAddress;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -60,8 +60,7 @@ class OtlpAllocationIT {
   static final int ROUNDS = 3;
 
   static long bytesPerRecord(RequestLogger logger, RequestLogInfo info) {
-    com.sun.management.ThreadMXBean threads =
-        (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+    ThreadMXBean threads = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     // warm up: thread local setup, pool and JIT compilation
     for (int i = 0; i < WARMUP; i++) {
       logger.logRequest(info);
@@ -79,7 +78,7 @@ class OtlpAllocationIT {
 
   /// A log server that accepts everything
   static HttpServer logServer() throws IOException {
-    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    HttpServer server = Loopback.httpServer();
     server.createContext(
         "/v1/logs",
         exchange -> {

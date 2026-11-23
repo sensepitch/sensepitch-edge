@@ -11,7 +11,6 @@ import com.sun.net.httpserver.HttpServer;
 import io.netty.util.concurrent.EventExecutor;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -59,7 +58,7 @@ class ExternalTcpIT {
 
   @BeforeEach
   void startProxy() throws Exception {
-    upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    upstream = Loopback.httpServer();
     upstream.createContext(
         "/",
         exchange -> {
@@ -73,7 +72,7 @@ class ExternalTcpIT {
     upstream.start();
     // probed after the helper servers have their ports: probed earlier, one of them could be
     // given the port just released, the proxy then fails to bind and the test talks to the helper
-    port = freePort();
+    port = Loopback.freePort();
 
     ProxyConfig config =
         ProxyConfig.builder()
@@ -270,7 +269,7 @@ class ExternalTcpIT {
     await(
         "handshake error is counted for " + ingress,
         () ->
-            new MetricsAndMemoryTestManually.Snapshots(proxy.metricsRegistry().scrape())
+            new ScrapedMetrics(proxy.metricsRegistry().scrape())
                 .getPrometheusExpositionText()
                 .contains(prefix));
   }
@@ -423,12 +422,6 @@ class ExternalTcpIT {
     socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
     socket.setSoTimeout((int) TIMEOUT.toMillis());
     return socket;
-  }
-
-  private static int freePort() throws IOException {
-    try (ServerSocket probe = new ServerSocket(0)) {
-      return probe.getLocalPort();
-    }
   }
 
   /// Waits for startup logging before clearing the capture for a test.

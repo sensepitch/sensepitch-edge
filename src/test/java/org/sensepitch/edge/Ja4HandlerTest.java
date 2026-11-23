@@ -63,7 +63,7 @@ public class Ja4HandlerTest {
                 + " sensepitch_ingress_request_errors_total"
                 + "{ingress=\"nil_host\",phase=\"handshake\",type=\"ja4\"}, further ones are"
                 + " logged at DEBUG)")
-        .doesNotContain("Ja4Handler");
+        .doesNotContain(Ja4Handler.class.getSimpleName());
     assertThat(logs.messages().getLast()).endsWith("JA4 fingerprint failed");
     assertThat(
             metrics

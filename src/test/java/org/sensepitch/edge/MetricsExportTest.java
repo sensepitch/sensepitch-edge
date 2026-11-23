@@ -34,8 +34,8 @@ class MetricsExportTest {
     steps.finish_and_check_for_leaks();
   }
 
-  MetricsAndMemoryTestManually.Snapshots scrape() {
-    return new MetricsAndMemoryTestManually.Snapshots(steps.proxy.metricsRegistry().scrape());
+  ScrapedMetrics scrape() {
+    return new ScrapedMetrics(steps.proxy.metricsRegistry().scrape());
   }
 
   @Test
@@ -110,8 +110,7 @@ class MetricsExportTest {
     assertThat(other.proxy.metricsRegistry()).isNotSameAs(steps.proxy.metricsRegistry());
     steps.when_requesting("withprotection.com", "/");
     assertThat(deflectorCount(scrape(), "challenge_sent")).isEqualTo(1);
-    var otherSnapshots =
-        new MetricsAndMemoryTestManually.Snapshots(other.proxy.metricsRegistry().scrape());
+    var otherSnapshots = new ScrapedMetrics(other.proxy.metricsRegistry().scrape());
     assertThat(otherSnapshots.containsSnapshot("sensepitch_deflector_requests").getDataPoints())
         .isEmpty();
     other.proxy.shutdown();
@@ -174,7 +173,7 @@ class MetricsExportTest {
     EmbeddedChannel first = new EmbeddedChannel(handler);
     new EmbeddedChannel(handler);
     first.close();
-    var snapshots = new MetricsAndMemoryTestManually.Snapshots(registry.scrape());
+    var snapshots = new ScrapedMetrics(registry.scrape());
     assertThat(snapshots.counter("sensepitch_ingress_connections_opened").getValue()).isEqualTo(2);
     assertThat(snapshots.counter("sensepitch_ingress_connections_closed").getValue()).isEqualTo(1);
     assertThat(snapshots.gauge("sensepitch_ingress_connections_active").getValue()).isEqualTo(1);
@@ -190,7 +189,7 @@ class MetricsExportTest {
     handler.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 42));
     handler.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 777));
     handler.logRequest(TestRequestLogInfo.of(RequestLogInfo.NIL_METHOD, 408));
-    var snapshots = new MetricsAndMemoryTestManually.Snapshots(registry.scrape());
+    var snapshots = new ScrapedMetrics(registry.scrape());
     assertThat(histogramCount(snapshots, "example.com", "GET", "99")).isEqualTo(1);
     assertThat(histogramCount(snapshots, "example.com", "GET", "600")).isEqualTo(1);
     assertThat(
@@ -201,10 +200,7 @@ class MetricsExportTest {
   }
 
   static long histogramCount(
-      MetricsAndMemoryTestManually.Snapshots snapshots,
-      String ingress,
-      String method,
-      String status) {
+      ScrapedMetrics snapshots, String ingress, String method, String status) {
     var dataPoint =
         (HistogramSnapshot.HistogramDataPointSnapshot)
             snapshots.datapoint(
@@ -218,12 +214,11 @@ class MetricsExportTest {
     return dataPoint.getCount();
   }
 
-  static double deflectorCount(MetricsAndMemoryTestManually.Snapshots snapshots, String outcome) {
+  static double deflectorCount(ScrapedMetrics snapshots, String outcome) {
     return deflectorCount(snapshots, "withprotection.com", outcome);
   }
 
-  static double deflectorCount(
-      MetricsAndMemoryTestManually.Snapshots snapshots, String ingress, String outcome) {
+  static double deflectorCount(ScrapedMetrics snapshots, String ingress, String outcome) {
     return snapshots
         .counter("sensepitch_deflector_requests", "ingress", ingress, "outcome", outcome)
         .getValue();

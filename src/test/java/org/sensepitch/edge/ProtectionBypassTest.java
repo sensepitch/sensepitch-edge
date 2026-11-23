@@ -18,6 +18,8 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.List;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
@@ -146,8 +148,8 @@ public class ProtectionBypassTest {
     channel =
         new EmbeddedChannel(out, handler, in) {
           @Override
-          public java.net.SocketAddress remoteAddress() {
-            return new java.net.InetSocketAddress(host, port);
+          public SocketAddress remoteAddress() {
+            return new InetSocketAddress(host, port);
           }
         };
   }

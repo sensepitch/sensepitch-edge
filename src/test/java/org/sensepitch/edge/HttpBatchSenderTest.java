@@ -1,25 +1,30 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestRequestLogInfo.request;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 
 import com.sun.net.httpserver.HttpServer;
-import io.netty.handler.codec.http.HttpMethod;
 import io.netty.util.concurrent.Ticker;
 import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import java.io.ByteArrayOutputStream;
-import java.net.InetSocketAddress;
+import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -33,6 +38,12 @@ class HttpBatchSenderTest {
   static final long FLUSH_MILLIS = 100;
   static final long AGE_MILLIS = 200;
   static final long INITIAL_RETRY_MILLIS = 10;
+
+  /// The failure of a log server that is down: a new exception per use, as each post fails with
+  /// its own
+  static ConnectException refused() {
+    return new ConnectException("refused");
+  }
 
   /// Records as text lines
   static final class TextBatch extends Batch {
@@ -167,12 +178,6 @@ class HttpBatchSenderTest {
   /// No log server listens on port 1, connecting fails at once
   static final String UNREACHABLE = "http://127.0.0.1:1/lines";
 
-  static TestRequestLogInfo request(String path) {
-    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
-    info.request().setUri(path);
-    return info;
-  }
-
   /// Whoever waits for [HttpBatchSender#stopped()] sees a released sender: the compression thread
   /// is shut down, and neither the queue gauges nor the breaker gauges report it anymore. A
   /// dependent action runs in the thread that completes the future, so it sees the state at the
@@ -278,13 +283,13 @@ class HttpBatchSenderTest {
     batcher.close();
     sender.finish();
     assertThat(transport.requests()).hasSize(1);
-    transport.fail(new java.net.ConnectException("refused"));
+    transport.fail(refused());
     // The deterministic random provider selects the lower half of the nominal retry delay.
     clock.advanceMillis(INITIAL_RETRY_MILLIS / 2 - 1);
     assertThat(transport.requests()).hasSize(1);
     clock.advanceMillis(1);
     assertThat(transport.requests()).as("the probe goes out after the backoff").hasSize(2);
-    transport.fail(new java.net.ConnectException("refused"));
+    transport.fail(refused());
     clock.advanceMillis(INITIAL_RETRY_MILLIS - 1);
     assertThat(transport.requests()).hasSize(2);
     clock.advanceMillis(1);
@@ -375,23 +380,21 @@ class HttpBatchSenderTest {
   /// The short error codes of the metrics, see [CircuitBreakerMetrics]
   @Test
   void errorCodes() {
-    assertThat(HttpBatchSender.failure(new java.net.ConnectException("refused")).error())
+    assertThat(HttpBatchSender.failure(refused()).error()).isEqualTo("connect");
+    assertThat(HttpBatchSender.failure(new HttpConnectTimeoutException("slow")).error())
         .isEqualTo("connect");
-    assertThat(
-            HttpBatchSender.failure(new java.net.http.HttpConnectTimeoutException("slow")).error())
-        .isEqualTo("connect");
-    assertThat(HttpBatchSender.failure(new java.net.http.HttpTimeoutException("slow")).error())
+    assertThat(HttpBatchSender.failure(new HttpTimeoutException("slow")).error())
         .isEqualTo("timeout");
-    assertThat(HttpBatchSender.failure(new java.io.IOException("reset")).error()).isEqualTo("io");
+    assertThat(HttpBatchSender.failure(new IOException("reset")).error()).isEqualTo("io");
     assertThat(HttpBatchSender.failure(new IllegalStateException("bug")).error())
         .isEqualTo("unexpected");
   }
 
   @Test
   void failureOutcomes() {
-    java.io.IOException refused = new java.net.ConnectException("refused");
+    IOException refused = refused();
     assertThat(HttpBatchSender.failure(refused).outcome()).isEqualTo(HttpBatchSender.Outcome.RETRY);
-    assertThat(HttpBatchSender.failure(new java.util.concurrent.CompletionException(refused)))
+    assertThat(HttpBatchSender.failure(new CompletionException(refused)))
         .as("unwrapped")
         .extracting(HttpBatchSender.Result::outcome, HttpBatchSender.Result::reason)
         .containsExactly(HttpBatchSender.Outcome.RETRY, refused.toString());
@@ -404,8 +407,7 @@ class HttpBatchSenderTest {
   /// A header the HTTP client refuses is a configuration error, reported at construction
   @Test
   void invalidHeaderIsRejected() {
-    org.assertj.core.api.Assertions.assertThatThrownBy(
-            () -> textSender(UNREACHABLE, Map.of("Content-Length", "1")))
+    Assertions.assertThatThrownBy(() -> textSender(UNREACHABLE, Map.of("Content-Length", "1")))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageStartingWith("Request log destination text: invalid header Content-Length");
   }
@@ -517,8 +519,10 @@ class HttpBatchSenderTest {
     }
   }
 
-  static HttpServer lineServer(BlockingQueue<String> bodies) throws java.io.IOException {
-    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+  /// A started log server for the text format that puts each body into `bodies`, so a test waits
+  /// for a post on the queue
+  static HttpServer lineServer(BlockingQueue<String> bodies) throws IOException {
+    HttpServer server = Loopback.httpServer();
     server.createContext(
         "/lines",
         exchange -> {
@@ -538,7 +542,7 @@ class HttpBatchSenderTest {
   void textLinesArePosted() throws Exception {
     BlockingQueue<String> bodies = new LinkedBlockingQueue<>();
     BlockingQueue<String> contentTypes = new LinkedBlockingQueue<>();
-    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    HttpServer server = Loopback.httpServer();
     server.createContext(
         "/lines",
         exchange -> {

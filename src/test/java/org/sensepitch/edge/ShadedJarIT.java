@@ -6,10 +6,10 @@ import static org.sensepitch.edge.TestingParameters.TIMEOUT;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
-import java.net.ServerSocket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +19,7 @@ import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 import javax.net.ssl.SSLContext;
@@ -69,7 +70,7 @@ class ShadedJarIT {
 
   @Test
   void servesHttpsWithHostNativeLibrary() throws Exception {
-    int port = freePort();
+    int port = Loopback.freePort();
     Path config = writeConfig(port);
     Path stderr = dir.resolve("stderr.log");
     process =
@@ -97,15 +98,13 @@ class ShadedJarIT {
   /// phase runs into its timeout, which would log a `Shutdown:` diagnostic.
   @Test
   void sigtermSendsTheRequestLogAndExits() throws Exception {
-    java.util.concurrent.atomic.AtomicInteger records =
-        new java.util.concurrent.atomic.AtomicInteger();
-    com.sun.net.httpserver.HttpServer logServer =
-        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    AtomicInteger records = new AtomicInteger();
+    HttpServer logServer = Loopback.httpServer();
     logServer.createContext(
         "/v1/logs",
         exchange -> {
           records.addAndGet(
-              OtlpLogDestinationTest.decode(exchange)
+              OtlpTestSupport.decode(exchange)
                   .getResourceLogs(0)
                   .getScopeLogs(0)
                   .getLogRecordsCount());
@@ -114,7 +113,7 @@ class ShadedJarIT {
         });
     logServer.start();
     try {
-      int port = freePort();
+      int port = Loopback.freePort();
       Path config =
           writeConfig(
               port,
@@ -164,8 +163,7 @@ class ShadedJarIT {
     var exportStarted = new CountDownLatch(1);
     var releaseExport = new CountDownLatch(1);
     var exportAnswered = new CountDownLatch(1);
-    var collector =
-        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    var collector = Loopback.httpServer();
     collector.createContext(
         "/v1/logs",
         exchange -> {
@@ -183,7 +181,7 @@ class ShadedJarIT {
         });
     collector.start();
     try {
-      int port = freePort();
+      int port = Loopback.freePort();
       Path config =
           writeConfig(
               port,
@@ -379,12 +377,6 @@ class ShadedJarIT {
                   .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
       return new String(socket.getInputStream().readAllBytes(), StandardCharsets.US_ASCII);
-    }
-  }
-
-  private static int freePort() throws IOException {
-    try (ServerSocket probe = new ServerSocket(0)) {
-      return probe.getLocalPort();
     }
   }
 }

@@ -2,20 +2,14 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
-import static org.sensepitch.edge.OtlpLogDestinationTest.request;
+import static org.sensepitch.edge.OtlpTestSupport.paths;
+import static org.sensepitch.edge.TestRequestLogInfo.request;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 
-import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
-import io.prometheus.metrics.model.registry.PrometheusRegistry;
-import java.io.ByteArrayOutputStream;
 import java.net.http.HttpRequest;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
@@ -347,67 +341,7 @@ class OtlpOutageBDDTest {
     }
 
     long bufferedBytesGauge() {
-      PrometheusRegistry registry = new PrometheusRegistry();
-      destination.metrics().registerCollectors(registry::register);
-      return (long)
-          new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
-              .gauge("sensepitch_request_log_buffered_bytes", "destination", NAME)
-              .getValue();
-    }
-  }
-
-  /// The paths of the records in an uncompressed OTLP request
-  static List<String> paths(HttpRequest request) {
-    ExportLogsServiceRequest body;
-    try {
-      body = ExportLogsServiceRequest.parseFrom(body(request));
-    } catch (com.google.protobuf.InvalidProtocolBufferException e) {
-      throw new AssertionError("OTLP body", e);
-    }
-    return body.getResourceLogs(0).getScopeLogs(0).getLogRecordsList().stream()
-        .map(
-            record ->
-                OtlpLogDestinationTest.attributes(record.getAttributesList())
-                    .get("url.path")
-                    .getStringValue())
-        .toList();
-  }
-
-  /// The bytes of the request body, as the HTTP client would send them
-  static byte[] body(HttpRequest request) {
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    CompletableFuture<byte[]> done = new CompletableFuture<>();
-    request
-        .bodyPublisher()
-        .orElseThrow()
-        .subscribe(
-            new Flow.Subscriber<>() {
-              @Override
-              public void onSubscribe(Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-              }
-
-              @Override
-              public void onNext(ByteBuffer buffer) {
-                byte[] chunk = new byte[buffer.remaining()];
-                buffer.get(chunk);
-                bytes.writeBytes(chunk);
-              }
-
-              @Override
-              public void onError(Throwable failure) {
-                done.completeExceptionally(failure);
-              }
-
-              @Override
-              public void onComplete() {
-                done.complete(bytes.toByteArray());
-              }
-            });
-    try {
-      return done.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    } catch (Exception e) {
-      throw new AssertionError("request body", e);
+      return OtlpTestSupport.bufferedBytesGauge(destination);
     }
   }
 }

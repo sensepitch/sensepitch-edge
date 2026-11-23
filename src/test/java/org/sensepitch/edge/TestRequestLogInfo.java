@@ -50,6 +50,14 @@ final class TestRequestLogInfo implements RequestLogInfo {
     return new TestRequestLogInfo(request, response);
   }
 
+  /// A successful `GET` of the path, the record the request logger tests log by the hundred,
+  /// told apart by their paths
+  static TestRequestLogInfo request(String path) {
+    TestRequestLogInfo info = of(HttpMethod.GET, 200);
+    info.request().setUri(path);
+    return info;
+  }
+
   TestRequestLogInfo withClientAddress(String ip) {
     try {
       clientAddress = InetAddress.getByName(ip);

@@ -13,7 +13,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -79,7 +78,7 @@ class ProxyShutdownIT {
   void startProxy(
       long shutdownTimeoutMillis, Long drainTimeoutMillis, LongSupplier clock, LongConsumer wait)
       throws Exception {
-    upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    upstream = Loopback.httpServer();
     upstream.createContext(
         "/",
         exchange -> {
@@ -101,11 +100,11 @@ class ProxyShutdownIT {
           exchange.close();
         });
     upstream.start();
-    logServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    logServer = Loopback.httpServer();
     logServer.createContext(
         "/v1/logs",
         exchange -> {
-          ExportLogsServiceRequest request = OtlpLogDestinationTest.decode(exchange);
+          ExportLogsServiceRequest request = OtlpTestSupport.decode(exchange);
           otlpRecords.addAndGet(request.getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
           exchange.sendResponseHeaders(200, -1);
           exchange.close();
@@ -113,7 +112,7 @@ class ProxyShutdownIT {
     logServer.start();
     // probed after the helper servers have their ports: probed earlier, one of them could be
     // given the port just released, the proxy then fails to bind and the test talks to the helper
-    port = freePort();
+    port = Loopback.freePort();
     ProtectionConfig noProtection = ProtectionConfig.builder().disable(true).build();
     config =
         ProxyConfig.builder()
@@ -486,12 +485,6 @@ class ProxyShutdownIT {
     socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
     socket.setSoTimeout((int) TIMEOUT.toMillis());
     return socket;
-  }
-
-  private static int freePort() throws IOException {
-    try (ServerSocket probe = new ServerSocket(0)) {
-      return probe.getLocalPort();
-    }
   }
 
   /// Waits for the listener before a test opens its client connection.

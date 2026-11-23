@@ -24,8 +24,8 @@ class JvmMemoryMetricsIT {
 
   PrometheusRegistry reg = new PrometheusRegistry();
 
-  MetricsAndMemoryTestManually.Snapshots snapshots() {
-    return new MetricsAndMemoryTestManually.Snapshots(reg.scrape());
+  ScrapedMetrics snapshots() {
+    return new ScrapedMetrics(reg.scrape());
   }
 
   /// Preserve the positive JVM-pool and reclamation checks independently of Netty's cleaner choice.

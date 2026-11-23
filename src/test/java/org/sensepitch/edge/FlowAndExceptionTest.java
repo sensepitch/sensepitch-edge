@@ -611,7 +611,7 @@ public class FlowAndExceptionTest {
                       " (first occurrence counted in sensepitch_ingress_request_errors_total"
                           + "{ingress=\"missing_host\",phase=\"waiting\",type=\"other\"}, further"
                           + " ones are logged at DEBUG)")
-                  .doesNotContain("ExceptionHandler");
+                  .doesNotContain(ExceptionHandler.class.getSimpleName());
             });
     assertThat(logs.entries())
         .filteredOn(e -> e.source().equals(ForwardHandler.class.getName()))

@@ -1,7 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.sensepitch.edge.OtlpLogDestinationTest.attributes;
+import static org.sensepitch.edge.OtlpTestSupport.attributes;
 
 import io.netty.handler.codec.http.HttpMethod;
 import io.opentelemetry.proto.common.v1.AnyValue;

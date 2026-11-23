@@ -8,7 +8,6 @@ import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -32,7 +31,7 @@ class RequestLoggerFactoryTest {
 
   @BeforeEach
   void startLogServer() throws IOException {
-    logServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    logServer = Loopback.httpServer();
     logServer.createContext(
         "/v1/logs",
         exchange -> {
@@ -56,7 +55,7 @@ class RequestLoggerFactoryTest {
   List<String> queuedDestinations() {
     PrometheusRegistry registry = new PrometheusRegistry();
     metrics.registerCollectors(registry::register);
-    return new MetricsAndMemoryTestManually.Snapshots(registry.scrape())
+    return new ScrapedMetrics(registry.scrape())
         .containsSnapshot("sensepitch_request_log_queued").getDataPoints().stream()
             .map(point -> point.getLabels().get(RequestLogMetrics.DESTINATION_LABEL))
             .toList();

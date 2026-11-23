@@ -254,14 +254,10 @@ class AdminServerTest {
 
   @Test
   void defaultsToLoopback() throws Exception {
-    server = AdminServer.start(AdminConfig.builder().port(freePort()).build(), null, () -> false);
+    server =
+        AdminServer.start(
+            AdminConfig.builder().port(Loopback.freePort()).build(), null, () -> false);
     assertThat(server.address().getAddress().isLoopbackAddress()).isTrue();
-  }
-
-  static int freePort() throws IOException {
-    try (var socket = new java.net.ServerSocket(0)) {
-      return socket.getLocalPort();
-    }
   }
 
   static ProxyConfig upstreamConfig(int port) {

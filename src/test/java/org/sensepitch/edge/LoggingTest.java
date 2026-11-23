@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.util.internal.logging.InternalLoggerFactory;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -32,7 +33,7 @@ public class LoggingTest {
 
   @Test
   public void julLogger() {
-    java.util.logging.Logger.getLogger("jul").warning("warn message to JUL");
+    Logger.getLogger("jul").warning("warn message to JUL");
     assertThat(log4j.messages("jul")).containsExactly("warn message to JUL");
   }
 }

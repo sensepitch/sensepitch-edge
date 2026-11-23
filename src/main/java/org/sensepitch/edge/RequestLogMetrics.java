@@ -19,6 +19,9 @@ public class RequestLogMetrics implements HasMultipleMetrics {
 
   static final String DESTINATION_LABEL = "destination";
 
+  /// Name of the gauge of the bytes waiting to be sent, see [#bufferedBytes]
+  static final String BUFFERED_BYTES = "sensepitch_request_log_buffered_bytes";
+
   /// Upper bounds of [#postDuration] in seconds
   private static final double[] POST_DURATION_BUCKETS = {0.03, 0.1, 0.25, 0.5, 1, 2.5, 5};
 
@@ -94,7 +97,7 @@ public class RequestLogMetrics implements HasMultipleMetrics {
 
   private final GaugeWithCallback bufferedBytes =
       GaugeWithCallback.builder()
-          .name("sensepitch_request_log_buffered_bytes")
+          .name(BUFFERED_BYTES)
           .help("Bytes of request log records waiting to be sent, e.g. during an outage")
           .labelNames(DESTINATION_LABEL)
           .callback(
