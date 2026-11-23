@@ -65,9 +65,9 @@ are listed under Bugs.
 - [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P1: each one can fail on a loaded machine although the code is right.
-  - Maximum elapsed time, drop it: `ReloadableRequestLoggerTest`
-    `replacedDestinationSendsItsBacklog` and `removedDestinationDoesNotBlockTheReload` (reload
-    `< 500` ms, instead hold the log server on a latch during the reload), `ProxyShutdownIT`
+  - Done 2026-11-23: `ReloadableRequestLoggerIT` checks that replacing or removing a destination
+    returns while the log server is holding an export.
+  - Maximum elapsed time, drop it: `ProxyShutdownIT`
     (`< 5_000` twice, `< 2_500` in `slowRequestIsAbortedAndStillLogged`), `ShadedJarIT` (exit
     `< 4_000` after `destroy()`). The minimum times in `*IT` (`>= 900`) stay.
   - Short configured timings that race the test's own steps:

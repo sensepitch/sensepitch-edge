@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +46,14 @@ class ReloadableRequestLoggerTest {
   /// Status the OTLP server answers with, records are only received with 200
   volatile int status = 200;
 
+  /// When set, the log server holds each export on this latch before answering it, so a
+  /// test can prove a reload does not wait for the server.
+  volatile CountDownLatch answerGate;
+
+  /// Counted down when an export is held on `answerGate`, so a test can wait until the
+  /// server is actually blocked.
+  final CountDownLatch exportHeld = new CountDownLatch(1);
+
   /// Requests the OTLP server got, including refused ones
   final java.util.concurrent.atomic.AtomicInteger attempts =
       new java.util.concurrent.atomic.AtomicInteger();
@@ -60,6 +69,17 @@ class ReloadableRequestLoggerTest {
         exchange -> {
           ExportLogsServiceRequest request = OtlpLogDestinationTest.decode(exchange);
           attempts.incrementAndGet();
+          CountDownLatch gate = answerGate;
+          if (gate != null) {
+            exportHeld.countDown();
+            try {
+              gate.await();
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              exchange.close();
+              throw new IOException("Interrupted while holding an OTLP export", e);
+            }
+          }
           int answer = status;
           if (answer == 200) {
             received.add(request.getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());

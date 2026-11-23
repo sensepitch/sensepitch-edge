@@ -7,6 +7,7 @@ import static org.sensepitch.edge.TestingParameters.await;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -140,52 +141,60 @@ class ReloadableRequestLoggerIT {
     assertThat(fixture.awaitReceived(1)).as("only the record after enabling").isOne();
   }
 
-  /// Removing a destination during an outage does not wait for the log server, the removed
-  /// destination sends its records once the server is back
+  /// A removed destination drains its backlog after a held export is released.
   @Test
+  @Timeout(value = 50, unit = TimeUnit.SECONDS)
   void removedDestinationDoesNotBlockTheReload() throws Exception {
-    fixture.status = 503;
-    fixture.logger =
-        RequestLoggerFactory.create(
-            ReloadableRequestLoggerTest.config(fixture.otlp("vl", 1)),
-            fixture.stdout,
-            fixture.metrics);
-    for (int i = 0; i < 20; i++) {
-      fixture.logOneRequest();
-    }
-    fixture.awaitAttempts(1);
-    long start = System.nanoTime();
-    fixture.reload(ReloadableRequestLoggerTest.config(ReloadableRequestLoggerTest.stdout(false)));
-    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
-        .as("the reload does not wait for the log server")
-        .isLessThan(500);
-    fixture.status = 200;
-    assertThat(fixture.awaitReceived(20)).isEqualTo(20);
-    assertThat(fixture.dropped("vl")).isZero();
+    assertReloadDrainsHeldExport(
+        ReloadableRequestLoggerTest.config(ReloadableRequestLoggerTest.stdout(false)), 20);
   }
 
-  /// The log server is unavailable while a reload changes the destination: the replaced
-  /// destination keeps its buffered records and sends them once the server is back. The reload
-  /// does not wait.
+  /// A replaced destination also drains its backlog after a held export is released.
   @Test
+  @Timeout(value = 50, unit = TimeUnit.SECONDS)
   void replacedDestinationSendsItsBacklog() throws Exception {
-    fixture.status = 503;
-    fixture.logger =
-        RequestLoggerFactory.create(
-            ReloadableRequestLoggerTest.config(fixture.otlp("vl", 1)),
-            fixture.stdout,
-            fixture.metrics);
-    for (int i = 0; i < 50; i++) {
-      fixture.logOneRequest();
+    assertReloadDrainsHeldExport(ReloadableRequestLoggerTest.config(fixture.otlp("vl", 2)), 50);
+  }
+
+  /// The original destination cannot finish until the test releases its outstanding export.
+  /// Reload must return while that export remains held.
+  private void assertReloadDrainsHeldExport(RequestLogConfig replacement, int records)
+      throws Exception {
+    RequestLogDestinationConfig original = fixture.otlp("vl", 1);
+    original =
+        original.toBuilder()
+            .otlp(original.otlp().toBuilder().timeoutMillis(OUT_OF_REACH_MILLIS).build())
+            .build();
+    CountDownLatch release = new CountDownLatch(1);
+    fixture.answerGate = release;
+    try (var loggingThread = Executors.newSingleThreadExecutor();
+        var caller = Executors.newVirtualThreadPerTaskExecutor()) {
+      try {
+        fixture.logger =
+            RequestLoggerFactory.create(
+                ReloadableRequestLoggerTest.config(original),
+                fixture.stdout,
+                fixture.metrics,
+                List.of(loggingThread),
+                new ConfigFiles());
+        loggingThread
+            .submit(
+                () -> {
+                  for (int i = 0; i < records; i++) {
+                    fixture.logOneRequest();
+                  }
+                })
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertThat(fixture.exportHeld.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            .as("the original destination has an export held by the log server")
+            .isTrue();
+
+        caller.submit(() -> fixture.reload(replacement)).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      } finally {
+        release.countDown();
+      }
+      assertThat(fixture.awaitReceived(records)).isEqualTo(records);
+      assertThat(fixture.dropped("vl")).isZero();
     }
-    fixture.awaitAttempts(1);
-    long start = System.nanoTime();
-    fixture.reload(ReloadableRequestLoggerTest.config(fixture.otlp("vl", 2)));
-    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
-        .as("the reload does not wait for the log server")
-        .isLessThan(500);
-    fixture.status = 200;
-    assertThat(fixture.awaitReceived(50)).isEqualTo(50);
-    assertThat(fixture.dropped("vl")).isZero();
   }
 }
