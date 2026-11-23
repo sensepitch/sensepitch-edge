@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Netty 4.2. `README.md` describes the intended behaviour and scope.
+
 ## Project Structure & Module Organization
 - `src/main/java/org/sensepitch/edge/` contains the core proxy implementation and supporting utilities.
 - `src/main/resources/` holds static assets and data (crawler lists, challenge assets, HTML/CSS/JS).
@@ -9,16 +11,33 @@
   `doc/kubernetes-support/` is a numbered plan for one feature.
 - `pom.xml` is the Maven build definition; `mvnw`/`mvnw.cmd` are the recommended entry points.
 
+## Engineering Constraints
+
+- Never block a Netty event loop thread with synchronous I/O, sleeps or long computations. Keep
+  asynchronous completion, cancellation and graceful shutdown working.
+- Handle Netty's reference counted buffers correctly across ownership and async boundaries.
+  Respect backpressure; keep memory, queues, timers and other resources bounded.
+- Treat network input as untrusted. Keep validation and resource cleanup, even when a test or
+  the coverage floor would be easier without them.
+- Keep the semantics and defaults of the existing configuration unless the task changes them,
+  and report every change that makes users update their setups (see the plan summary under
+  "Agent Workflow Reminders").
+- Keep the cardinality of metrics bounded: never use an untrusted value, e.g. a host header, a
+  path or a client address, as a label value.
+
 ## Build, Test, and Development Commands
+
 - `./mvnw clean package` builds the project and produces a shaded JAR at `target/sensepitch-edge-*-with-dependencies.jar`.
-- `./mvnw test` runs the JUnit/Serenity test suite via Surefire.
+- `./mvnw test` runs the JUnit/Serenity test suite via Surefire; `./mvnw -Dtest=SomeTest test`
+  runs one class while developing.
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
 - `./mvnw verify` requires Node.js 22 or newer on `PATH` for the challenge JavaScript integration test.
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
   coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
   when coverage improves. The generic request log posting is held at 100% line and branch
-  coverage by a class rule in `pom.xml`. A gap is a design question: remove the stray error
-  handling, validate earlier, or test the case; do not lower the rule.
+  coverage by a class rule in `pom.xml`. A gap is a design question: remove error handling for a
+  case that cannot happen, validate earlier, or test the case; do not lower the rule, and never
+  delete a necessary check (validation, cleanup) to satisfy coverage.
 - `./mvnw verify -Dfast` (profile `fast` in `pom.xml`) is the quick loop: it compiles, runs all unit
   and integration tests and builds the fat JAR, but skips coverage (agent, report, floor), the
   Javadoc build with delombok, and the format check. Each part can be skipped on its own:
@@ -26,7 +45,8 @@
   Before a commit run the full `./mvnw verify`.
 - `./mvnw verify -Dexcessive` (profile `excessive`) also runs the tests tagged
   `@Tag("excessive")`: measurements of the JVM rather than of our code (allocation, timing), load
-  sensitive, run nightly (`.github/workflows/nightly.yml`). Run them when working on performance.
+  sensitive, run nightly (`.github/workflows/nightly.yml`). Run them when changing performance
+  sensitive JVM behaviour, not for ordinary edits.
   Such a test must add no coverage of its own; port a missing scenario to a unit test first.
 - `.github/workflows/flaky-tests.yml` runs `./mvnw clean verify` ten times in a row every evening
   (20:27 Singapore time, 12:27 UTC, or by hand with the number of runs) and reports
@@ -56,6 +76,7 @@
   `java -jar target/sensepitch-edge-*-with-dependencies.jar`
 
 ## Coding Style & Naming Conventions
+
 - DRY, establish speaking constants for magic numbers and strings, get the class name from the class object and
   don't repeat it
 - Java 25 is the target (`maven.compiler.release` set to 25).
@@ -94,6 +115,7 @@
   Lombok's annotation processor silently disables javac's doclint.
 
 ## Testing Guidelines
+
 - Most tests run the handlers on Netty's `EmbeddedChannel`, see `Proxy#addHttpHandlers`; proxy
   level step classes extend `ProxyConstructBDDTest.ExtendableSteps`.
 - Prefer Serenity BDD (`*BDDTest`) for behaviour tests: the step chains are more compact and
@@ -124,18 +146,23 @@
   boundary is a sign the test belongs lower. A `TODO.md` item names the behaviour, not the level.
 
 ### Concurrent and asynchronous tests
+
 For every test with more than one thread, process or timer. The assumption: **any action on
 another thread or process, and any step of the test itself, may be delayed by the scheduler for
-up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under any such delay.
-- Every wait allows the full `TIMEOUT`, never less: `TestingParameters.TIMEOUT`,
-  `TIMEOUT_SECONDS`, `await(description, condition)` and `stop(HttpServer)`, no literals. A
-  hand-picked shorter bound is a flake. Intentional outages (`stop(0)` inside a test) and the
-  class level `@Timeout` as outer guard stay explicit.
+up to `TestingParameters.EVENT_TIMEOUT`.** A test is correct only if it passes under any such
+delay.
+
+- Every wait for one event allows the full `EVENT_TIMEOUT`, never less (`EVENT_TIMEOUT`,
+  `EVENT_TIMEOUT_SECONDS`, `await(description, condition)`, `stop(HttpServer)`); an event of
+  several steps uses a named bound like `PROCESS_START_TIMEOUT`; no literals. A hand-picked
+  shorter bound is a flake. The `@Timeout` of a test class is `TEST_TIMEOUT_SECONDS`, an outer
+  guard only. Intentional outages (`stop(0)` inside a test) stay explicit. See the docs in
+  `TestingParameters`.
 - Never assert a maximum elapsed time. Assert what happened and in which order, not how fast. To
   show that a call does not wait for another party (e.g. a reload does not wait for the log
   server), block that party on a latch the test owns so it cannot answer, run the call with
-  `get(TIMEOUT_SECONDS, SECONDS)`, and only then release the latch: if the call waited, it could
-  not return while the party is blocked.
+  `get(EVENT_TIMEOUT_SECONDS, SECONDS)`, and only then release the latch: if the call waited, it
+  could not return while the party is blocked.
 - Timeouts and other timed behaviour (age limit, flush interval, backoff, drain and shutdown
   timeout, breaker delays) are tested on a simulated clock: the test moves the clock and never
   waits real time. `CircuitBreaker` with its `Ticker` shows the seam.
@@ -193,12 +220,18 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
 
 ## Agent Workflow Reminders
 
+- **Before editing**, read the affected code, its tests and the relevant decisions in
+  `doc/design/`. Prefer the smallest change that solves the stated problem, and decide which
+  observable behaviour and compatibility must stay unchanged. Do not refactor for novelty: a
+  refactoring names its concrete improvement and its tradeoff, see below.
 - **Every plan starts with a summary of incompatible setup changes**: config (YAML/env) keys that were renamed, removed or reinterpreted, changed defaults, new mandatory settings, and behaviour changes for existing setups. If there are none, say so explicitly.
 - **For refactoring tasks, the plan includes a summary of whether the change is an improvement**: what gets better (clarity, coupling, performance, extensibility), what gets worse or stays neutral, and an overall verdict.
 - **Run `./mvnw spotless:check` BEFORE making any edits** to establish the formatting baseline. This ensures your diff only contains your changes, not unrelated reformatting.
 - **Run `./mvnw spotless:apply` only on your changed files** after editing, or run it project-wide and then verify via `git diff` that no unrelated files were touched. If Spotless reformatted unrelated files, revert them with `git checkout -- <file>` before committing.
-- **Run tests before AND after** your changes to confirm you didn't break anything.
+- **Run tests before AND after** your changes to confirm you didn't break anything and code coverage is not worsened.
 - **Check `git diff` before committing** to review exactly what changed — reject any accidental reformatting of unrelated files.
+- **Keep docs and tasks current**: update the documentation the change affects and the status of
+  its `TODO.md` entry in the same change.
 
 ## Security & Configuration Tips
 - Test TLS keys/certs live under `src/test/resources/ssl/` and `src/test/resources/letsencrypt/`; do not reuse these in production.
