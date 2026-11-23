@@ -6,7 +6,17 @@ import java.time.Duration;
 /// Shared upper bound for waiting on another thread or process in tests.
 final class TestingParameters {
 
+  /// [#TIMEOUT] in seconds, for APIs that take a count and a unit.
   static final int TIMEOUT_SECONDS = 10;
+
+  /// Maximum time per test. Any test reaching this timeout is a failure.
+  ///
+  /// A passing test stays far below it, so it is also the bound of every single wait for
+  /// another thread, process or timer: a wait that reaches it has already failed the test, a
+  /// shorter one may flake under scheduler delays, a multiple of it is never needed. The only
+  /// exception is an event of several steps with its own named bound, like
+  /// [#PROCESS_START_TIMEOUT]. A timer of the code under test that must not fire is set to
+  /// [#OUT_OF_REACH], never to this value.
   static final Duration TIMEOUT = Duration.ofSeconds(TIMEOUT_SECONDS);
 
   /// For a timer the test relies on never firing (flush interval, age limit): far beyond any

@@ -349,17 +349,23 @@ class ProxyShutdownIT {
   /// During the accept grace the proxy serves new and keep-alive traffic while readiness is false.
   /// The fake grace consumes the entire connection budget; a stalled request is then aborted and
   /// logged, while the reserved log budget remains available. No real sleep is used.
+  ///
+  /// The fake clock stands still after the grace, so the later shutdown phases wait in real time.
+  /// The drain budget is therefore [TestingParameters#OUT_OF_REACH], the test's own wait for the
+  /// shutdown, [TestingParameters#TIMEOUT], bounds it.
   @Test
   void acceptGraceKeepsServingThenClosesWithinTheBudget() throws Exception {
     AtomicLong now = new AtomicLong(1234);
     CountDownLatch delaying = new CountDownLatch(1);
     CountDownLatch releaseDelay = new CountDownLatch(1);
+    long graceMillis = 7000;
+    long drainMillis = OUT_OF_REACH_MILLIS;
     startProxy(
-        10_000,
-        3000L,
+        graceMillis + drainMillis,
+        drainMillis,
         now::get,
         nanos -> {
-          assertThat(nanos).isEqualTo(TimeUnit.MILLISECONDS.toNanos(7000));
+          assertThat(nanos).isEqualTo(TimeUnit.MILLISECONDS.toNanos(graceMillis));
           delaying.countDown();
           try {
             assertThat(releaseDelay.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
@@ -368,7 +374,10 @@ class ProxyShutdownIT {
           }
           now.addAndGet(nanos);
         });
-    assertThat(proxy.reload(config.toBuilder().shutdownAcceptGraceMillis(7000).build()).applied())
+    assertThat(
+            proxy
+                .reload(config.toBuilder().shutdownAcceptGraceMillis(graceMillis).build())
+                .applied())
         .isTrue();
     AdminServer admin =
         AdminServer.start(new InetSocketAddress("127.0.0.1", 0), null, proxy::isShuttingDown);
@@ -392,18 +401,18 @@ class ProxyShutdownIT {
           send(fresh, "example.com");
           assertThat(readResponse(fresh.getInputStream())).startsWith("HTTP/1.1 200");
         }
-        upstreamDelayMillis = 60_000;
+        upstreamDelayMillis = OUT_OF_REACH_MILLIS;
         send(keepAlive, "upstream.com");
         assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       } finally {
         releaseDelay.countDown();
       }
       shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(logs.messages(Proxy.class)).noneMatch(m -> m.contains("request log not drained"));
+      assertThat(logs.messages(Proxy.class))
+          .anyMatch(m -> m.contains("requests still in flight after " + graceMillis + " ms"));
       assertThat(otlpRecords.get()).isEqualTo(4);
       assertThat(requestLog.lines()).hasSize(4);
-      assertThat(logs.messages(Proxy.class))
-          .anyMatch(m -> m.contains("requests still in flight after 7000 ms"));
-      assertThat(logs.messages(Proxy.class)).noneMatch(m -> m.contains("request log not drained"));
       try (Socket probe = new Socket()) {
         assertThatThrownBy(
                 () ->

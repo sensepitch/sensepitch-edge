@@ -132,11 +132,6 @@ are listed under Bugs.
   - P1: a failed run is a bug, fix it before other work. An excessive test that fails is load
     sensitive or a real regression of allocation or timing; add an entry below per problem until
     it is fixed. The failed run uploads `nightly-test-reports` (kept 7 days).
-- [ ] Flaky, not investigated: `ProxyShutdownIT`,
-  `ShadedJarIT.sigtermSendsTheRequestLogAndExits`
-  - P2: also the `SIGTERM` path.
-  - The workflow "Flaky tests" (`.github/workflows/flaky-tests.yml`) counts failures over ten
-    runs each evening; take the failure rates from its run summary.
 
 ## Kubernetes, direct node ingress
 
