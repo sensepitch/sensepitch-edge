@@ -17,7 +17,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,11 +24,8 @@ import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLSession;
-import net.morimekta.testing.concurrent.FakeClock;
-import net.morimekta.testing.concurrent.ImmediateScheduledExecutor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -226,34 +222,6 @@ class HttpBatchSenderTest {
         .containsExactly(true, List.of(), true);
   }
 
-  /// Drives Netty's ticker and the scheduled tasks from the same test clock.
-  static final class FakeSenderTime implements Ticker {
-    private final FakeClock clock = new FakeClock();
-    private final Instant start = clock.instant();
-    private final ScheduledExecutorService scheduler = new ImmediateScheduledExecutor(clock);
-
-    @Override
-    public long initialNanoTime() {
-      return 0;
-    }
-
-    @Override
-    public long nanoTime() {
-      // FakeClock.nanoTime() advances on reads, so use the scheduler's instant for exact deadlines.
-      return Duration.between(start, clock.instant()).toNanos();
-    }
-
-    @Override
-    public void sleep(long delay, TimeUnit unit) {
-      clock.tick(delay, unit);
-    }
-
-    /// Moves the clock and runs any tasks that are due.
-    void advanceMillis(long millis) {
-      clock.tick(millis, TimeUnit.MILLISECONDS);
-    }
-  }
-
   /// The transport of a deterministic sender, it records requests and lets the test answer them
   static final class ControlledTransport implements HttpBatchSender.Transport {
 
@@ -330,7 +298,7 @@ class HttpBatchSenderTest {
   /// controlled transport, without a server, timer or wait on another thread.
   @Test
   void flushRunsOnTheFakeTimerAndPostsAPartialBatch() {
-    FakeSenderTime clock = new FakeSenderTime();
+    FakeTime clock = new FakeTime();
     ControlledTransport transport = new ControlledTransport();
     HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 1_000);
     ThreadBatcher<TextBatch> batcher = sender.newBatcher();
@@ -349,7 +317,7 @@ class HttpBatchSenderTest {
   /// than the age limit at a flush; no request has to be posted to discover that.
   @Test
   void flushDropsAnAgedBatchOnTheFakeClock() {
-    FakeSenderTime clock = new FakeSenderTime();
+    FakeTime clock = new FakeTime();
     ControlledTransport transport = new ControlledTransport();
     HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 4);
     ThreadBatcher<TextBatch> firstBatcher = sender.newBatcher();
@@ -379,7 +347,7 @@ class HttpBatchSenderTest {
   /// breaker lets exactly that request through and a successful answer drains the queue.
   @Test
   void probeIsScheduledOnTheFakeTimer() {
-    FakeSenderTime clock = new FakeSenderTime();
+    FakeTime clock = new FakeTime();
     ControlledTransport transport = new ControlledTransport();
     HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 1_000);
     ThreadBatcher<TextBatch> batcher = sender.newBatcher();
@@ -407,7 +375,7 @@ class HttpBatchSenderTest {
     defaultBatch.added();
     assertThat(defaultBatch.firstRecordNanos).isPositive();
 
-    FakeSenderTime clock = new FakeSenderTime();
+    FakeTime clock = new FakeTime();
     OtlpBatchPayload deterministicPayload = new OtlpBatchPayload(Map.of(), 0, clock);
     OtlpBatch deterministicBatch = deterministicPayload.newBatch(4_096);
     deterministicBatch.added();
@@ -415,7 +383,7 @@ class HttpBatchSenderTest {
   }
 
   private static HttpBatchSender<TextBatch> deterministicSender(
-      FakeSenderTime clock, ControlledTransport transport, int batchBytes) {
+      FakeTime clock, ControlledTransport transport, int batchBytes) {
     return new HttpBatchSender<>(
         new HttpBatchSender.Settings(
             "text",
@@ -433,7 +401,7 @@ class HttpBatchSenderTest {
         new TextPayload(clock),
         new RequestLogMetrics(),
         clock,
-        clock.scheduler::schedule,
+        clock.scheduler()::schedule,
         transport);
   }
 

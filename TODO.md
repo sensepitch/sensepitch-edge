@@ -30,9 +30,9 @@ are listed under Bugs.
     `pom.xml`), `FakeClock` with `ImmediateScheduledExecutor`, which runs due tasks in the thread
     that ticks. Not `FakeScheduledExecutor`: it runs tasks on real threads and needs a sleep after
     the tick. The production seams take JDK or Netty types (`ScheduledExecutorService`, Netty
-    `Ticker`, monotonic in production), never the library's; in tests a small `Ticker` adapter
-    over the `FakeClock` drives the breaker and the scheduler from one time. `CircuitBreaker`
-    already takes a `Ticker` and `CircuitBreakerBDDTest` drives it with a mock. Why not
+    `Ticker`, monotonic in production), never the library's; in tests `FakeTime`, a `Ticker`
+    adapter over the `FakeClock`, drives the breaker and the scheduler from one time.
+    `CircuitBreaker` already takes a `Ticker` and `CircuitBreakerBDDTest` drives it with a mock. Why not
     cache2k-testing: see [doc/design/test-speed.md](doc/design/test-speed.md#alternatives-considered).
   - The load sensitive assertions are listed in the next entry; this is the general remedy.
   - Seams needed in `HttpBatchSender` (under the 100% coverage rule), the first user: the timer,
@@ -47,6 +47,18 @@ are listed under Bugs.
     `RequestLoggerFactoryTest`,
     `HttpBatchSenderTest`,
     `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
+  - Survey 2026-11-23, by readiness for `FakeTime`:
+    - Ready, the seam exists: `OtlpLogDestinationTest`, through the package private constructor
+      with clock, timer and transport, unused by tests so far. Its sender logic scenarios move
+      to `HttpBatchSenderTest` (test in the class that owns the rule, see `AGENTS.md`), the load
+      sensitive ones first (`agedBatchIsDiscarded`, the probe rate in 500 ms);
+      `ControlledTransport` moves out of `HttpBatchSenderTest` with its second user.
+    - Need a seam first: `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (they build
+      the destination via the public constructor), `AsyncRequestLogWriterTest` and
+      `ConfigFileWatcherTest` (no clock or scheduler seam; the watcher also waits on the file
+      system).
+    - Not worth it: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
+      `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
   - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
     `OtlpLogDestinationTest`'s 27 server tests to an `*IT` was tried 2026-11-14 and undone: it
     saved about 4 s in `./mvnw test`, but the unit tests alone lost coverage, lines 95.1 % ->
@@ -57,11 +69,14 @@ are listed under Bugs.
     refused connection, and one multi threaded end to end run. They may only repeat what a unit
     test covers.
   - Write the converted tests as step chains (`*BDDTest`).
-  - New scenarios for the configurable retry delays, on the simulated clock only: the nominal
-    delay stops at `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see
-    Limitations in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)); with
-    `maxRetryDelayMillis` above `maximumUnsentLogAgeMillis` the batches age out between two
-    probes, are counted as dropped, and the next probe still comes.
+  - Scenarios for the configurable retry delays (done 2026-11-23): the nominal delay stops at
+    `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see Limitations in
+    [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)), pinned in
+    `BackoffTest.doublesAtMostTwentyTimes`. Batches aging out between two probes, with the next
+    probe still coming, is covered by
+    `OtlpLogDestinationTest.batchLoggedAfterAnAgedOneWaitsForTheBreaker`; it moves to the
+    simulated clock with the conversion above, with one backoff gap above
+    `maximumUnsentLogAgeMillis`.
 - [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P1: each one can fail on a loaded machine although the code is right.

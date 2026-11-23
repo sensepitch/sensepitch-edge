@@ -37,6 +37,15 @@ class BackoffTest {
     assertThat(new Backoff(1, 1, bound -> 0).delayMillis(0, 0)).as("at least 1 ms").isOne();
   }
 
+  /// The backoff doubles at most 20 times, a larger maximum is out of reach, see the Limitations
+  /// in `doc/design/circuit-breaker.md`
+  @Test
+  void doublesAtMostTwentyTimes() {
+    Backoff backoff = new Backoff(1, 1L << 22, bound -> 0);
+    assertThat(backoff.delayMillis(20, 0)).isEqualTo(1L << 19);
+    assertThat(backoff.delayMillis(21, 0)).as("no 21st doubling").isEqualTo(1L << 19);
+  }
+
   /// The default jitter stays within the bound
   @Test
   void threadLocalRandomWithinBound() {

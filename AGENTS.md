@@ -123,6 +123,10 @@
 - Tests that mainly exercise the JDK, Netty or other libraries rather than our code (e.g. real TLS
   handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast. An `*IT` may
   repeat what a unit test covers against the real thing, it does not replace the unit test.
+- Before adding a test, find the one that covers the behaviour. Test a boundary or input case in
+  the class that owns the rule (e.g. the backoff cap in `BackoffTest`); a caller's test adds one
+  representative path, for an interaction the lower level cannot see. A long setup to reach a
+  boundary is a sign the test belongs lower. A `TODO.md` item names the behaviour, not the level.
 
 ### Concurrent and asynchronous tests
 For every test with more than one thread, process or timer. The assumption: **any action on
@@ -146,8 +150,8 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
   (10 × `TIMEOUT`), never a literal.
 - Until a class has the clock seam, its real time unit tests stay for coverage (see above) and
   are listed under "Timing related tests" in `TODO.md`; do not add new ones. The fake clock is
-  morimekta's `FakeClock` with `ImmediateScheduledExecutor` (test scope), the production seams
-  take JDK or Netty types.
+  `FakeTime`, a Netty `Ticker` and a scheduler over morimekta's `FakeClock` with
+  `ImmediateScheduledExecutor` (test scope); the production seams take JDK or Netty types.
 - A transient state can be missed. `await` only monotonic conditions (`>=` on a counter) or a
   state the test freezes by holding the other side (worker, server, upstream on a latch or
   semaphore); assert while it is held, then release.
