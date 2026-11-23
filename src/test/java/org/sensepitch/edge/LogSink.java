@@ -38,30 +38,43 @@ final class LogSink implements LogTarget {
 
   /// Records of one thread. Synchronized, a capture of all threads reads it from another thread.
   private static final class Buffer {
+    private final Object lock = new Object();
+
+    // guarded by lock
     private final List<Entry> entries = new ArrayList<>();
 
     /// Problem keys seen since the warnings were switched on, `null` while they are off
     private Set<CounterDataPoint> problemKeys;
 
-    synchronized void add(Entry entry) {
-      entries.add(entry);
+    void add(Entry entry) {
+      synchronized (lock) {
+        entries.add(entry);
+      }
     }
 
-    synchronized void clear() {
-      entries.clear();
-      problemKeys = null;
+    void clear() {
+      synchronized (lock) {
+        entries.clear();
+        problemKeys = null;
+      }
     }
 
-    synchronized void warnProblems() {
-      problemKeys = new HashSet<>();
+    void warnProblems() {
+      synchronized (lock) {
+        problemKeys = new HashSet<>();
+      }
     }
 
-    synchronized boolean firstOccurrence(CounterDataPoint key) {
-      return problemKeys != null && problemKeys.add(key);
+    boolean firstOccurrence(CounterDataPoint key) {
+      synchronized (lock) {
+        return problemKeys != null && problemKeys.add(key);
+      }
     }
 
-    synchronized void copyTo(List<Entry> target) {
-      target.addAll(entries);
+    void copyTo(List<Entry> target) {
+      synchronized (lock) {
+        target.addAll(entries);
+      }
     }
   }
 

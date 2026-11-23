@@ -10,13 +10,16 @@ import java.util.List;
 /// @author Jens Wilke
 public class RequestLogCapture implements RequestLogOutput {
 
+  /// Event loop threads may write concurrently
+  private final Object lock = new Object();
+
+  // guarded by lock
   private final List<String> lines = new ArrayList<>();
   private final List<RequestOutcome> outcomes = new ArrayList<>();
 
   @Override
   public void writeLine(String line) {
-    // event loop threads may write concurrently
-    synchronized (lines) {
+    synchronized (lock) {
       lines.add(line);
     }
   }
@@ -26,7 +29,7 @@ public class RequestLogCapture implements RequestLogOutput {
   public RequestLogger plainText() {
     PlainTextRequestLogger text = new PlainTextRequestLogger(this);
     return info -> {
-      synchronized (lines) {
+      synchronized (lock) {
         outcomes.add(info.outcome());
       }
       text.logRequest(info);
@@ -35,14 +38,14 @@ public class RequestLogCapture implements RequestLogOutput {
 
   /// Outcomes of the requests logged via [#plainText()] so far
   public List<RequestOutcome> outcomes() {
-    synchronized (lines) {
+    synchronized (lock) {
       return List.copyOf(outcomes);
     }
   }
 
   /// Request log lines written so far
   public List<String> lines() {
-    synchronized (lines) {
+    synchronized (lock) {
       return List.copyOf(lines);
     }
   }
