@@ -7,6 +7,11 @@ import java.util.Arrays;
 import org.apache.logging.log4j.LogManager;
 import org.junit.jupiter.api.Test;
 
+/// Tokens of the [DefaultAdmissionTokenGenerator] as it creates them: encoding helpers, generated
+/// and fixed tokens accepted, malformed ones rejected. The checksum compatibility and the
+/// rejected characters are step chains in [AdmissionChecksumBDDTest], the place for new
+/// validation scenarios.
+///
 /// @author Jens Wilke
 public class AdmissionTokenTest {
 
@@ -62,10 +67,12 @@ public class AdmissionTokenTest {
     }
   }
 
+  /// Every generated token is accepted, the random part does not produce an invalid one
   @Test
   public void test1000Admissions() {
     for (int i = 0; i < 1000; i++) {
-      admissionHandler.newAdmission();
+      String token = admissionHandler.newAdmission();
+      assertThat(admissionHandler.checkAdmission(token)).as(token).isPositive();
     }
   }
 

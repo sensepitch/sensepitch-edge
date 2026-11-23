@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.StringReader;
@@ -66,17 +67,6 @@ public class ConfigTest {
   }
 
   @Test
-  public void configDeflector() throws Exception {
-    Map<String, String> env =
-        Map.of(
-            "SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_PREFIX", "z",
-            "SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_SECRET_VALUE", "munich");
-    ProxyConfig cfg =
-        (ProxyConfig) EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", env, ProxyConfig.builder());
-    assertNotNull(cfg.protection());
-  }
-
-  @Test
   public void testReadConfigFromEnvironmentForMultipleObjects() throws Exception {
     Map<String, String> env =
         Map.of(
@@ -136,75 +126,36 @@ public class ConfigTest {
     assertThat(obj.map().get("second").number()).isEqualTo(1002);
   }
 
+  /// A map of plain strings is read as numbered `KEY` and `VALUE` pairs; a key without its value
+  /// is rejected instead of being dropped
   @Test
-  public void readRoutingFromYaml() {
-    String yaml =
-        """
-      upstreams:
-        api:
-          target: api:8080
-      sites:
-        www.example.com:
-          upstream:
-            target: shop:8080
-          paths:
-            /api/*:
-              upstream: { ref: api }
-            /bo/*:
-              response: { status: 404, text: Not Found }
-            /beta/on/*:
-              response:
-                location: /
-                cookies:
-                  - name: beta
-                    maxAge: 2592000
-          overrides:
-            - whenCookie: beta
-              upstream:
-                target: shop-beta:8080
-              paths:
-                /api/*:
-                  upstream: { target: api-beta:8080 }
-    """;
-    Node root = new Yaml().compose(new StringReader(yaml));
-    ProxyConfig cfg =
-        KeyInjector.injectAllMapKeys(RecordConstructor.construct(ProxyConfig.class, root));
-    assertThat(cfg.upstreams().get("api").key()).isEqualTo("api");
-    assertThat(cfg.upstreams().get("api").target()).isEqualTo("api:8080");
-    SiteConfig site = cfg.sites().get("www.example.com");
-    assertThat(site.upstream().target()).isEqualTo("shop:8080");
-    assertThat(site.paths().get("/api/*").upstream().ref()).isEqualTo("api");
-    assertThat(site.paths().get("/bo/*").response().status()).isEqualTo(404);
-    assertThat(site.paths().get("/bo/*").response().text()).isEqualTo("Not Found");
-    SetCookieConfig cookie = site.paths().get("/beta/on/*").response().cookies().getFirst();
-    assertThat(cookie.name()).isEqualTo("beta");
-    assertThat(cookie.maxAge()).isEqualTo(2592000);
-    RoutingOverrideConfig override = site.overrides().getFirst();
-    assertThat(override.whenCookie()).isEqualTo("beta");
-    assertThat(override.upstream().target()).isEqualTo("shop-beta:8080");
-    assertThat(override.paths().get("/api/*").upstream().target()).isEqualTo("api-beta:8080");
-  }
-
-  @Test
-  public void readRoutingFromEnvironment() throws Exception {
+  public void readStringMapFromEnvironment() throws Exception {
     Map<String, String> env =
         Map.of(
-            "SENSEPITCH_EDGE_UPSTREAMS_0_KEY", "api",
-            "SENSEPITCH_EDGE_UPSTREAMS_0_TARGET", "api:8080",
-            "SENSEPITCH_EDGE_SITES_0_KEY", "www.example.com",
-            "SENSEPITCH_EDGE_SITES_0_PATHS_0_KEY", "/api/*",
-            "SENSEPITCH_EDGE_SITES_0_PATHS_0_UPSTREAM_REF", "api",
-            "SENSEPITCH_EDGE_SITES_0_OVERRIDES_0_WHEN_COOKIE", "beta",
-            "SENSEPITCH_EDGE_SITES_0_OVERRIDES_0_PATHS_0_KEY", "/api/*",
-            "SENSEPITCH_EDGE_SITES_0_OVERRIDES_0_PATHS_0_UPSTREAM_TARGET", "api-beta:8080");
-    ProxyConfig cfg =
-        (ProxyConfig) EnvInjector.injectFromEnv("SENSEPITCH_EDGE_", env, ProxyConfig.builder());
-    assertThat(cfg.upstreams().get("api").target()).isEqualTo("api:8080");
-    SiteConfig site = cfg.sites().get("www.example.com");
-    assertThat(site.paths().get("/api/*").upstream().ref()).isEqualTo("api");
-    RoutingOverrideConfig override = site.overrides().getFirst();
-    assertThat(override.whenCookie()).isEqualTo("beta");
-    assertThat(override.paths().get("/api/*").upstream().target()).isEqualTo("api-beta:8080");
+            "XX_LABELS_0_KEY", "Authorization",
+            "XX_LABELS_0_VALUE", "Bearer secret",
+            "XX_LABELS_1_KEY", "VL-Stream-Fields",
+            "XX_LABELS_1_VALUE", "service.name");
+    AllFieldTypesConfig cfg =
+        (AllFieldTypesConfig) EnvInjector.injectFromEnv("XX_", env, AllFieldTypesConfig.builder());
+    assertThat(cfg.labels())
+        .containsExactly(
+            Map.entry("Authorization", "Bearer secret"),
+            Map.entry("VL-Stream-Fields", "service.name"));
+    Map<String, String> noValue = Map.of("XX_LABELS_0_KEY", "Authorization");
+    assertThatThrownBy(
+            () -> EnvInjector.injectFromEnv("XX_", noValue, AllFieldTypesConfig.builder()))
+        .hasMessage("Missing env var XX_LABELS_0_VALUE");
+  }
+
+  /// A value the record rejects fails the loading, with the message of the record
+  @Test
+  public void valueRejectedByTheRecordFailsTheLoading() {
+    Node root = new Yaml().compose(new StringReader("number: -1\n"));
+    assertThatThrownBy(() -> RecordConstructor.construct(AllFieldTypesConfig.class, root))
+        .rootCause()
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("number must be >= 0, was: -1");
   }
 
   @Test
@@ -271,15 +222,6 @@ public class ConfigTest {
     assertEquals(8443, cfg.listen().httpsPort());
     assertEquals(ListenConfig.DEFAULT.address(), cfg.listen().address());
     assertEquals(ListenConfig.DEFAULT_HTTP_PORT, cfg.listen().httpPort());
-  }
-
-  /// `0` disables the plain HTTP listener, negative values are rejected instead of a bind
-  /// failure at startup.
-  @Test
-  public void negativeHttpPortIsRejected() {
-    RuntimeException ex =
-        assertThrows(RuntimeException.class, () -> Main.parseConfig("listen:\n  httpPort: -1\n"));
-    assertThat(ex).hasStackTraceContaining("httpPort must be >= 0, was: -1");
   }
 
   /// A map entry without value, like `www.example.com:` in the README, is an empty record.

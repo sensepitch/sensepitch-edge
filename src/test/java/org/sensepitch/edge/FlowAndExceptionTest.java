@@ -39,6 +39,12 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+/// Request and response flow through [DownstreamHandler] and the upstream, and its error cases,
+/// on embedded channels. Some scenarios overlap with step chains that are the place for new
+/// scenarios of their topic: upstream failures in [UpstreamFailureBDDTest], informational and
+/// final responses in [InformationalResponseBDDTest]. The tests here keep the checks the step
+/// chains do not make, e.g. the release of a pending request body or the outcome counter.
+///
 /// @author Jens Wilke
 public class FlowAndExceptionTest {
 

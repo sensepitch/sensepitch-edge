@@ -143,6 +143,10 @@ public class FallbackTest {
     return RecordConstructor.construct(FallbackConfig.class, root);
   }
 
+  /// The one YAML test of this component, for an interaction the builder cannot show: the generic
+  /// loading seeds a nested record from a `DEFAULT` constant (see `ConfigTest`), but a fallback
+  /// slot left out must stay `null`, so [FallbackConfig#merge(FallbackConfig)] keeps the global
+  /// one. [FallbackConfig] names its constant `DEFAULTS` for that.
   @Test
   public void partialConfigParsesSparse() {
     FallbackConfig cfg =
@@ -165,8 +169,8 @@ public class FallbackTest {
 
   @Test
   public void siteOverrideDoesNotBeatGlobal() {
-    FallbackConfig global = parse("errorResponse:\n  text: global error\n");
-    FallbackConfig site = parse("unavailableResponse:\n  text: site2 down\n");
+    FallbackConfig global = siteError(page("global error"));
+    FallbackConfig site = siteUnavailable(page("site2 down"));
 
     FallbackConfig resolved = FallbackConfig.DEFAULTS.merge(global).merge(site);
 
@@ -179,9 +183,8 @@ public class FallbackTest {
   }
 
   @Test
-  public void redirectAndPageInSameResponseFailsToParse() {
-    assertThatThrownBy(() -> parse("unavailableResponse:\n  location: /elsewhere\n  text: hi\n"))
-        .rootCause()
+  public void redirectAndPageInSameResponseFails() {
+    assertThatThrownBy(() -> ResponseConfig.builder().location("/elsewhere").text("hi").build())
         .isInstanceOf(IllegalArgumentException.class);
   }
 
@@ -291,9 +294,8 @@ public class FallbackTest {
     assertThatThrownBy(() -> siteUnavailable(withCookie))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("cookies are not supported in fallback responses");
-    assertThatThrownBy(() -> parse("errorResponse:\n  text: hi\n  cookies:\n    - name: a\n"))
-        .hasRootCauseInstanceOf(IllegalArgumentException.class)
-        .rootCause()
+    assertThatThrownBy(() -> siteError(withCookie))
+        .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("cookies are not supported in fallback responses");
   }
 

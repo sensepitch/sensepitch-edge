@@ -13,7 +13,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /// Compatibility and malformed-input checks for admission checksum validation, and the creation
-/// time returned for a valid token.
+/// time returned for a valid token. Tokens created by the generator itself are checked in
+/// [AdmissionTokenTest].
 @ExtendWith(SerenityJUnit5Extension.class)
 class AdmissionChecksumBDDTest {
 

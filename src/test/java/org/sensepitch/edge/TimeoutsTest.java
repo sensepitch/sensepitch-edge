@@ -36,6 +36,11 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+/// Ingress and upstream timeouts on a mock ticker: the responses, the counters and the request log.
+/// The single completion of a response timeout, also with a delayed error write or an upstream
+/// still connecting, is a step chain in [ResponseTimeoutBDDTest], the place for new response
+/// timeout scenarios.
+///
 /// @author Jens Wilke
 class TimeoutsTest {
 

@@ -286,36 +286,6 @@ class RequestLoggerFactoryTest {
     assertThat(queuedDestinations()).as("the created one is closed").doesNotContain("first");
   }
 
-  /// Destinations can be configured via environment variables, by index
-  @Test
-  void environmentVariables() throws Exception {
-    Map<String, String> env =
-        Map.of(
-            "XX_REQUEST_LOG_DESTINATIONS_0_TYPE", "stdout",
-            "XX_REQUEST_LOG_DESTINATIONS_1_TYPE", "otlp",
-            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_ENDPOINT",
-                "http://victorialogs:9428/insert/opentelemetry/v1/logs",
-            "XX_REQUEST_LOG_DESTINATIONS_1_ANONYMIZE_CLIENT_IP", "true",
-            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_0_KEY", "Authorization",
-            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_0_VALUE", "Bearer secret",
-            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_1_KEY", "VL-Stream-Fields",
-            "XX_REQUEST_LOG_DESTINATIONS_1_OTLP_HEADERS_1_VALUE", "service.name,server.address",
-            "XX_TRACE_CONTEXT_TRUST_TRACEPARENT", "true");
-    ProxyConfig config = (ProxyConfig) EnvInjector.injectFromEnv("XX_", env, ProxyConfig.builder());
-    List<RequestLogDestinationConfig> destinations = config.requestLog().destinations();
-    assertThat(destinations).hasSize(2);
-    assertThat(destinations.get(0).type()).isEqualTo("stdout");
-    assertThat(destinations.get(1).type()).isEqualTo("otlp");
-    assertThat(destinations.get(1).anonymizeClientIp()).isTrue();
-    OtlpConfig otlp = destinations.get(1).otlp();
-    assertThat(otlp.endpoint()).isEqualTo("http://victorialogs:9428/insert/opentelemetry/v1/logs");
-    assertThat(otlp.headers())
-        .containsExactly(
-            Map.entry("Authorization", "Bearer secret"),
-            Map.entry("VL-Stream-Fields", "service.name,server.address"));
-    assertThat(config.traceContext().trustTraceparent()).isTrue();
-  }
-
   /// Secret headers are read and sent like the plain headers, the name of a header counts
   /// regardless of case
   @Test
@@ -346,24 +316,5 @@ class RequestLoggerFactoryTest {
     assertThatThrownBy(() -> RequestLoggerFactory.resolveSecretHeaders("vl", twice, files))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Request log destination vl: header Authorization configured twice");
-  }
-
-  @Test
-  void environmentVariableMapEntryNeedsValue() {
-    Map<String, String> env =
-        Map.of("XX_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_KEY", "Authorization");
-    assertThatThrownBy(() -> EnvInjector.injectFromEnv("XX_", env, ProxyConfig.builder()))
-        .hasMessageContaining("Missing env var XX_REQUEST_LOG_DESTINATIONS_0_OTLP_HEADERS_0_VALUE");
-  }
-
-  @Test
-  void configDefaults() {
-    OtlpConfig config = OtlpConfig.builder().build();
-    assertThat(config.timeoutMillis()).isEqualTo(10_000);
-    assertThat(config.flushIntervalMillis()).isEqualTo(1_000);
-    assertThat(config.batchBytes()).isEqualTo(1024 * 1024);
-    assertThat(config.maxBufferedBytes())
-        .isEqualTo(2L * ProxyEnvironment.current().eventLoopThreads() * 1024 * 1024);
-    assertThat(config.compression()).isEqualTo(OtlpConfig.GZIP);
   }
 }

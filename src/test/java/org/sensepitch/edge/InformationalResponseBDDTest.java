@@ -27,7 +27,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 /// An upstream informational response is forwarded, but does not end the exchange in
 /// [ForwardHandler] or [DownstreamHandler]. The client receives it before the final response, and
-/// the upstream stays open until that final response is complete.
+/// the upstream stays open until that final response is complete. The details of forwarding a
+/// final response, e.g. the headers, are in [FlowAndExceptionTest].
 @ExtendWith(SerenityJUnit5Extension.class)
 class InformationalResponseBDDTest {
 

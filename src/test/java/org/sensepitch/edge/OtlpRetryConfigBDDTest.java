@@ -17,7 +17,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 /// Retry delays of a request log destination: defaults, built values and rejected values, from
 /// the configuration record to the [Backoff] of the sender, without requests or timers. The retry
 /// itself is covered by the sender and breaker tests. Also the explicit `0` of the other numbers
-/// of [OtlpConfig], which is rejected and no placeholder for the default.
+/// of [OtlpConfig], which is rejected and no placeholder for the default, and the other rejected
+/// values of the destination; new ones are rows of [#invalidValues()]. Defaults and derived values
+/// of the other settings are in [OtlpConfigTest].
 @ExtendWith(SerenityJUnit5Extension.class)
 class OtlpRetryConfigBDDTest {
 
@@ -68,36 +70,68 @@ class OtlpRetryConfigBDDTest {
 
   static Stream<Arguments> zeroValues() {
     return Stream.of(
-        zero("timeoutMillis", b -> b.timeoutMillis(0), "timeoutMillis must be positive"),
-        zero(
+        rejected("timeoutMillis", b -> b.timeoutMillis(0), "timeoutMillis must be positive"),
+        rejected(
             "flushIntervalMillis",
             b -> b.flushIntervalMillis(0),
             "flushIntervalMillis must be positive"),
-        zero(
+        rejected(
             "batchBytes",
             b -> b.batchBytes(0),
             "batchBytes must be at least " + OtlpConfig.MIN_BATCH_BYTES),
-        zero(
+        rejected(
             "maxConcurrentRequests",
             b -> b.maxConcurrentRequests(0),
             "maxConcurrentRequests must be positive"),
-        zero(
+        rejected(
             "maximumUnsentLogAgeMillis",
             b -> b.maximumUnsentLogAgeMillis(0),
             "maximumUnsentLogAgeMillis must be positive"));
   }
 
-  static Arguments zero(String key, UnaryOperator<OtlpConfig.Builder> setZero, String reason) {
-    return Arguments.of(key, setZero, reason);
+  /// Values the destination rejects other than an explicit `0`. A rule with a bound is checked
+  /// on both sides of it.
+  static Stream<Arguments> invalidValues() {
+    String compressionLevelRange =
+        "compressionLevel must be between "
+            + OtlpConfig.MIN_COMPRESSION_LEVEL
+            + " and "
+            + OtlpConfig.MAX_COMPRESSION_LEVEL
+            + ", not ";
+    return Stream.of(
+        rejected("endpoint omitted", b -> b.endpoint(null), "endpoint missing"),
+        rejected("endpoint blank", b -> b.endpoint(" "), "endpoint missing"),
+        rejected(
+            "endpoint not http",
+            b -> b.endpoint("ftp://example.com"),
+            "endpoint must be an http or https URL"),
+        rejected(
+            "unknown compression",
+            b -> b.compression("zstd"),
+            "compression must be gzip or none, not zstd"),
+        // 0 is taken as the default level, see OtlpConfigTest, so the value below is negative
+        rejected(
+            "compressionLevel below", b -> b.compressionLevel(-1), compressionLevelRange + "-1"),
+        rejected(
+            "compressionLevel above",
+            b -> b.compressionLevel(OtlpConfig.MAX_COMPRESSION_LEVEL + 1),
+            compressionLevelRange + (OtlpConfig.MAX_COMPRESSION_LEVEL + 1)));
+  }
+
+  static Arguments rejected(String key, UnaryOperator<OtlpConfig.Builder> change, String reason) {
+    return Arguments.of(key, change, reason);
   }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("zeroValues")
-  void explicitZeroIsRejected(
-      String key, UnaryOperator<OtlpConfig.Builder> setZero, String reason) {
-    new Steps()
-        .givenConfig(setZero.apply(OtlpConfig.builder().endpoint(ENDPOINT)).build())
-        .thenDestinationIsRejected(reason);
+  void explicitZeroIsRejected(String key, UnaryOperator<OtlpConfig.Builder> change, String reason) {
+    new Steps().givenChangedConfig(change).thenDestinationIsRejected(reason);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("invalidValues")
+  void invalidValueIsRejected(String key, UnaryOperator<OtlpConfig.Builder> change, String reason) {
+    new Steps().givenChangedConfig(change).thenDestinationIsRejected(reason);
   }
 
   static class Steps {
@@ -113,6 +147,11 @@ class OtlpRetryConfigBDDTest {
         builder.maxRetryDelayMillis(max);
       }
       return givenConfig(builder.build());
+    }
+
+    @Step("Change one value of an otherwise valid configuration")
+    Steps givenChangedConfig(UnaryOperator<OtlpConfig.Builder> change) {
+      return givenConfig(change.apply(OtlpConfig.builder().endpoint(ENDPOINT)).build());
     }
 
     @Step("Use the destination configuration")

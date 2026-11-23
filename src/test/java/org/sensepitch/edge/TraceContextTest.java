@@ -17,6 +17,14 @@ class TraceContextTest {
 
   static final String VALID = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
+  /// The edge faces the internet, so a client's trace is not continued unless configured
+  @Test
+  void configDoesNotTrustTheClientByDefault() {
+    assertThat(TraceContextConfig.DEFAULT.trustTraceparent()).isFalse();
+    assertThat(TraceContextConfig.builder().trustTraceparent(true).build().trustTraceparent())
+        .isTrue();
+  }
+
   @Test
   void parseValid() {
     TraceContext context = TraceContext.parse(VALID);

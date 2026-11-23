@@ -3,12 +3,8 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.StringReader;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.sensepitch.edge.config.RecordConstructor;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.nodes.Node;
 
 /// @author Jens Wilke
 class SetCookieConfigTest {
@@ -79,24 +75,16 @@ class SetCookieConfigTest {
   }
 
   @Test
-  void parseResponseWithCookies() {
-    String yaml =
-        """
-        location: /
-        cookies:
-          - name: beta
-            maxAge: 2592000
-          - name: alpha
-            delete: true
-        """;
-    Node root = new Yaml().compose(new StringReader(yaml));
-    ResponseConfig cfg = RecordConstructor.construct(ResponseConfig.class, root);
-    List<SetCookieConfig> cookies = cfg.cookies();
-    assertThat(cookies).hasSize(2);
-    assertThat(cookies.get(0).name()).isEqualTo("beta");
-    assertThat(cookies.get(0).maxAge()).isEqualTo(2592000);
-    assertThat(cookies.get(1).name()).isEqualTo("alpha");
-    assertThat(cookies.get(1).delete()).isTrue();
+  void responseEncodesEachCookie() {
+    ResponseConfig cfg =
+        ResponseConfig.builder()
+            .location("/")
+            .cookies(
+                List.of(
+                    SetCookieConfig.builder().name("beta").maxAge(2592000).build(),
+                    SetCookieConfig.builder().name("alpha").delete(true).build()))
+            .build();
+    assertThat(cfg.cookies()).extracting(SetCookieConfig::name).containsExactly("beta", "alpha");
     assertThat(cfg.encodedCookies()).hasSize(2);
   }
 }
