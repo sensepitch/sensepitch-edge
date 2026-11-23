@@ -29,9 +29,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     with a 1 ms flush interval), and the durations in `ProxyShutdownIT`. The tests stay in the
     test scope meanwhile, see the coverage rule in `AGENTS.md`.
   - Races with the test's own steps, they need a hook or a held state:
-    - `ProxyShutdownIT.requestInFlightCompletes`: the upstream answers after a fixed 300 ms; if
-      the shutdown has not marked the connection for close by then, the response lacks
-      `connection: close`. Needs a hook that tells when the drain of the connections started.
     - `ReloadableRequestLoggerIT.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
       `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
       inferred, not reproduced).

@@ -28,6 +28,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -54,12 +55,17 @@ public class Proxy implements ProxyContext {
 
   private static final ProxyLogger LOG = ProxyLogger.get(Proxy.class);
 
+  private static final Consumer<Channel> NO_INGRESS_SHUTDOWN_SIGNAL = channel -> {};
+
   private final Object lock = new Object();
 
   /// Monotonic shutdown time and a possibly spurious wait, injected for deterministic delay tests.
   private final LongSupplier shutdownNanoTime;
 
   private final LongConsumer shutdownWaitNanos;
+
+  /// Fired on an ingress event loop when the shutdown drain reached the connection, a test seam
+  private final Consumer<Channel> ingressShutdownDelivered;
 
   private final Dummy404Handler dummy404Handler = new Dummy404Handler();
   private final TrackIngressConnectionsHandler trackIngressConnectionsHandler;
@@ -136,17 +142,34 @@ public class Proxy implements ProxyContext {
   /// @param requestLogOutput destination of the request log, tests pass a capture here. The proxy
   ///   closes it on [#shutdown()].
   public Proxy(ProxyConfig config, RequestLogOutput requestLogOutput) {
-    this(config, requestLogOutput, System::nanoTime, LockSupport::parkNanos);
+    this(
+        config,
+        requestLogOutput,
+        System::nanoTime,
+        LockSupport::parkNanos,
+        NO_INGRESS_SHUTDOWN_SIGNAL);
   }
 
-  /// Timing seam for shutdown tests; production uses the monotonic system clock and park.
+  /// Shutdown test seams; production uses the monotonic system clock, park and a no-op signal.
   Proxy(
       ProxyConfig config,
       RequestLogOutput requestLogOutput,
       LongSupplier shutdownNanoTime,
       LongConsumer shutdownWaitNanos) {
+    this(config, requestLogOutput, shutdownNanoTime, shutdownWaitNanos, NO_INGRESS_SHUTDOWN_SIGNAL);
+  }
+
+  /// [#Proxy(ProxyConfig, RequestLogOutput, LongSupplier, LongConsumer)] with a signal fired on
+  /// an ingress event loop when the shutdown drain reached the connection.
+  Proxy(
+      ProxyConfig config,
+      RequestLogOutput requestLogOutput,
+      LongSupplier shutdownNanoTime,
+      LongConsumer shutdownWaitNanos,
+      Consumer<Channel> ingressShutdownDelivered) {
     this.shutdownNanoTime = shutdownNanoTime;
     this.shutdownWaitNanos = shutdownWaitNanos;
+    this.ingressShutdownDelivered = ingressShutdownDelivered;
     this.requestLogOutput = requestLogOutput;
     config = KeyInjector.injectAllMapKeys(config);
     if (config.listen() == null) {
@@ -654,7 +677,8 @@ public class Proxy implements ProxyContext {
     // from the timeout and keep-alive handling below
     pipeline.addLast(
         new RequestLoggingHandler(metrics, requestLogger, trustTraceparent, configIds));
-    pipeline.addLast(new IngressTimeoutHandler(connectionConfig, metrics));
+    pipeline.addLast(
+        new IngressTimeoutHandler(connectionConfig, metrics, ingressShutdownDelivered));
     pipeline.addLast(new IpTraitsHandler(state.get().ipTraitsLookup()));
     pipeline.addLast(ja4HeaderHandler);
     // Resolve these per request so reloads apply to existing keep-alive connections.

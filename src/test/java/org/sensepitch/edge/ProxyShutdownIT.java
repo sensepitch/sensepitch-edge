@@ -65,6 +65,10 @@ class ProxyShutdownIT {
   private final AtomicInteger otlpRecords = new AtomicInteger();
 
   private volatile long upstreamDelayMillis;
+
+  /// Set by a test that waits for the drain to reach the in-flight connection, otherwise `null`
+  private volatile CountDownLatch shutdownDrainReached;
+
   private HttpServer upstream;
   private HttpServer logServer;
   private Proxy proxy;
@@ -85,9 +89,15 @@ class ProxyShutdownIT {
         exchange -> {
           upstreamGotRequest.countDown();
           try {
-            // the delay ends early when the test is over, otherwise stopping the upstream
-            // waits for the rest of it
-            testOver.await(upstreamDelayMillis, TimeUnit.MILLISECONDS);
+            CountDownLatch drainReached = shutdownDrainReached;
+            if (drainReached == null) {
+              // the delay ends early when the test is over, otherwise stopping the upstream
+              // waits for the rest of it
+              testOver.await(upstreamDelayMillis, TimeUnit.MILLISECONDS);
+            } else {
+              // lets this test answer only once the response will close the connection
+              drainReached.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            }
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
@@ -163,7 +173,18 @@ class ProxyShutdownIT {
             .metrics(MetricsConfig.builder().enable(false).build())
             .shutdownTimeoutMillis(shutdownTimeoutMillis)
             .build();
-    proxy = new Proxy(config, requestLog, clock, wait);
+    proxy =
+        new Proxy(
+            config,
+            requestLog,
+            clock,
+            wait,
+            ignored -> {
+              CountDownLatch drainReached = shutdownDrainReached;
+              if (drainReached != null) {
+                drainReached.countDown();
+              }
+            });
     Thread thread =
         new Thread(
             () -> {
@@ -194,16 +215,21 @@ class ProxyShutdownIT {
   }
 
   /// A request in flight completes, its response closes the connection, and it is logged in all
-  /// destinations before the shutdown returns. No phase runs into its timeout: each one would log
-  /// a `Shutdown:` diagnostic.
+  /// destinations before the shutdown returns. The upstream answers only after the drain reached
+  /// the connection, so the response follows the `Connection: close` decision. No phase runs into
+  /// its timeout: each one would log a `Shutdown:` diagnostic.
   @Test
   void requestInFlightCompletes() throws Exception {
+    CountDownLatch drainReached = new CountDownLatch(1);
+    shutdownDrainReached = drainReached;
     startProxy(10_000, null);
-    upstreamDelayMillis = 300;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
       assertThat(upstreamGotRequest.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       CompletableFuture<Void> shutdown = CompletableFuture.runAsync(proxy::shutdown);
+      assertThat(drainReached.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("shutdown drain reached the in-flight connection")
+          .isTrue();
       String response = readResponse(socket.getInputStream());
       assertThat(response).startsWith("HTTP/1.1 200").contains("from upstream");
       assertThat(response.toLowerCase(Locale.ROOT)).contains("connection: close");

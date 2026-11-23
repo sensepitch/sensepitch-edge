@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelFutureListener;
@@ -18,6 +19,7 @@ import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /// Watches the request and response pass through and implement timeouts for the request, response
 /// and write. There is only one timeout active at a point in time. The response timeout is actually
@@ -61,7 +63,10 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   /// Content type prefix of a multipart response, which delimits its own end
   private static final String MULTIPART_PREFIX = "multipart";
 
+  private static final Consumer<Channel> IGNORE_SHUTDOWN = channel -> {};
+
   private final ConnectionConfig config;
+  private final Consumer<Channel> shutdownDelivered;
   private boolean responding = false;
   private TimeoutTask task;
   private final ProxyMetrics proxyMetrics;
@@ -91,8 +96,17 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   private boolean closing;
 
   public IngressTimeoutHandler(ConnectionConfig config, ProxyMetrics proxyMetrics) {
+    this(config, proxyMetrics, IGNORE_SHUTDOWN);
+  }
+
+  /// @param shutdownDelivered fired on the connection's event loop when the shutdown drain
+  ///   reached it, after `closing` was set. A test uses this to let an upstream answer only once
+  ///   the response will carry `Connection: close`.
+  IngressTimeoutHandler(
+      ConnectionConfig config, ProxyMetrics proxyMetrics, Consumer<Channel> shutdownDelivered) {
     this.config = config;
     this.proxyMetrics = proxyMetrics;
+    this.shutdownDelivered = shutdownDelivered;
   }
 
   @Override
@@ -153,6 +167,7 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
       return;
     }
     closing = true;
+    shutdownDelivered.accept(ctx.channel());
     if (idle) {
       ctx.close();
     }
