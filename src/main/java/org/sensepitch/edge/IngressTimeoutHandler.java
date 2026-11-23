@@ -341,12 +341,13 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
     }
 
     private void schedule() {
-      assert future == null;
       future = ctx.executor().schedule(this, delayNs(), TimeUnit.NANOSECONDS);
     }
 
     @Override
     public void run() {
+      // Netty fires channelInactive in a later event-loop task than the close, so a due timer can
+      // run after the close but before channelInactive cancels it.
       if (!ctx.channel().isOpen()) {
         return;
       }

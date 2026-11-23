@@ -29,6 +29,8 @@ import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Promise;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -84,6 +86,51 @@ class TimeoutsTest {
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(408);
     assertThat(response.headers().toString()).contains("connection: close");
+  }
+
+  /// An idle connection closed before its read timeout neither sends a 408 nor counts a
+  /// `first_request` receive timeout: closing cancels the pending timer in `channelInactive`.
+  @Test
+  public void closeIdleConnectionBeforeReadTimeout() {
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(9, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    ingressChannel.close();
+    assertThat(ingressChannel.isActive()).isFalse();
+    ticker.advance(1, SECONDS);
+    rattle();
+    assertThat(receiveTimeouts(SanitizeHostHandler.NIL_HOST, "first_request")).isEqualTo(0);
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+  }
+
+  /// A read timeout that becomes due after the channel closed but before `channelInactive` has
+  /// cancelled the timer neither sends a 408 nor counts a `first_request` receive timeout. Netty
+  /// fires `channelInactive` in a later event-loop task than the close, so the timer can run in
+  /// between. The close future listener runs inside that window: the channel is closed and the
+  /// inactive event is not delivered yet. There the time passes the deadline and the due timer
+  /// runs.
+  @Test
+  public void readTimeoutDueBetweenCloseAndInactiveIsIgnored() {
+    AtomicBoolean openInWindow = new AtomicBoolean(true);
+    AtomicLong nextScheduledInWindow = new AtomicLong();
+    ingressChannel
+        .closeFuture()
+        .addListener(
+            future -> {
+              openInWindow.set(ingressChannel.isOpen());
+              ticker.advance(10, SECONDS);
+              nextScheduledInWindow.set(ingressChannel.runScheduledPendingTasks());
+            });
+    ingressChannel.close();
+    rattle();
+    assertThat(openInWindow).isFalse();
+    // the due timer ran in the window and did not reschedule itself
+    assertThat(nextScheduledInWindow).hasValue(-1);
+    assertThat(receiveTimeouts(SanitizeHostHandler.NIL_HOST, "first_request")).isEqualTo(0);
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    assertThat(requestLogCapture.outcomes()).doesNotContain(RequestOutcome.REQUEST_TIMEOUT);
+    assertThat(logs.entries()).isEmpty();
   }
 
   /// After a response with keep alive the client has the read timeout to send the next request,

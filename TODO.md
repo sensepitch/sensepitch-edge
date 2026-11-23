@@ -346,11 +346,14 @@ logging) is in [NOT-YET.md](NOT-YET.md).
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
-  - `IngressTimeoutHandler.TimeoutTask` (2026-11-21): the `assert future == null` branch in
-    `schedule` and the `!ctx.channel().isOpen()` early return in `run` are not covered. The timer
-    is cancelled in `channelInactive`, so the return may be reachable only between `close` and
-    the inactive event; decide whether to test it or remove it (not verified).
-    - P3
+  - `IngressTimeoutHandler.TimeoutTask` (2026-11-21, done 2026-11-22): removed the
+    always-true `assert future == null` in `schedule`. Close before the timeout is covered by
+    `TimeoutsTest.closeIdleConnectionBeforeReadTimeout`.
+    - Fixed 2026-11-23: the `!ctx.channel().isOpen()` early return in `run` is reachable and
+      is restored. Netty fires `channelInactive` in a later event-loop task than the close, so
+      a due timer can run in between; without the return it counted a `first_request` receive
+      timeout and wrote a 408 to the closed channel. Covered by
+      `TimeoutsTest.readTimeoutDueBetweenCloseAndInactiveIsIgnored`.
 
 ## Governance
 
