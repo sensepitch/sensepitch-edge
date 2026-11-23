@@ -91,8 +91,8 @@ class ShadedJarIT {
   }
 
   /// `SIGTERM` shuts down gracefully: the request log is complete when the process exits, also the
-  /// OTLP export, which flushes only every minute, and the process exits right away when there
-  /// is nothing left to wait for
+  /// OTLP export, which flushes only every minute. With nothing left to wait for, no shutdown
+  /// phase runs into its timeout, which would log a `Shutdown:` diagnostic.
   @Test
   void sigtermSendsTheRequestLogAndExits() throws Exception {
     java.util.concurrent.atomic.AtomicInteger records =
@@ -139,12 +139,8 @@ class ShadedJarIT {
               .start();
       awaitOutput(stderr, "Proxy listening on 127.0.0.1:" + port);
       assertThat(get(port)).startsWith("HTTP/1.1 200");
-      long start = System.nanoTime();
       process.destroy();
       assertThat(process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("exited").isTrue();
-      assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
-          .as("faster than the shutdown timeout")
-          .isLessThan(4_000);
       assertThat(Files.readAllLines(stdout)).singleElement().asString().contains("\"url.path\"");
       assertThat(records.get()).as("OTLP record sent before the exit").isOne();
       assertThat(Files.readAllLines(stderr)).noneMatch(line -> line.contains("Shutdown:"));

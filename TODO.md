@@ -67,9 +67,8 @@ are listed under Bugs.
   - P1: each one can fail on a loaded machine although the code is right.
   - Done 2026-11-23: `ReloadableRequestLoggerIT` checks that replacing or removing a destination
     returns while the log server is holding an export.
-  - Maximum elapsed time, drop it: `ProxyShutdownIT`
-    (`< 5_000` twice, `< 2_500` in `slowRequestIsAbortedAndStillLogged`), `ShadedJarIT` (exit
-    `< 4_000` after `destroy()`). The minimum times in `*IT` (`>= 900`) stay.
+  - Done 2026-11-23: `ProxyShutdownIT` and `ShadedJarIT` check shutdown outcomes and diagnostics
+    in place of maximum elapsed times. The minimum elapsed checks for intentional waits stay.
   - Short configured timings that race the test's own steps:
     `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
     `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,

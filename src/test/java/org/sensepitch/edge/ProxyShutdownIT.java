@@ -194,7 +194,8 @@ class ProxyShutdownIT {
   }
 
   /// A request in flight completes, its response closes the connection, and it is logged in all
-  /// destinations before the shutdown returns, well before the timeout
+  /// destinations before the shutdown returns. No phase runs into its timeout: each one would log
+  /// a `Shutdown:` diagnostic.
   @Test
   void requestInFlightCompletes() throws Exception {
     startProxy(10_000, null);
@@ -202,14 +203,12 @@ class ProxyShutdownIT {
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
       assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-      long start = System.nanoTime();
       CompletableFuture<Void> shutdown = CompletableFuture.runAsync(proxy::shutdown);
       String response = readResponse(socket.getInputStream());
       assertThat(response).startsWith("HTTP/1.1 200").contains("from upstream");
       assertThat(response.toLowerCase(Locale.ROOT)).contains("connection: close");
       assertThat(socket.getInputStream().read()).as("closed after the response").isEqualTo(-1);
       shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat(millisSince(start)).as("faster than the timeout").isLessThan(5_000);
     }
     assertThat(requestLog.lines())
         .singleElement()
@@ -219,7 +218,7 @@ class ProxyShutdownIT {
     assertThat(logs.messages(Proxy.class)).noneMatch(m -> m.startsWith("Shutdown:"));
   }
 
-  /// An idle keep-alive connection is closed at once
+  /// An idle keep-alive connection is closed at once, the shutdown does not wait for its timeout
   @Test
   void idleConnectionIsClosed() throws Exception {
     startProxy(10_000, null);
@@ -228,17 +227,16 @@ class ProxyShutdownIT {
       assertThat(readResponse(socket.getInputStream()))
           .startsWith("HTTP/1.1 200")
           .contains("a test response");
-      long start = System.nanoTime();
       proxy.shutdown();
-      assertThat(millisSince(start)).isLessThan(5_000);
       assertThat(socket.getInputStream().read()).isEqualTo(-1);
     }
     assertThat(otlpRecords.get()).isOne();
+    assertThat(logs.messages(Proxy.class)).noneMatch(m -> m.startsWith("Shutdown:"));
   }
 
   /// A request that takes longer than the shutdown allows is aborted when only the drain timeout
   /// is left. Its record, status 499, is still sent within the drain timeout, and the requests in
-  /// flight are reported.
+  /// flight are reported. The request log is drained, so that phase logs no diagnostic.
   @Test
   void slowRequestIsAbortedAndStillLogged() throws Exception {
     startProxy(2_000, 1_000L);
@@ -248,9 +246,7 @@ class ProxyShutdownIT {
       assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       long start = System.nanoTime();
       proxy.shutdown();
-      long took = millisSince(start);
-      assertThat(took).as("waited for the request").isGreaterThanOrEqualTo(900);
-      assertThat(took).as("within the shutdown timeout").isLessThan(2_500);
+      assertThat(millisSince(start)).as("waited for the request").isGreaterThanOrEqualTo(900);
     }
     assertThat(requestLog.lines())
         .singleElement()
@@ -263,6 +259,8 @@ class ProxyShutdownIT {
                 assertThat(m)
                     .contains("requests still in flight after")
                     .contains("ms, total 1, by upstream {sites.upstream.com.upstream=1}"));
+    assertThat(logs.messages(Proxy.class))
+        .noneMatch(m -> m.startsWith("Shutdown: request log not drained"));
   }
 
   /// With the log server down, the shutdown ends at its timeout and reports the records not sent
@@ -276,7 +274,7 @@ class ProxyShutdownIT {
     logServer.stop(0);
     long start = System.nanoTime();
     proxy.shutdown();
-    assertThat(millisSince(start)).as("ends at the timeout").isBetween(400L, 1_500L);
+    assertThat(millisSince(start)).as("waited for the drain timeout").isGreaterThanOrEqualTo(400);
     assertThat(logs.messages(Proxy.class))
         .anySatisfy(
             m ->
