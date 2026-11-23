@@ -28,8 +28,18 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 ## Build, Test, and Development Commands
 
 - `./mvnw clean package` builds the project and produces a shaded JAR at `target/sensepitch-edge-*-with-dependencies.jar`.
-- `./mvnw test` runs the JUnit/Serenity test suite via Surefire; `./mvnw -Dtest=SomeTest test`
-  runs one class while developing.
+- `./mvnw test` runs the JUnit/Serenity unit suite via Surefire. While fixing a failure, use
+  `./mvnw test -Dtest=TimeoutsTest#keepAliveIdleTimeout` to run one method. Omit `#method` to
+  run the whole class.
+- To run a single integration test, build the test classes and shaded JAR with
+  `./mvnw package -DskipTests`, then run Failsafe directly:
+
+  ```sh
+  ./mvnw failsafe:integration-test failsafe:verify \
+    -Dit.test=OtlpLogDestinationIT#concurrentRequestsUpToTheLimit
+  ```
+
+  Use the full `./mvnw verify` before committing.
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
 - `./mvnw verify` requires Node.js 22 or newer on `PATH` for the challenge JavaScript integration test.
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
