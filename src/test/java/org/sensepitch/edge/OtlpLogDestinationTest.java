@@ -210,6 +210,9 @@ class OtlpLogDestinationTest {
   /// failure is due within this time
   static final int RETRY_MILLIS = 1_000;
 
+  /// Delay of the log server in the `Retry-After` tests
+  static final int RETRY_AFTER_SECONDS = 30;
+
   final FakeTime clock = new FakeTime();
   final FakeLogServer logServer = new FakeLogServer();
 
@@ -723,21 +726,20 @@ class OtlpLogDestinationTest {
   }
 
   /// A `Retry-After` of 30 s wins over the millisecond backoff: after the short backoff has
-  /// passed, the batch still waits, and the probe goes out only after the requested delay. The
-  /// real HTTP path checks the same behaviour in [OtlpLogDestinationIT#retryAfterIsHonoured].
+  /// passed, the batch still waits, and the probe goes out only at the requested delay. The real
+  /// HTTP path checks the same behaviour in [OtlpLogDestinationIT#retryAfterIsHonoured].
   @Test
   void retryAfterWinsOverTheBackoff() {
     simulated(simulatedConfig());
     new OtlpRequestLogger(destination).logRequest(request("/a"));
     clock.advanceMillis(FLUSH_MILLIS);
     assertThat(posted()).isOne();
-    answer(429, "30");
+    answer(429, Integer.toString(RETRY_AFTER_SECONDS));
     assertThat(counter("sensepitch_request_log_export_retries")).isOne();
-    // the short backoff would have fired the probe by now; the requested 30 s has not
-    clock.advanceMillis(2 * RETRY_MILLIS);
-    assertThat(posted()).as("no probe before the requested delay").isOne();
-    // at 30 s after the 429 the probe goes out
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(30) - 2 * RETRY_MILLIS);
+    // 1 ms before the requested delay, the short backoff would long have fired the probe
+    clock.advanceMillis(TimeUnit.SECONDS.toMillis(RETRY_AFTER_SECONDS) - 1);
+    assertThat(posted()).as("no probe 1 ms before the requested delay").isOne();
+    clock.advanceMillis(1);
     assertThat(posted()).as("the probe after the requested delay").isEqualTo(2);
     answer(200);
     assertThat(delivered).containsExactly("/a");
