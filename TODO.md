@@ -44,7 +44,7 @@ are listed under Bugs.
     to 50 ms retry delays, real time still), `RequestLoggerFactoryTest`,
     `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
   - Done 2026-11-23: `OtlpLogDestinationTest` runs its sender scenarios (retry, give up, outage,
-    buffer limit, breaker, slow start window, flush) on `FakeTime` with a `ControlledTransport`,
+    buffer limit, breaker, slow start window, flush) on `FakeTime` with a `FakeLogServer`,
     in the test thread. It captures the log per thread and is no longer `@Isolated`; 1.3 s, was
     3.6 s. The wire format (compression, headers, the exported record) stays against the real
     log server, which `OtlpLogDestinationIT` also uses. Unit test coverage unchanged per class.

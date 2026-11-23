@@ -400,7 +400,7 @@ build.
   it fast and deterministic, lets it use the per thread log capture, and removes its
   `@Isolated`. This is the largest gain left. A few real tests stay as `*IT` in addition.
   Done for the OTLP destination (2026-11-23): `OtlpOutageBDDTest` and the sender scenarios of
-  `OtlpLogDestinationTest` run on the shared `FakeTime` and `ControlledTransport`, the latter
+  `OtlpLogDestinationTest` run on the shared `FakeTime` and `FakeLogServer`, the latter
   no longer `@Isolated`. `OtlpLogDestinationIT` checks recovery over real HTTP. Left:
   `ReloadableRequestLoggerTest`, see `TODO.md`.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the

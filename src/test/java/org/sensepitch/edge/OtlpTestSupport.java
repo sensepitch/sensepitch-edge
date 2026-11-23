@@ -23,7 +23,7 @@ import java.util.zip.GZIPInputStream;
 
 /// Reads what an OTLP request log destination sends, with the official OTLP message classes: on
 /// the server side from an [HttpExchange] of a test log server, on the client side from the
-/// [HttpRequest] a [ControlledTransport] recorded.
+/// [HttpRequest] a [FakeLogServer] recorded.
 final class OtlpTestSupport {
 
   /// The attribute of a record that tells the requests of a test apart
@@ -73,7 +73,7 @@ final class OtlpTestSupport {
             .getValue();
   }
 
-  /// The paths of the records in an uncompressed request a [ControlledTransport] recorded
+  /// The paths of the records in an uncompressed request a [FakeLogServer] recorded
   static List<String> paths(HttpRequest request) {
     ExportLogsServiceRequest body;
     try {

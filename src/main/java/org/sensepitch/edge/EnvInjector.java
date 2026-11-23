@@ -13,6 +13,16 @@ import org.sensepitch.edge.config.RecordConstructor;
 /// Sets the values of environment variables in a config record builder. The nested records start
 /// with their defaults, see [RecordConstructor#builder(Class, ProxyEnvironment)].
 ///
+/// Names: the caller gives the prefix, [Main] uses `SENSEPITCH_EDGE_`. A camelCase component is
+/// written in UPPER_SNAKE_CASE, and the components of nested records are joined with `_`, e.g.
+/// `SENSEPITCH_EDGE_LISTEN_ADDRESS` for `listen.address`.
+///
+/// - List items are numbered from `0` without gaps, the first missing number ends the list: a
+///   record as `<NAME>_<i>_<FIELD>`, a string as `<NAME>_<i>`.
+/// - Map entries are numbered the same way, the key is `<NAME>_<i>_KEY`. The value is
+///   `<NAME>_<i>_VALUE` for a string, or the fields of the record, `<NAME>_<i>_<FIELD>`. A string
+///   key without its value is rejected.
+///
 /// @author Jens Wilke
 public class EnvInjector {
 

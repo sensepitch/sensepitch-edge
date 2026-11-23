@@ -137,6 +137,9 @@ class ProxyConstructBDDTest {
 
   static class Steps extends ExtendableSteps<Steps> {}
 
+  /// Steps of a proxy built from a configuration, with its HTTP handlers on an `EmbeddedChannel`,
+  /// see `Proxy.addHttpHandlers`. The base of the step classes of other proxy level BDD tests,
+  /// which extend it with their own steps; `T` is the extending class, so a chain keeps its type.
   @SuppressWarnings({"unchecked", "UnusedReturnValue"})
   static class ExtendableSteps<T extends ExtendableSteps<?>> {
 

@@ -14,10 +14,10 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import javax.net.ssl.SSLSession;
 
-/// The transport of a deterministic [HttpBatchSender], it records the requests and lets the test
-/// answer them, in the order they were posted. Together with [FakeTime] a test runs the sender in
-/// its own thread, without a server.
-final class ControlledTransport implements HttpBatchSender.Transport {
+/// Stands in for the log server of a [HttpBatchSender]: it records each post, and the test answers
+/// it, in posting order, with a status or a failure. Together with [FakeTime] the sender runs in
+/// the test thread, without a server, timers or waits.
+final class FakeLogServer implements HttpBatchSender.Transport {
 
   private final List<CompletableFuture<HttpResponse<Void>>> pending = new ArrayList<>();
   private final List<HttpRequest> requests = new ArrayList<>();

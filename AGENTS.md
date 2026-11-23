@@ -16,11 +16,9 @@
 - `./mvnw verify` requires Node.js 22 or newer on `PATH` for the challenge JavaScript integration test.
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
   coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
-  when coverage improves. The generic request log posting (`HttpBatchSender`, `CircuitBreaker`,
-  `CircuitBreakerMetrics`, `Backoff`, `ThreadBatcher`, `BatchingRequestLogger`, `OtlpBatchPayload`,
-  `GzipCompressor`, ...) is held at 100% line and
-  branch coverage by a class rule. A gap is a design question: remove the stray error handling,
-  validate earlier, or test the case; do not lower the rule.
+  when coverage improves. The generic request log posting is held at 100% line and branch
+  coverage by a class rule in `pom.xml`. A gap is a design question: remove the stray error
+  handling, validate earlier, or test the case; do not lower the rule.
 - `./mvnw verify -Dfast` (profile `fast` in `pom.xml`) is the quick loop: it compiles, runs all unit
   and integration tests and builds the fat JAR, but skips coverage (agent, report, floor), the
   Javadoc build with delombok, and the format check. Each part can be skipped on its own:
@@ -45,13 +43,9 @@
   per thread, ports come from the OS, files go to `@TempDir`.
 - Do not add surefire forks: every test JVM repeats about 2 s of warm-up (class loading, OpenSSL,
   crawler lists), which eats the gain even with many cores, and does not help on one CPU.
-- Serenity is used for the step chains only, its reporting is off: the `pom.xml` deactivates
-  `SerenityTestExecutionListener` (`test.deactivatedListeners`), which saves about a third of the
-  unit test time. `-Dserenity.reports` switches it on and writes `target/serenity-reports`.
-- Create step objects with `new`, never inject them with `@Steps`: an injected step object is a
-  proxy that swallows a failing assertion unless the listener runs, and for parameterized tests
-  even then. With `new`, `@Step` is a marker for the reader and a failing step throws at once.
-  `SerenityUsageTest` guards this.
+- Serenity is used for the step chains only, its reporting is off (`-Dserenity.reports` switches
+  it on). Create step objects with `new`, never inject them with `@Steps`, see
+  `SerenityUsageTest`.
 - `./mvnw lombok:delombok javadoc:javadoc` renders the API docs into `target/reports/apidocs` and
   fails on doc errors. Delombok is bound to `verify`, so standalone javadoc needs it named explicitly.
 - `.mvn/jvm.config` runs Maven's own JVM with `-XX:TieredStopAtLevel=1` (C1 only): Maven, javac and
@@ -100,9 +94,8 @@
   Lombok's annotation processor silently disables javac's doclint.
 
 ## Testing Guidelines
-- Frameworks: JUnit 5, AssertJ, and Serenity BDD.
-- Tests live under `src/test/java/` and generally use `*Test` or `*BDDTest` suffixes.
-- Run all tests with `./mvnw test`; use Surefire defaults unless a test needs explicit configuration.
+- Most tests run the handlers on Netty's `EmbeddedChannel`, see `Proxy#addHttpHandlers`; proxy
+  level step classes extend `ProxyConstructBDDTest.ExtendableSteps`.
 - Prefer Serenity BDD (`*BDDTest`) for behaviour tests: the step chains are more compact and
   readable than plain JUnit, compare `UnservicedHostHandlerBDDTest` with `UnservicedHostHandlerIT`,
   or `ProxyRejectedConfigBDDTest` with its former inline form. Group many rejected-input variants
@@ -148,12 +141,12 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
   waits real time. `CircuitBreaker` with its `Ticker` shows the seam.
 - Everything that waits real time is an `*IT`. There, asserting that *at least* some time has
   passed is fine (the timer did not fire early), asserting that *at most* some time has passed is
-  not. A timer that must not fire during a test is set to `TestingParameters.OUT_OF_REACH_MILLIS`
-  (10 × `TIMEOUT`), never a literal.
+  not. A timer that must not fire during a test is set to `TestingParameters.OUT_OF_REACH_MILLIS`,
+  never a literal.
 - Until a class has the clock seam, its real time unit tests stay for coverage (see above) and
   are listed under "Timing related tests" in `TODO.md`; do not add new ones. The fake clock is
-  `FakeTime`, a Netty `Ticker` and a scheduler over morimekta's `FakeClock` with
-  `ImmediateScheduledExecutor` (test scope); the production seams take JDK or Netty types.
+  `FakeTime`; `FakeLogServer` stands in for the log server of a request log sender. The
+  production seams take JDK or Netty types.
 - A transient state can be missed. `await` only monotonic conditions (`>=` on a counter) or a
   state the test freezes by holding the other side (worker, server, upstream on a latch or
   semaphore); assert while it is held, then release.
@@ -198,30 +191,6 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
 - Keep commits focused and mention the primary behavior change.
 - PRs should include: a concise description, any relevant configuration changes, and screenshots/log snippets when behavior is user-visible.
 
-## Quick Lookup
-
-### Key files
-| File | Purpose |
-|---|---|
-| `Main.java` | Entry point, loads config from YAML or env vars, starts `Proxy` |
-| `Proxy.java` | Netty `ServerBootstrap`, channel pipeline, SSL setup, `start()`, graceful `shutdown()` (listener, connection drain, event loops, request log, one deadline) |
-| `ProxyConfig.java` | Root config record (holds `listen`, `sites`, `metrics`, etc.) |
-| `ListenConfig.java` | Listen/bind settings (`address`, `httpsPort`, `ssl`, `hosts`, `snis`) |
-| `HttpBatchSender.java` | Generic async posting of request log batches (concurrency cap, breaker, age limit); payload via `BatchPayload`, e.g. `OtlpBatchPayload` |
-| `CircuitBreaker.java` | Passive, reusable circuit breaker with `Backoff`; used by `HttpBatchSender`, meant for upstreams too |
-| `CircuitBreakerMetrics.java` | Metrics standard of all breakers, `sensepitch_circuitbreaker_*{component,name}`, resilience4j names plus transitions, errors and times |
-
-### Configuration loading
-- **Env vars**: prefix `SENSEPITCH_EDGE_`, camelCase → UPPER_SNAKE_CASE (e.g. `SENSEPITCH_EDGE_LISTEN_ADDRESS`)
-- **YAML file**: first CLI arg, deserialized via SnakeYAML into records
-- All config is Lombok `@Builder(toBuilder = true)` records
-
-### Testing patterns
-- **`EmbeddedChannel`**: Most tests use in-process Netty channels, no real TCP
-- **`ExtendableSteps`**: BDD-style step classes in `*BDDTest.java` files
-- **`proxy.addHttpHandlers(pipeline)`**: The key entry to test only the HTTP pipeline without a real server socket
-- SSL test certs: `classpath:ssl/test.key` and `classpath:ssl/test.crt`
-
 ## Agent Workflow Reminders
 
 - **Every plan starts with a summary of incompatible setup changes**: config (YAML/env) keys that were renamed, removed or reinterpreted, changed defaults, new mandatory settings, and behaviour changes for existing setups. If there are none, say so explicitly.
@@ -235,31 +204,13 @@ up to `TestingParameters.TIMEOUT`.** A test is correct only if it passes under a
 - Test TLS keys/certs live under `src/test/resources/ssl/` and `src/test/resources/letsencrypt/`; do not reuse these in production.
 - Diagnostic logs go through `ProxyLogger` → Log4j2 → standard error (`src/main/resources/log4j2.xml`);
   the request log is written directly to standard out. Never use `System.out`/`System.err` elsewhere.
-- Tests use `src/test/resources/log4j2-test.xml`, which has no appender, so test runs are silent.
-  In tests the `ProxyLogger`s do not write to Log4j2 but to the in-memory `LogSink` (installed by
-  a JUnit `LauncherSessionListener` via `LogTarget.Factory`), which stores the records per logging
-  thread. Assert on log output with the `LogCapture` JUnit extension: `new LogCapture()` sees what
-  the test's own thread logged, `LogCapture.ofAllThreads()` is for code logging from its own
-  threads (event loops, senders, writers) and also sees other tests. `Log4jCapture` is only for
-  tests of the way into Log4j2 itself (Netty, JUL, `LogTarget.Log4jOutput`). Capture the request
-  log by passing a `RequestLogCapture` (a `RequestLogOutput`) to `Proxy` or the request logger.
-- Log levels and the reasons are described in the `ProxyLogger` class doc ("Levels"), the log
-  methods link there. The important rule: **never log a request level event at `INFO` or above,
-  errors included**, except the first occurrence of each kind at `WARNING`, see below. A request
-  level event is anything that can happen per request or connection: a misbehaving client or
-  upstream, a timeout, but also an unexpected exception that may be a bug of ours. Log it at
-  `DEBUG`, for root cause analysis, via
-  `LOG.incrementAndWarnOnce(counter, labelValues, channel, message, cause)`: it counts the event
-  in that series of the counter and logs it, one call, so counting and logging cannot drift apart.
-  The label values come from the label enums, e.g. `IngressErrorType.TIMEOUT.label`. An event that
-  another place counts, e.g. the request outcome counted when the request is logged, is logged
-  with `LOG.warnOnce(...)`, same arguments, which does not count. Do not repeat the class name,
-  the logger names it. The first occurrence of each series in the JVM (each data point, so e.g.
-  once per ingress) is logged at `WARNING` and names the series, so a misconfiguration during the
-  initial setup is visible without `DEBUG`, the further ones at `DEBUG`. An event another handler
-  counts and warns about, e.g. an upstream exception passed to the `ExceptionHandler`, is logged
-  with `LOG.debug` only. In tests every occurrence is at `DEBUG`;
-  `LogCapture.warnProblems()` switches the first `WARNING` on for one test.
+- Test runs are silent. Assert on the diagnostic log with `LogCapture`, on the request log with
+  `RequestLogCapture`, on what reaches Log4j2 with `Log4jCapture`; their class docs say which one
+  to use and when the test class must be `@Isolated`.
+- Log levels are described in the `ProxyLogger` class doc ("Levels"). The rule that matters most:
+  **never log a request level event at `INFO` or above, errors included**. It is logged at
+  `DEBUG` and counted in one call, `LOG.incrementAndWarnOnce(...)`; only the first occurrence of
+  each series is logged at `WARNING`.
 - **Every request level event is counted in a metric** (or recorded in the request log), so it is
   never silent and can be investigated when needed. A new request level log line comes with its
   counter and a test that asserts both.

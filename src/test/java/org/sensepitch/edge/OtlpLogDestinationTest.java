@@ -48,7 +48,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /// conforms to the schema.
 ///
 /// Most tests run the destination on simulated time, see [#simulated(OtlpConfig.Builder)]: a
-/// [FakeTime] drives the flush, the backoff and the post durations, a [ControlledTransport]
+/// [FakeTime] drives the flush, the backoff and the post durations, a [FakeLogServer]
 /// takes the posts, and the test answers them. Everything runs in the test thread, so the log is
 /// captured per thread and the class runs in parallel with the others. The wire format
 /// (compression, headers, the exported record) is checked against a real log server, which
@@ -210,9 +210,9 @@ class OtlpLogDestinationTest {
   static final int RETRY_MILLIS = 1_000;
 
   final FakeTime clock = new FakeTime();
-  final ControlledTransport transport = new ControlledTransport();
+  final FakeLogServer logServer = new FakeLogServer();
 
-  /// Requests of the transport answered so far, they are answered in posting order
+  /// Requests of the [#logServer] answered so far, they are answered in posting order
   int answered;
 
   /// Record paths of the requests answered with success, in the order answered
@@ -232,7 +232,7 @@ class OtlpLogDestinationTest {
         .maxRetryDelayMillis(RETRY_MILLIS);
   }
 
-  /// A destination on [#clock] that posts into [#transport]; it becomes [#destination]
+  /// A destination on [#clock] that posts into [#logServer]; it becomes [#destination]
   OtlpLogDestination simulated(OtlpConfig.Builder config) {
     destination =
         new OtlpLogDestination(
@@ -242,23 +242,23 @@ class OtlpLogDestinationTest {
             0,
             clock,
             clock.scheduler()::schedule,
-            transport);
+            logServer);
     return destination;
   }
 
   /// Requests posted so far
   int posted() {
-    return transport.requests().size();
+    return logServer.requests().size();
   }
 
   /// Answers the oldest open request with the status
   void answer(int status) {
-    HttpRequest request = transport.requests().get(answered++);
+    HttpRequest request = logServer.requests().get(answered++);
     if (status / 100 == 2) {
       delivered.addAll(OtlpTestSupport.paths(request));
       deliveredBytes += OtlpTestSupport.body(request).length;
     }
-    transport.succeed(status);
+    logServer.succeed(status);
   }
 
   /// Answers the open requests with the status, and those the answers release, until none is open
@@ -271,7 +271,7 @@ class OtlpLogDestinationTest {
   /// Fails the oldest open request like a log server that is down
   void refuseNext() {
     answered++;
-    transport.fail(HttpBatchSenderTest.refused());
+    logServer.fail(HttpBatchSenderTest.refused());
   }
 
   /// Ends the thread and finishes the destination, answering every post with success
@@ -600,7 +600,7 @@ class OtlpLogDestinationTest {
   static List<List<String>> flushPartialBatchesOfLiveThreads(
       OtlpConfig.Builder config, int threads, int perThread) throws Exception {
     FakeTime clock = new FakeTime();
-    ControlledTransport transport = new ControlledTransport();
+    FakeLogServer logServer = new FakeLogServer();
     // uncompressed, so the flush posts on the test thread
     OtlpConfig built = config.compression(OtlpConfig.NONE).flushIntervalMillis(500).build();
     OtlpLogDestination destination =
@@ -611,7 +611,7 @@ class OtlpLogDestinationTest {
             0,
             clock,
             clock.scheduler()::schedule,
-            transport);
+            logServer);
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     CountDownLatch logged = new CountDownLatch(threads);
     CountDownLatch release = new CountDownLatch(1);
@@ -634,9 +634,9 @@ class OtlpLogDestinationTest {
                     }));
       }
       assertThat(logged.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("workers logged").isTrue();
-      assertThat(transport.requests()).as("nothing posted before the flush").isEmpty();
+      assertThat(logServer.requests()).as("nothing posted before the flush").isEmpty();
       clock.advanceMillis(built.flushIntervalMillis());
-      posted = transport.requests().stream().map(OtlpTestSupport::paths).toList();
+      posted = logServer.requests().stream().map(OtlpTestSupport::paths).toList();
     } finally {
       release.countDown();
     }
@@ -644,7 +644,7 @@ class OtlpLogDestinationTest {
       assertThat(worker.join(TIMEOUT)).as("logging worker finished").isTrue();
     }
     for (int i = 0; i < posted.size(); i++) {
-      transport.succeed(200);
+      logServer.succeed(200);
     }
     assertThat(destination.finish()).as("all sent").isDone();
     assertThat(destination.droppedCount()).isZero();

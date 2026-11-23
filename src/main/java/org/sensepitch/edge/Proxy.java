@@ -645,6 +645,8 @@ public class Proxy implements ProxyContext {
   private static final StripEdgeHeadersHandler STRIP_EDGE_HEADERS_HANDLER =
       new StripEdgeHeadersHandler();
 
+  /// Adds the HTTP handlers of a connection, without the socket and TLS. Tests drive them on an
+  /// `EmbeddedChannel`, see `ProxyConstructBDDTest`.
   void addHttpHandlers(ChannelPipeline pipeline) {
     pipeline.addLast(STRIP_EDGE_HEADERS_HANDLER);
     pipeline.addLast(sanitizeHostHandler);

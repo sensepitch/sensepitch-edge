@@ -120,7 +120,7 @@ class HttpBatchSenderTest {
   }
 
   /// Sender of text lines on a fake clock, a timer the test moves and a transport whose answers
-  /// the test completes
+  /// the test completes, e.g. a [FakeLogServer]
   static HttpBatchSender<TextBatch> textSender(
       String endpoint,
       Map<String, String> headers,
@@ -222,19 +222,19 @@ class HttpBatchSenderTest {
   }
 
   /// The flush timer runs in the test thread, collects the partial batch and posts it through the
-  /// controlled transport, without a server, timer or wait on another thread.
+  /// fake log server, without a server, timer or wait on another thread.
   @Test
   void flushRunsOnTheFakeTimerAndPostsAPartialBatch() {
     FakeTime clock = new FakeTime();
-    ControlledTransport transport = new ControlledTransport();
-    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 1_000);
+    FakeLogServer logServer = new FakeLogServer();
+    HttpBatchSender<TextBatch> sender = deterministicSender(clock, logServer, 1_000);
     ThreadBatcher<TextBatch> batcher = sender.newBatcher();
     batcher.log(request("/flushed"));
-    assertThat(transport.requests()).as("nothing posts before the interval").isEmpty();
+    assertThat(logServer.requests()).as("nothing posts before the interval").isEmpty();
     clock.advanceMillis(FLUSH_MILLIS);
     assertThat(batcher.records()).as("the flush took the batch").isZero();
-    assertThat(transport.onlyRequest().uri().getPath()).isEqualTo("/lines");
-    transport.succeed(204);
+    assertThat(logServer.onlyRequest().uri().getPath()).isEqualTo("/lines");
+    logServer.succeed(204);
     batcher.close();
     sender.finish();
     assertThat(sender.stopped()).isDone();
@@ -245,16 +245,16 @@ class HttpBatchSenderTest {
   @Test
   void flushDropsAnAgedBatchOnTheFakeClock() {
     FakeTime clock = new FakeTime();
-    ControlledTransport transport = new ControlledTransport();
-    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 4);
+    FakeLogServer logServer = new FakeLogServer();
+    HttpBatchSender<TextBatch> sender = deterministicSender(clock, logServer, 4);
     ThreadBatcher<TextBatch> firstBatcher = sender.newBatcher();
     firstBatcher.log(request("/a"));
     firstBatcher.log(request("/b"));
     ThreadBatcher<TextBatch> secondBatcher = sender.newBatcher();
     secondBatcher.log(request("/aged"));
-    assertThat(transport.requests()).as("the full batch posts right away").hasSize(1);
+    assertThat(logServer.requests()).as("the full batch posts right away").hasSize(1);
     clock.advanceMillis(FLUSH_MILLIS);
-    assertThat(transport.requests()).as("the only request slot is taken").hasSize(1);
+    assertThat(logServer.requests()).as("the only request slot is taken").hasSize(1);
     clock.advanceMillis(AGE_MILLIS + 1);
     assertThat(sender.droppedCount())
         .as("the parked batch was older than the age limit")
@@ -266,7 +266,7 @@ class HttpBatchSenderTest {
     secondBatcher.close();
     sender.finish();
     assertThat(sender.stopped()).as("the in-flight request still blocks the sender").isNotDone();
-    transport.succeed(204);
+    logServer.succeed(204);
     assertThat(sender.stopped()).isDone();
   }
 
@@ -275,30 +275,30 @@ class HttpBatchSenderTest {
   @Test
   void probeIsScheduledOnTheFakeTimer() {
     FakeTime clock = new FakeTime();
-    ControlledTransport transport = new ControlledTransport();
-    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 3);
+    FakeLogServer logServer = new FakeLogServer();
+    HttpBatchSender<TextBatch> sender = deterministicSender(clock, logServer, 3);
     ThreadBatcher<TextBatch> batcher = sender.newBatcher();
     batcher.log(request("/a"));
     batcher.log(request("/b"));
     batcher.close();
     sender.finish();
-    assertThat(transport.requests()).hasSize(1);
-    transport.fail(refused());
+    assertThat(logServer.requests()).hasSize(1);
+    logServer.fail(refused());
     // The deterministic random provider selects the lower half of the nominal retry delay.
     clock.advanceMillis(INITIAL_RETRY_MILLIS / 2 - 1);
-    assertThat(transport.requests()).hasSize(1);
+    assertThat(logServer.requests()).hasSize(1);
     clock.advanceMillis(1);
-    assertThat(transport.requests()).as("the probe goes out after the backoff").hasSize(2);
-    transport.fail(refused());
+    assertThat(logServer.requests()).as("the probe goes out after the backoff").hasSize(2);
+    logServer.fail(refused());
     clock.advanceMillis(INITIAL_RETRY_MILLIS - 1);
-    assertThat(transport.requests()).hasSize(2);
+    assertThat(logServer.requests()).hasSize(2);
     clock.advanceMillis(1);
-    assertThat(transport.requests()).as("one probe after the next backoff").hasSize(3);
-    transport.succeed(204);
-    assertThat(transport.requests())
+    assertThat(logServer.requests()).as("one probe after the next backoff").hasSize(3);
+    logServer.succeed(204);
+    assertThat(logServer.requests())
         .as("the successful probe releases the queued batch")
         .hasSize(4);
-    transport.succeed(204);
+    logServer.succeed(204);
     assertThat(sender.droppedCount()).isZero();
     assertThat(sender.stopped()).isDone();
   }
@@ -320,7 +320,7 @@ class HttpBatchSenderTest {
   }
 
   private static HttpBatchSender<TextBatch> deterministicSender(
-      FakeTime clock, ControlledTransport transport, int batchBytes) {
+      FakeTime clock, FakeLogServer logServer, int batchBytes) {
     return new HttpBatchSender<>(
         new HttpBatchSender.Settings(
             "text",
@@ -339,7 +339,7 @@ class HttpBatchSenderTest {
         new RequestLogMetrics(),
         clock,
         clock.scheduler()::schedule,
-        transport);
+        logServer);
   }
 
   @Test

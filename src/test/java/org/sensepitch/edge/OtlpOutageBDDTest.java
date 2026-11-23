@@ -19,7 +19,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 /// An outage of the OTLP log server on the simulated clock: waiting batches age out, a batch that
 /// meets an open breaker waits, and the breaker lets one probe through per backoff. The sender
-/// runs on [FakeTime] with a [ControlledTransport],
+/// runs on [FakeTime] with a [FakeLogServer],
 /// so the flush timer, the probes and the answers run in the test thread, without a log server,
 /// real timers or waits. Each deadline is checked 1 ms before and at the moment it is due.
 ///
@@ -185,7 +185,7 @@ class OtlpOutageBDDTest {
   static class Steps {
     final LogCapture logs;
     final FakeTime clock = new FakeTime();
-    final ControlledTransport transport = new ControlledTransport();
+    final FakeLogServer logServer = new FakeLogServer();
     final List<String> delivered = new ArrayList<>();
     int answered;
     OtlpLogDestination destination;
@@ -205,7 +205,7 @@ class OtlpOutageBDDTest {
               0,
               clock,
               clock.scheduler()::schedule,
-              transport);
+              logServer);
       logger = new OtlpRequestLogger(destination);
       return this;
     }
@@ -239,17 +239,17 @@ class OtlpOutageBDDTest {
 
     @Step("The log server answers the oldest open request with status {0}")
     Steps whenAnswered(int status) {
-      HttpRequest request = transport.requests().get(answered++);
+      HttpRequest request = logServer.requests().get(answered++);
       if (status / 100 == 2) {
         delivered.addAll(paths(request));
       }
-      transport.succeed(status);
+      logServer.succeed(status);
       return this;
     }
 
     @Step("The log server answers all open requests, also those that follow, with status {0}")
     Steps whenAllAnswered(int status) {
-      while (answered < transport.requests().size()) {
+      while (answered < logServer.requests().size()) {
         whenAnswered(status);
       }
       return this;
@@ -264,7 +264,7 @@ class OtlpOutageBDDTest {
 
     @Step("{0} requests were posted")
     Steps thenRequestsSent(int count) {
-      assertThat(transport.requests()).as("requests posted").hasSize(count);
+      assertThat(logServer.requests()).as("requests posted").hasSize(count);
       return this;
     }
 
@@ -278,13 +278,13 @@ class OtlpOutageBDDTest {
                   .find(HttpBatchSender.BREAKER_COMPONENT, NAME)
                   .retryDelayNanos());
       assertThat(delayMillis).as("backoff with jitter").isBetween(backoffMillis / 2, backoffMillis);
-      int before = transport.requests().size();
+      int before = logServer.requests().size();
       clock.advanceMillis(delayMillis - 1);
-      assertThat(transport.requests())
+      assertThat(logServer.requests())
           .as("requests 1 ms before the backoff is over")
           .hasSize(before);
       clock.advanceMillis(1);
-      assertThat(transport.requests()).as("one probe when it is over").hasSize(before + 1);
+      assertThat(logServer.requests()).as("one probe when it is over").hasSize(before + 1);
       return this;
     }
 
