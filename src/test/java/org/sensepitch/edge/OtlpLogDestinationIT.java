@@ -101,10 +101,11 @@ class OtlpLogDestinationIT {
     }
   }
 
-  /// During an outage the breaker lets one probe through per backoff, not a retry per batch, and
-  /// sends all waiting batches once the server is back
+  /// During an outage the breaker holds the batches and sends all of them once the server is
+  /// back, with real timers. [OtlpOutageBDDTest] checks the probe deadlines on the simulated
+  /// clock.
   @Test
-  void breakerSendsOneProbePerBackoff() throws Exception {
+  void breakerSendsWaitingBatchesAfterTheOutage() throws Exception {
     fixture.status = 503;
     int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
     // a backoff of 100 to 200 ms with jitter
@@ -131,11 +132,6 @@ class OtlpLogDestinationIT {
     for (; index < total; index++) {
       logger.logRequest(request(String.format("/%04d", index)));
     }
-    int before = fixture.received.size();
-    Thread.sleep(500);
-    assertThat(fixture.received.size() - before)
-        .as("probes in 500 ms, with 10 more batches waiting")
-        .isLessThanOrEqualTo(6);
     fixture.status = 200;
     await("all records delivered", () -> fixture.deliveredPaths().size() >= total);
     assertThat(new HashSet<>(fixture.deliveredPaths())).hasSize(total);

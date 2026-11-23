@@ -398,6 +398,8 @@ build.
   transport. A test then completes requests and advances time from its own thread, which makes
   it fast and deterministic, lets it use the per thread log capture, and removes its
   `@Isolated`. This is the largest gain left. A few real tests stay as `*IT` in addition.
+  The OTLP batch expiry and probe timing scenarios now run in `OtlpOutageBDDTest` on the
+  shared `FakeTime` and `ControlledTransport`. `OtlpLogDestinationIT` checks recovery over real HTTP.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 

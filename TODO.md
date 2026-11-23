@@ -49,10 +49,9 @@ are listed under Bugs.
     `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
   - Survey 2026-11-23, by readiness for `FakeTime`:
     - Ready, the seam exists: `OtlpLogDestinationTest`, through the package private constructor
-      with clock, timer and transport, unused by tests so far. Its sender logic scenarios move
-      to `HttpBatchSenderTest` (test in the class that owns the rule, see `AGENTS.md`), the load
-      sensitive ones first (`agedBatchIsDiscarded`, the probe rate in 500 ms);
-      `ControlledTransport` moves out of `HttpBatchSenderTest` with its second user.
+      with clock, timer and transport, as `OtlpOutageBDDTest` shows with `FakeTime` and
+      `ControlledTransport`. The load sensitive expiry and probe timing checks went first; the
+      remaining sender logic scenarios follow, at the level that owns the rule (see `AGENTS.md`).
     - Need a seam first: `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (they build
       the destination via the public constructor), `AsyncRequestLogWriterTest` and
       `ConfigFileWatcherTest` (no clock or scheduler seam; the watcher also waits on the file
@@ -72,11 +71,8 @@ are listed under Bugs.
   - Scenarios for the configurable retry delays (done 2026-11-23): the nominal delay stops at
     `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see Limitations in
     [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)), pinned in
-    `BackoffTest.doublesAtMostTwentyTimes`. Batches aging out between two probes, with the next
-    probe still coming, is covered by
-    `OtlpLogDestinationTest.batchLoggedAfterAnAgedOneWaitsForTheBreaker`; it moves to the
-    simulated clock with the conversion above, with one backoff gap above
-    `maximumUnsentLogAgeMillis`.
+    `BackoffTest.doublesAtMostTwentyTimes`. `OtlpOutageBDDTest` checks batches aging out while
+    the breaker is open, with the next probe delivering a fresh batch.
 - [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P1: each one can fail on a loaded machine although the code is right.
@@ -87,9 +83,9 @@ are listed under Bugs.
   - Short configured timings that race the test's own steps:
     `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
     `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
-    inferred, not reproduced), `OtlpLogDestinationTest.agedBatchIsDiscarded` (age 200 ms).
-  - Rate over a real time window: `OtlpLogDestinationTest` "probes in 500 ms, with 10 more
-    batches waiting" `<= 6` after `Thread.sleep(500)`.
+    inferred, not reproduced).
+  - Done 2026-11-23: `OtlpOutageBDDTest` checks the OTLP expiry and retry scenarios on
+    simulated time. `OtlpLogDestinationIT` checks recovery over HTTP.
   - Sleep then assert, cannot fail but proves little and costs time: `Thread.sleep(100)` before
     `maxInFlight` in `OtlpLogDestinationTest` and `OtlpSlowStartIT`, `poll(100 ms)` is null in
     `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)`
@@ -125,7 +121,8 @@ are listed under Bugs.
   - P1: a test that failed in any of its runs is a flaky test, and fixing it has priority over
     all other work here. Its run summary lists each failed test with the number of runs it failed
     in; add an entry below per flaky test until it is fixed. The general remedies are in
-    "Fast tests without flakiness" above.
+    "Fast tests without flakiness" above. Act only on flaky tests the workflow reported in its
+    recent runs; a failure seen once in a local or agent build is not added here.
 - [ ] Check the nightly build, the workflow "Nightly" (full gate plus the `@Tag("excessive")`
   tests, 21:47 Singapore time):
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/nightly.yml

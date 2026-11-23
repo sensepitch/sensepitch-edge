@@ -11,21 +11,15 @@ import io.prometheus.metrics.model.snapshots.GaugeSnapshot;
 import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import javax.net.ssl.SSLSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -222,78 +216,6 @@ class HttpBatchSenderTest {
         .containsExactly(true, List.of(), true);
   }
 
-  /// The transport of a deterministic sender, it records requests and lets the test answer them
-  static final class ControlledTransport implements HttpBatchSender.Transport {
-
-    private final List<CompletableFuture<HttpResponse<Void>>> pending = new ArrayList<>();
-    private final List<HttpRequest> requests = new ArrayList<>();
-
-    @Override
-    public CompletableFuture<HttpResponse<Void>> post(HttpRequest request) {
-      requests.add(request);
-      CompletableFuture<HttpResponse<Void>> answer = new CompletableFuture<>();
-      pending.add(answer);
-      return answer;
-    }
-
-    void succeed(int status) {
-      pending.removeFirst().complete(response(status));
-    }
-
-    void fail(Throwable failure) {
-      pending.removeFirst().completeExceptionally(failure);
-    }
-
-    HttpRequest onlyRequest() {
-      assertThat(requests).hasSize(1);
-      return requests.getFirst();
-    }
-
-    private static HttpResponse<Void> response(int status) {
-      return new HttpResponse<>() {
-        @Override
-        public int statusCode() {
-          return status;
-        }
-
-        @Override
-        public HttpRequest request() {
-          throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public HttpHeaders headers() {
-          return HttpHeaders.of(Map.of(), (first, second) -> true);
-        }
-
-        @Override
-        public Void body() {
-          return null;
-        }
-
-        @Override
-        public Optional<HttpResponse<Void>> previousResponse() {
-          return Optional.empty();
-        }
-
-        @Override
-        public URI uri() {
-          throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Optional<SSLSession> sslSession() {
-          return Optional.empty();
-        }
-
-        @Override
-        public HttpClient.Version version() {
-          return HttpClient.Version.HTTP_1_1;
-        }
-      };
-    }
-  }
-
   /// The flush timer runs in the test thread, collects the partial batch and posts it through the
   /// controlled transport, without a server, timer or wait on another thread.
   @Test
@@ -303,7 +225,7 @@ class HttpBatchSenderTest {
     HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 1_000);
     ThreadBatcher<TextBatch> batcher = sender.newBatcher();
     batcher.log(request("/flushed"));
-    assertThat(transport.requests).as("nothing posts before the interval").isEmpty();
+    assertThat(transport.requests()).as("nothing posts before the interval").isEmpty();
     clock.advanceMillis(FLUSH_MILLIS);
     assertThat(batcher.records()).as("the flush took the batch").isZero();
     assertThat(transport.onlyRequest().uri().getPath()).isEqualTo("/lines");
@@ -325,9 +247,9 @@ class HttpBatchSenderTest {
     firstBatcher.log(request("/b"));
     ThreadBatcher<TextBatch> secondBatcher = sender.newBatcher();
     secondBatcher.log(request("/aged"));
-    assertThat(transport.requests).as("the full batch posts right away").hasSize(1);
+    assertThat(transport.requests()).as("the full batch posts right away").hasSize(1);
     clock.advanceMillis(FLUSH_MILLIS);
-    assertThat(transport.requests).as("the only request slot is taken").hasSize(1);
+    assertThat(transport.requests()).as("the only request slot is taken").hasSize(1);
     clock.advanceMillis(AGE_MILLIS + 1);
     assertThat(sender.droppedCount())
         .as("the parked batch was older than the age limit")
@@ -349,18 +271,28 @@ class HttpBatchSenderTest {
   void probeIsScheduledOnTheFakeTimer() {
     FakeTime clock = new FakeTime();
     ControlledTransport transport = new ControlledTransport();
-    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 1_000);
+    HttpBatchSender<TextBatch> sender = deterministicSender(clock, transport, 3);
     ThreadBatcher<TextBatch> batcher = sender.newBatcher();
-    batcher.log(request("/probe"));
+    batcher.log(request("/a"));
+    batcher.log(request("/b"));
     batcher.close();
     sender.finish();
-    assertThat(transport.requests).hasSize(1);
+    assertThat(transport.requests()).hasSize(1);
     transport.fail(new java.net.ConnectException("refused"));
     // The deterministic random provider selects the lower half of the nominal retry delay.
     clock.advanceMillis(INITIAL_RETRY_MILLIS / 2 - 1);
-    assertThat(transport.requests).hasSize(1);
+    assertThat(transport.requests()).hasSize(1);
     clock.advanceMillis(1);
-    assertThat(transport.requests).as("the probe goes out after the backoff").hasSize(2);
+    assertThat(transport.requests()).as("the probe goes out after the backoff").hasSize(2);
+    transport.fail(new java.net.ConnectException("refused"));
+    clock.advanceMillis(INITIAL_RETRY_MILLIS - 1);
+    assertThat(transport.requests()).hasSize(2);
+    clock.advanceMillis(1);
+    assertThat(transport.requests()).as("one probe after the next backoff").hasSize(3);
+    transport.succeed(204);
+    assertThat(transport.requests())
+        .as("the successful probe releases the queued batch")
+        .hasSize(4);
     transport.succeed(204);
     assertThat(sender.droppedCount()).isZero();
     assertThat(sender.stopped()).isDone();

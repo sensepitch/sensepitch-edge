@@ -45,9 +45,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 /// with the official OTLP message classes, which proves the hand written encoding conforms to the
 /// schema.
 ///
-/// New scenarios belong here. [OtlpLogDestinationIT] repeats covered scenarios against real
-/// HTTP and timers, using this class as its fixture. The remaining server tests add unit coverage;
-/// see `NOT-YET.md` for the fake clock that makes them fast.
+/// New OTLP scenarios belong here. Outages on the simulated clock (age limit, breaker, probes)
+/// are in [OtlpOutageBDDTest], the place for new outage scenarios; timing details of the sender
+/// are in [HttpBatchSenderTest]. [OtlpLogDestinationIT] repeats covered scenarios
+/// against real HTTP and timers, using this class as its fixture. The remaining server tests add
+/// unit coverage; see `NOT-YET.md` for the fake clock that makes them fast.
 ///
 /// @author Jens Wilke
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -789,75 +791,6 @@ class OtlpLogDestinationTest {
     assertThat(new HashSet<>(deliveredPaths())).hasSize(total);
     assertThat(destination.droppedCount()).isZero();
     assertThat(destination.window()).as("back at the maximum").isEqualTo(8);
-  }
-
-  /// A batch whose first record is older than the maximum age is dropped, the retries end
-  @Test
-  void agedBatchIsDiscarded() throws Exception {
-    status = 503;
-    destination = fastDestination(config().maximumUnsentLogAgeMillis(200).build());
-    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-    for (int i = 0; i < 5; i++) {
-      logger.logRequest(request("/old" + i));
-    }
-    await("five expired records dropped", () -> destination.droppedCount() == 5);
-    assertThat(bufferedBytesGauge()).isZero();
-    // a second round in the same outage is dropped as well, but not logged again
-    for (int i = 0; i < 3; i++) {
-      logger.logRequest(request("/older" + i));
-    }
-    await("eight expired records dropped", () -> destination.droppedCount() == 8);
-    status = 200;
-    logger.logRequest(request("/new"));
-    await("new record delivered", () -> deliveredPaths().contains("/new"));
-    assertThat(deliveredPaths()).containsExactly("/new");
-    assertThat(destination.droppedCount()).isEqualTo(8);
-    assertThat(logs.messages(OtlpLogDestination.class))
-        .filteredOn(m -> m.contains("older than maximumUnsentLogAge"))
-        .as("logged once per outage")
-        .hasSize(1);
-  }
-
-  /// After the last waiting batch aged out, the queue is empty and the breaker is still open. A
-  /// new full batch then asks the breaker in `HttpBatchSender.submit` and waits, it is not sent.
-  /// This is the branch where an empty queue meets an open breaker, previously reached only by a
-  /// timing dependent test.
-  @Test
-  void batchLoggedAfterAnAgedOneWaitsForTheBreaker() throws Exception {
-    status = 503;
-    int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
-    destination =
-        new OtlpLogDestination(
-            "otlp",
-            config()
-                .batchBytes(batchBytes)
-                .maxBufferedBytes(64 << 20)
-                .maxConcurrentRequests(1)
-                // a full batch is handed over before the first flush, so submit asks the breaker
-                .flushIntervalMillis(500)
-                .maximumUnsentLogAgeMillis(200)
-                // long enough that the breaker cannot let a probe through during the test
-                .initialRetryDelayMillis(60_000)
-                .maxRetryDelayMillis(60_000)
-                .build());
-    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
-    int firstBatch = (batchBytes + framedSize(request("/0000")) - 1) / framedSize(request("/0000"));
-    int firstTotal = firstBatch + 1;
-    for (int i = 0; i < firstTotal; i++) {
-      logger.logRequest(request(String.format("/%04d", i)));
-    }
-    await("first batch rejected", () -> received.size() >= 1);
-    await("waiting batches aged out", () -> destination.droppedCount() == firstTotal);
-    int secondBatch =
-        (batchBytes + framedSize(request("/a0000")) - 1) / framedSize(request("/a0000"));
-    int secondTotal = secondBatch + 1;
-    for (int i = 0; i < secondTotal; i++) {
-      logger.logRequest(request(String.format("/a%04d", i)));
-    }
-    assertThat(destination.queueSize()).isEqualTo(secondTotal);
-    assertThat(bufferedBytesGauge()).isPositive();
-    status = 200;
-    HttpBatchSenderTest.close(destination);
   }
 
   /// A status that retrying cannot fix does not open the breaker, the next batch goes out at once

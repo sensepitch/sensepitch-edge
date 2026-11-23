@@ -106,7 +106,9 @@
 - Prefer Serenity BDD (`*BDDTest`) for behaviour tests: the step chains are more compact and
   readable than plain JUnit, compare `UnservicedHostHandlerBDDTest` with `UnservicedHostHandlerIT`,
   or `ProxyRejectedConfigBDDTest` with its former inline form. Group many rejected-input variants
-  into one `@ParameterizedTest` over a step chain.
+  into one `@ParameterizedTest` over a step chain. Step classes pay off when several scenarios
+  share the steps; if the wrapper code serves only one test and makes it longer than plain
+  JUnit, write a plain unit test.
 - No component level tests of the YAML or environment configuration: the generic loading
   (`Main.parseConfig`, `EnvInjector`, the config records) is tested once, a new key of a
   component adds no coverage there. A component tests its configuration through the config
