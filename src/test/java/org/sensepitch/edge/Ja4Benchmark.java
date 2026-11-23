@@ -18,19 +18,22 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /// Measures what the JA4 fingerprint costs per TLS connection.
 ///
-/// <p>[Ja4Handler] removes itself from the pipeline once the ClientHello is seen, so the cost is
+/// [Ja4Handler] removes itself from the pipeline once the ClientHello is seen, so the cost is
 /// paid once per connection and not once per request. That makes it too small to see reliably in a
 /// proxy level load test, where a single RSA handshake is orders of magnitude more expensive. This
 /// benchmark measures the parse and the fingerprint on their own, so the load test result can be
 /// stated as a number rather than as "no measurable difference".
 ///
-/// <p>Not a test, surefire ignores it. Run it after `mvn test-compile` with:
+/// Not a test, surefire ignores it. Run it after `mvn test-compile` with:
 ///
 /// ```
 /// mvn -q dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=target/cp.txt
-/// java -cp target/classes:target/test-classes:$(cat target/cp.txt)
-// org.sensepitch.edge.Ja4Benchmark
+/// java -cp target/classes:target/test-classes:$(cat target/cp.txt) \
+///   org.sensepitch.edge.Ja4Benchmark
 /// ```
+///
+/// It prints the size and fingerprint of the captured ClientHello to standard out, next to the
+/// JMH output: a manual tool, not part of the proxy, where `System.out` is the expected channel.
 ///
 /// @see Ja4Handler
 /// @see ClientHelloParser
