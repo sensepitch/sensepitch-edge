@@ -238,9 +238,9 @@ class ReloadableRequestLoggerTest {
     assertThat(finished).isNotDone();
     assertThat(logger.unsent()).containsExactlyInAnyOrderEntriesOf(Map.of("old", 1, "new", 1));
     status = 200;
-    finished.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    int got = receivedAfter(finished);
     assertThat(logger.unsent()).isEmpty();
-    assertThat(awaitReceived(2)).isEqualTo(2);
+    assertThat(got).isEqualTo(2);
   }
 
   void awaitAttempts(int expected) throws Exception {
@@ -275,21 +275,32 @@ class ReloadableRequestLoggerTest {
     return (long) metrics.dropped.labelValues(destination).get();
   }
 
-  /// Sum of the records received, waiting until the expected number arrived
-  int awaitReceived(int expected) throws Exception {
-    int[] sum = {0};
-    await(
-        "at least " + expected + " received records",
-        () -> {
-          Integer records;
-          while (sum[0] < expected && (records = received.poll()) != null) {
-            sum[0] += records;
-          }
-          return sum[0] >= expected;
-        });
-    // anything arriving late would be a duplicate
-    Integer more = received.poll(100, TimeUnit.MILLISECONDS);
-    return more == null ? sum[0] : sum[0] + more;
+  /// Sum of the records received, after `stopped` completed. The server adds a request to
+  /// `received` before it answers, and a destination stops only when all its requests were
+  /// answered, so everything its senders posted, a duplicate as well, is counted.
+  ///
+  /// @param stopped completed when the senders stopped, e.g. [ReloadableRequestLogger#finish()]
+  int receivedAfter(CompletableFuture<?> stopped) throws Exception {
+    stopped.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    int sum = 0;
+    Integer records;
+    while ((records = received.poll()) != null) {
+      sum += records;
+    }
+    return sum;
+  }
+
+  /// Ends the batchers of the calling thread, finishes all destinations, and returns the sum of
+  /// the records received once they stopped, see [#receivedAfter(CompletableFuture)]
+  int receivedAfterFinish() throws Exception {
+    logger.endThread();
+    return receivedAfter(logger.finish());
+  }
+
+  /// Completed when the only active destination stopped, e.g. after a reload replaced it.
+  /// Waiting for it does not finish the destination, unlike [ReloadableRequestLogger#finish()].
+  CompletableFuture<Void> stoppedOfActiveDestination() {
+    return logger.destinations().getFirst().batching().sender().stopped();
   }
 
   String endpoint() {
@@ -309,8 +320,7 @@ class ReloadableRequestLoggerTest {
     old.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     assertThat(stopped).as("waits for the end marker").isNotDone();
     old.endThread();
-    stopped.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(awaitReceived(2)).isEqualTo(2);
+    assertThat(receivedAfter(stopped)).isEqualTo(2);
     assertThat(dropped("old")).isZero();
   }
 

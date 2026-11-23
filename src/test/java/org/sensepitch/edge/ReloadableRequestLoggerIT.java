@@ -8,6 +8,7 @@ import static org.sensepitch.edge.TestingParameters.await;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -89,9 +90,8 @@ class ReloadableRequestLoggerIT {
       for (ExecutorService worker : workers) {
         worker.submit(logger::endThread).get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       }
-      // right after the reloads, replaced destinations may still be handing over
-      logger.close();
-      int got = fixture.awaitReceived(threads * perThread);
+      // covers the replaced destinations that are still handing over after the reloads
+      int got = fixture.receivedAfterFinish();
       assertThat(fixture.dropped("vl")).isZero();
       assertThat(got).as("every record exactly once").isEqualTo(threads * perThread);
       assertThat(reloads[0]).as("the destination was replaced often").isGreaterThan(10);
@@ -132,14 +132,14 @@ class ReloadableRequestLoggerIT {
             fixture.stdout,
             fixture.metrics);
     fixture.logOneRequest();
+    var removedStopped = fixture.stoppedOfActiveDestination();
     fixture.reload(RequestLogConfig.builder().disabled(true).build());
     assertThat(fixture.logger.destinations()).isEmpty();
-    assertThat(fixture.awaitReceived(1)).as("sent after the end marker").isOne();
+    assertThat(fixture.receivedAfter(removedStopped)).as("sent after the end marker").isOne();
     fixture.logOneRequest();
     fixture.reload(ReloadableRequestLoggerTest.config(fixture.otlp("vl", OUT_OF_REACH_MILLIS)));
     fixture.logOneRequest();
-    fixture.logger.close();
-    assertThat(fixture.awaitReceived(1)).as("only the record after enabling").isOne();
+    assertThat(fixture.receivedAfterFinish()).as("only the record after enabling").isOne();
   }
 
   /// A removed destination drains its backlog after a held export is released.
@@ -166,6 +166,7 @@ class ReloadableRequestLoggerIT {
             .build();
     CountDownLatch release = new CountDownLatch(1);
     fixture.answerGate = release;
+    CompletableFuture<Void> originalStopped;
     try (var loggingThread = Executors.newSingleThreadExecutor();
         var caller = Executors.newVirtualThreadPerTaskExecutor()) {
       try {
@@ -176,6 +177,7 @@ class ReloadableRequestLoggerIT {
                 fixture.metrics,
                 List.of(loggingThread),
                 new ConfigFiles());
+        originalStopped = fixture.stoppedOfActiveDestination();
         loggingThread
             .submit(
                 () -> {
@@ -194,7 +196,8 @@ class ReloadableRequestLoggerIT {
       } finally {
         release.countDown();
       }
-      assertThat(fixture.awaitReceived(records)).isEqualTo(records);
+      // the reload alone ends the original destination, nothing else finishes it
+      assertThat(fixture.receivedAfter(originalStopped)).isEqualTo(records);
       assertThat(fixture.dropped("vl")).isZero();
     }
   }

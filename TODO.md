@@ -37,8 +37,7 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
       inferred, not reproduced).
   - Thread state waits that any park satisfies, a false pass rather than a flake:
     `ProxyAcceptGraceTest` (`WAITING`), `ProxyShutdownIT.shutdownWaitsForReload` (`BLOCKED`).
-  - Short absence checks: `poll(100 ms)` in `OtlpLogDestinationIT.retryAfterIsHonoured` and
-    `ReloadableRequestLoggerTest.awaitReceived`; the latter is paid in full by every caller.
+  - Short absence checks: `poll(100 ms)` in `OtlpLogDestinationIT.retryAfterIsHonoured`.
   - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
     `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
 - [ ] Instance scoped diagnostic logging and event driven waits, plan in
