@@ -1,7 +1,8 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.ByteArrayOutputStream;
@@ -17,7 +18,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.parallel.Isolated;
 
 /// @author Jens Wilke
-@Timeout(value = 10, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 // alone: captures the log of all threads, the writer logs from its own
 @Isolated
 public class AsyncRequestLogWriterTest {
@@ -64,7 +65,7 @@ public class AsyncRequestLogWriterTest {
     AsyncRequestLogWriter writer = new AsyncRequestLogWriter(latchOnFlush, 16);
     try {
       writer.writeLine("single");
-      assertThat(flushed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(flushed.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("single record flushed without close")
           .isTrue();
       assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("single\n");
@@ -75,7 +76,6 @@ public class AsyncRequestLogWriterTest {
 
   /// The point of the writer: a stuck standard out must not block the calling event loop.
   @Test
-  @Timeout(value = 30, unit = TimeUnit.SECONDS)
   public void blockedOutputDropsInsteadOfBlockingTheCaller() throws Exception {
     CountDownLatch writerStarted = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
@@ -110,10 +110,10 @@ public class AsyncRequestLogWriterTest {
                     writer.writeLine("line " + i);
                   }
                 });
-        assertThat(writerStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        assertThat(writerStarted.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
             .as("writer reached the blocked output")
             .isTrue();
-        write.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        write.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         // The writer holds at most one drained batch (capacity + 1) and one queue of records.
         assertThat(writer.droppedCount()).isGreaterThanOrEqualTo(records - 2 * capacity - 1);
         assertThat(logs.messages(AsyncRequestLogWriter.class))

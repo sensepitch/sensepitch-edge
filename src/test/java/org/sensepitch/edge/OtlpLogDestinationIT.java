@@ -5,9 +5,10 @@ import static org.sensepitch.edge.OtlpLogDestinationTest.awaitQuietly;
 import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
 import static org.sensepitch.edge.OtlpTestSupport.decode;
 import static org.sensepitch.edge.TestRequestLogInfo.request;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
@@ -30,7 +31,7 @@ import org.junit.jupiter.api.parallel.Isolated;
 
 /// Real HTTP, timer and concurrency checks that repeat coverage of [OtlpLogDestinationTest].
 /// New scenarios belong in that unit test, which also supplies this class's server and helpers.
-@Timeout(value = 30, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 // alone: captures the log of all threads, the sender logs from its own
 @Isolated
 class OtlpLogDestinationIT {
@@ -91,7 +92,7 @@ class OtlpLogDestinationIT {
       for (int i = 0; i < total; i++) {
         logger.logRequest(request("/" + i));
       }
-      assertThat(limitReached.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(limitReached.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("the concurrent request limit was reached")
           .isTrue();
       assertThat(inFlight.get()).as("requests held at the server").isEqualTo(limit);
@@ -214,7 +215,7 @@ class OtlpLogDestinationIT {
       started.add(worker);
     }
     for (Thread worker : started) {
-      assertThat(worker.join(TIMEOUT)).as("logging worker finished").isTrue();
+      assertThat(worker.join(EVENT_TIMEOUT)).as("logging worker finished").isTrue();
     }
     HttpBatchSenderTest.close(fixture.destination);
     List<String> paths = fixture.deliveredPaths();

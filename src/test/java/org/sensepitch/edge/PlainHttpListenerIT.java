@@ -2,7 +2,8 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import java.io.IOException;
@@ -11,7 +12,6 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Timeout;
 /// [HttpToHttpsRedirectHandlerBDDTest].
 ///
 /// @author Jens Wilke
-@Timeout(value = 40, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 class PlainHttpListenerIT {
 
   private Proxy proxy;
@@ -81,8 +81,8 @@ class PlainHttpListenerIT {
   void plainHttpRequestGetsPermanentRedirect() throws Exception {
     startProxy();
     try (Socket socket = new Socket()) {
-      socket.connect(new InetSocketAddress("127.0.0.1", httpPort), (int) TIMEOUT.toMillis());
-      socket.setSoTimeout((int) TIMEOUT.toMillis());
+      socket.connect(new InetSocketAddress("127.0.0.1", httpPort), (int) EVENT_TIMEOUT.toMillis());
+      socket.setSoTimeout((int) EVENT_TIMEOUT.toMillis());
       socket
           .getOutputStream()
           .write(
@@ -106,7 +106,7 @@ class PlainHttpListenerIT {
         assertThatThrownBy(
                 () ->
                     probe.connect(
-                        new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis()))
+                        new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis()))
             .isInstanceOf(IOException.class);
       }
     }

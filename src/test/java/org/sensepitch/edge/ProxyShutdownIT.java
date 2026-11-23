@@ -2,9 +2,10 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
@@ -51,7 +52,7 @@ import org.junit.jupiter.api.parallel.Isolated;
 /// because the event loops write their end markers when they terminate.
 ///
 /// @author Jens Wilke
-@Timeout(value = 40, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 // alone: captures the log of all threads, the proxy logs from its event loops
 @Isolated
 class ProxyShutdownIT {
@@ -201,13 +202,13 @@ class ProxyShutdownIT {
     upstreamDelayMillis = 300;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
-      assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      assertThat(upstreamGotRequest.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       CompletableFuture<Void> shutdown = CompletableFuture.runAsync(proxy::shutdown);
       String response = readResponse(socket.getInputStream());
       assertThat(response).startsWith("HTTP/1.1 200").contains("from upstream");
       assertThat(response.toLowerCase(Locale.ROOT)).contains("connection: close");
       assertThat(socket.getInputStream().read()).as("closed after the response").isEqualTo(-1);
-      shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      shutdown.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
     assertThat(requestLog.lines())
         .singleElement()
@@ -236,16 +237,16 @@ class ProxyShutdownIT {
   /// A request that takes longer than the shutdown allows is aborted when only the drain timeout
   /// is left. Its record, status 499, is still sent within the drain timeout, and the requests in
   /// flight are reported. The request log is drained, so that phase logs no diagnostic. The drain
-  /// timeout is the full [TestingParameters#TIMEOUT], so a delayed post cannot run out of it; the
+  /// timeout is the full [TestingParameters#EVENT_TIMEOUT], so a delayed post cannot run out of it; the
   /// drain ends as soon as the record is sent.
   @Test
   void slowRequestIsAbortedAndStillLogged() throws Exception {
-    startProxy(1_000 + TIMEOUT.toMillis(), TIMEOUT.toMillis());
+    startProxy(1_000 + EVENT_TIMEOUT.toMillis(), EVENT_TIMEOUT.toMillis());
     // answers only when the test is over, long after the abort
     upstreamDelayMillis = OUT_OF_REACH_MILLIS;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
-      assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      assertThat(upstreamGotRequest.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       long start = System.nanoTime();
       proxy.shutdown();
       assertThat(millisSince(start)).as("waited for the request").isGreaterThanOrEqualTo(900);
@@ -309,7 +310,7 @@ class ProxyShutdownIT {
           public Set<Entry<String, SiteConfig>> entrySet() {
             readingConfig.countDown();
             try {
-              assertThat(continueReload.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+              assertThat(continueReload.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
                   .as("reload configuration released")
                   .isTrue();
             } catch (InterruptedException e) {
@@ -324,7 +325,7 @@ class ProxyShutdownIT {
         CompletableFuture.supplyAsync(() -> proxy.reload(next));
     FutureTask<Void> shutdown = new FutureTask<>(proxy::shutdown, null);
     try {
-      assertThat(readingConfig.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(readingConfig.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("reload reading configuration")
           .isTrue();
       Thread shutdownThread = Thread.ofPlatform().name("shutdown-during-reload").start(shutdown);
@@ -337,13 +338,13 @@ class ProxyShutdownIT {
       assertThat(shutdown.isDone()).isFalse();
       assertThat(proxy.isShuttingDown()).isFalse();
       try (Socket probe = new Socket()) {
-        probe.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
+        probe.connect(new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis());
       }
     } finally {
       continueReload.countDown();
     }
-    assertThat(reload.get(TIMEOUT_SECONDS, TimeUnit.SECONDS).applied()).isTrue();
-    shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat(reload.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS).applied()).isTrue();
+    shutdown.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(proxy.isShuttingDown()).isTrue();
     assertThat(proxy.reload(config).applied()).isFalse();
   }
@@ -354,7 +355,7 @@ class ProxyShutdownIT {
   ///
   /// The fake clock stands still after the grace, so the later shutdown phases wait in real time.
   /// The drain budget is therefore [TestingParameters#OUT_OF_REACH], the test's own wait for the
-  /// shutdown, [TestingParameters#TIMEOUT], bounds it.
+  /// shutdown, [TestingParameters#EVENT_TIMEOUT], bounds it.
   @Test
   void acceptGraceKeepsServingThenClosesWithinTheBudget() throws Exception {
     AtomicLong now = new AtomicLong(1234);
@@ -370,7 +371,7 @@ class ProxyShutdownIT {
           assertThat(nanos).isEqualTo(TimeUnit.MILLISECONDS.toNanos(graceMillis));
           delaying.countDown();
           try {
-            assertThat(releaseDelay.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            assertThat(releaseDelay.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
           } catch (InterruptedException e) {
             throw new AssertionError(e);
           }
@@ -388,7 +389,7 @@ class ProxyShutdownIT {
       assertThat(readResponse(keepAlive.getInputStream())).startsWith("HTTP/1.1 200");
       CompletableFuture<Void> shutdown = CompletableFuture.runAsync(proxy::shutdown);
       try {
-        assertThat(delaying.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        assertThat(delaying.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
         var ready =
             HttpClient.newHttpClient()
                 .send(
@@ -405,11 +406,11 @@ class ProxyShutdownIT {
         }
         upstreamDelayMillis = OUT_OF_REACH_MILLIS;
         send(keepAlive, "upstream.com");
-        assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        assertThat(upstreamGotRequest.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       } finally {
         releaseDelay.countDown();
       }
-      shutdown.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      shutdown.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertThat(logs.messages(Proxy.class)).noneMatch(m -> m.contains("request log not drained"));
       assertThat(logs.messages(Proxy.class))
           .anyMatch(m -> m.contains("requests still in flight after " + graceMillis + " ms"));
@@ -419,7 +420,7 @@ class ProxyShutdownIT {
         assertThatThrownBy(
                 () ->
                     probe.connect(
-                        new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis()))
+                        new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis()))
             .isInstanceOf(IOException.class);
       }
     } finally {
@@ -482,8 +483,8 @@ class ProxyShutdownIT {
         },
         new SecureRandom());
     SSLSocket socket = (SSLSocket) context.getSocketFactory().createSocket();
-    socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
-    socket.setSoTimeout((int) TIMEOUT.toMillis());
+    socket.connect(new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis());
+    socket.setSoTimeout((int) EVENT_TIMEOUT.toMillis());
     return socket;
   }
 

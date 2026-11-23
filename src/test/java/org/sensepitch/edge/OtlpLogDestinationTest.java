@@ -5,9 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.sensepitch.edge.OtlpTestSupport.attributes;
 import static org.sensepitch.edge.OtlpTestSupport.gunzip;
 import static org.sensepitch.edge.TestRequestLogInfo.request;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -58,7 +59,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /// [OtlpOutageBDDTest], timing details of the sender in [HttpBatchSenderTest].
 ///
 /// @author Jens Wilke
-@Timeout(value = 30, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 class OtlpLogDestinationTest {
 
   @RegisterExtension LogCapture logs = new LogCapture();
@@ -170,8 +171,8 @@ class OtlpLogDestinationTest {
 
   /// Bounds receipt of the next post, which the server queues before answering it.
   Received receive() throws InterruptedException {
-    Received post = received.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(post).as("OTLP post received within %s seconds", TIMEOUT_SECONDS).isNotNull();
+    Received post = received.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat(post).as("OTLP post received within %s seconds", EVENT_TIMEOUT_SECONDS).isNotNull();
     return post;
   }
 
@@ -334,7 +335,9 @@ class OtlpLogDestinationTest {
   /// Keeps a logging worker alive until the test releases it, from a lambda that cannot throw
   static void awaitQuietly(CountDownLatch latch) {
     try {
-      assertThat(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("worker released").isTrue();
+      assertThat(latch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("worker released")
+          .isTrue();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
@@ -397,7 +400,7 @@ class OtlpLogDestinationTest {
     Received post = receive();
     assertThat(post.headers()).containsEntry("content-encoding", "gzip");
     assertThat(post.paths()).hasSize(100).startsWith("/compressed/0");
-    assertThat(stoppedWhenCompleted.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+    assertThat(stoppedWhenCompleted.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
     assertThat(destination.compressionExecutorStopped()).isTrue();
   }
 
@@ -535,7 +538,7 @@ class OtlpLogDestinationTest {
     simulated(simulatedConfig());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     Thread worker = Thread.ofPlatform().start(() -> logger.logRequest(request("/last")));
-    assertThat(worker.join(TIMEOUT)).as("logging worker finished").isTrue();
+    assertThat(worker.join(EVENT_TIMEOUT)).as("logging worker finished").isTrue();
     clock.advanceMillis(FLUSH_MILLIS);
     answerAll(200);
     assertThat(delivered).containsExactly("/last");
@@ -633,7 +636,9 @@ class OtlpLogDestinationTest {
                       destination.endThread();
                     }));
       }
-      assertThat(logged.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("workers logged").isTrue();
+      assertThat(logged.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("workers logged")
+          .isTrue();
       assertThat(logServer.requests()).as("nothing posted before the flush").isEmpty();
       clock.advanceMillis(built.flushIntervalMillis());
       posted = logServer.requests().stream().map(OtlpTestSupport::paths).toList();
@@ -641,7 +646,7 @@ class OtlpLogDestinationTest {
       release.countDown();
     }
     for (Thread worker : workers) {
-      assertThat(worker.join(TIMEOUT)).as("logging worker finished").isTrue();
+      assertThat(worker.join(EVENT_TIMEOUT)).as("logging worker finished").isTrue();
     }
     for (int i = 0; i < posted.size(); i++) {
       logServer.succeed(200);

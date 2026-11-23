@@ -2,9 +2,10 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.TestRequestLogInfo.request;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.util.concurrent.Ticker;
@@ -32,7 +33,7 @@ import org.junit.jupiter.api.Timeout;
 /// record, goes through the same [HttpBatchSender] and [BatchingRequestLogger] as OTLP.
 ///
 /// @author Jens Wilke
-@Timeout(value = 30, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 class HttpBatchSenderTest {
 
   static final long FLUSH_MILLIS = 100;
@@ -155,7 +156,7 @@ class HttpBatchSenderTest {
   /// way a shutdown does it for an event loop
   static void close(HttpBatchSender<?> sender) throws Exception {
     sender.endThread();
-    sender.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    sender.finish().get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
   }
 
   /// Destinations the queue gauges of the metrics report
@@ -216,7 +217,7 @@ class HttpBatchSenderTest {
                         metrics.circuitBreakers.find(HttpBatchSender.BREAKER_COMPONENT, "text")
                             == null));
     close(sender);
-    assertThat(seen.get(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+    assertThat(seen.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
         .as("executor stopped, gauged destinations, breaker removed when stopped completes")
         .containsExactly(true, List.of(), true);
   }
@@ -442,9 +443,9 @@ class HttpBatchSenderTest {
       assertThat(batcher.records()).as("full batch handed off").isZero();
       assertThat(batcher.takePartialAndQueue()).as("empty batch").isNull();
       roomy.endThread();
-      roomy.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n");
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/b\n/c\n");
+      roomy.finish().get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n");
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/b\n/c\n");
 
       HttpBatchSender<TextBatch> full = textSender(endpoint(server), Map.of(), 4, 4, 1);
       batcher = full.newBatcher();
@@ -453,8 +454,8 @@ class HttpBatchSenderTest {
       assertThat(batcher.records()).as("hand-off refused, the full batch is kept").isEqualTo(2);
       assertThat(batcher.takePartialAndQueue()).as("no room").isNull();
       full.endThread();
-      full.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n/b\n");
+      full.finish().get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n/b\n");
       assertThat(bodies).isEmpty();
     } finally {
       TestingParameters.stop(server);
@@ -480,10 +481,10 @@ class HttpBatchSenderTest {
       batcher.log(request("/e"));
       assertThat(batcher.takePartialAndQueue()).as("a later partial").isNotNull();
       batcher.close();
-      sender.finish().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n");
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/b\n/c\n/d\n");
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/e\n");
+      sender.finish().get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/a\n");
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/b\n/c\n/d\n");
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/e\n");
       assertThat(bodies).isEmpty();
     } finally {
       TestingParameters.stop(server);
@@ -506,13 +507,14 @@ class HttpBatchSenderTest {
       late.log(request("/late"));
       early.close();
       CompletableFuture<Void> stopped = busy.finish();
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/early\n");
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/early\n");
       assertThat(stopped).as("one batcher still open").isNotDone();
       assertThat(late.log(request("/accepted"))).as("open batchers still log").isTrue();
       late.close();
       late.close();
-      stopped.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat(bodies.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo("/late\n/accepted\n");
+      stopped.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(bodies.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .isEqualTo("/late\n/accepted\n");
       assertThat(busy.droppedCount()).isZero();
     } finally {
       TestingParameters.stop(server);
@@ -560,7 +562,7 @@ class HttpBatchSenderTest {
         logger.logRequest(request(path));
       }
       logger.close();
-      sender.stopped().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      sender.stopped().get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertThat(bodies.poll()).isEqualTo("/a\n/b\n/c\n");
       assertThat(contentTypes.poll()).isEqualTo("text/plain");
       assertThat(sender.droppedCount()).isZero();

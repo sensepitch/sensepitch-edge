@@ -87,7 +87,7 @@ are listed under Bugs.
     - `OtlpLogDestinationTest`: the partial batch flush tests run on `FakeTime` (a real 500 ms
       flush raced the workers), `await` on counters uses `>=`, the maximum elapsed time of the
       post duration histogram is no longer asserted.
-    - `ProxyShutdownIT.slowRequestIsAbortedAndStillLogged` drains for the full `TIMEOUT`.
+    - `ProxyShutdownIT.slowRequestIsAbortedAndStillLogged` drains for the full `EVENT_TIMEOUT`.
   - Short configured timings that race the test's own steps:
     - `ReloadableRequestLoggerIT.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
       `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,

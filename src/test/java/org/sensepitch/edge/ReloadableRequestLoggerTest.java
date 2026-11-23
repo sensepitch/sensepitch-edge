@@ -2,8 +2,9 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.management.ThreadMXBean;
@@ -35,7 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
 /// as its fixture. New scenarios belong here.
 ///
 /// @author Jens Wilke
-@Timeout(value = 20, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 class ReloadableRequestLoggerTest {
 
   final RequestLogCapture stdout = new RequestLogCapture();
@@ -197,12 +198,12 @@ class ReloadableRequestLoggerTest {
     // a changed flush interval, still out of reach
     reload(config(otlp("vl", 2 * OUT_OF_REACH_MILLIS)));
     assertThat(logger.destinations().getFirst()).isNotSameAs(before);
-    assertThat(received.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+    assertThat(received.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
         .as("buffered record sent by the old destination after the end marker")
         .isOne();
     logOneRequest();
     logger.close();
-    assertThat(received.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+    assertThat(received.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
         .as("the new destination logs")
         .isOne();
   }
@@ -237,7 +238,7 @@ class ReloadableRequestLoggerTest {
     assertThat(finished).isNotDone();
     assertThat(logger.unsent()).containsExactlyInAnyOrderEntriesOf(Map.of("old", 1, "new", 1));
     status = 200;
-    finished.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    finished.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(logger.unsent()).isEmpty();
     assertThat(awaitReceived(2)).isEqualTo(2);
   }
@@ -308,7 +309,7 @@ class ReloadableRequestLoggerTest {
     old.logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     assertThat(stopped).as("waits for the end marker").isNotDone();
     old.endThread();
-    stopped.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    stopped.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(awaitReceived(2)).isEqualTo(2);
     assertThat(dropped("old")).isZero();
   }

@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
 import static org.sensepitch.edge.OtlpTestSupport.decode;
 import static org.sensepitch.edge.TestRequestLogInfo.request;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
@@ -89,13 +89,13 @@ class OtlpSlowStartIT {
       assertThat(destination.window()).as("after a failure").isOne();
       available.set(true);
       // the probe alone
-      assertThat(probeArrived.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(probeArrived.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("the recovery probe arrived")
           .isTrue();
       assertThat(inFlight.get()).as("only the probe is held").isOne();
       // its success allows two
       answers.release();
-      assertThat(twoRequestsInFlight.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(twoRequestsInFlight.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("two requests followed the successful probe")
           .isTrue();
       assertThat(inFlight.get()).as("two requests are held after the probe").isEqualTo(2);

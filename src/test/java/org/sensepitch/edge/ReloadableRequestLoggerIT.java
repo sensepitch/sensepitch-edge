@@ -1,8 +1,9 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ import org.junit.jupiter.api.Timeout;
 /// helpers.
 ///
 /// @author Jens Wilke
-@Timeout(value = 20, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 class ReloadableRequestLoggerIT {
 
   final ReloadableRequestLoggerTest fixture = new ReloadableRequestLoggerTest();
@@ -86,7 +87,7 @@ class ReloadableRequestLoggerIT {
           });
       // the end markers of the workers, as an event loop writes them when it terminates
       for (ExecutorService worker : workers) {
-        worker.submit(logger::endThread).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        worker.submit(logger::endThread).get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       }
       // right after the reloads, replaced destinations may still be handing over
       logger.close();
@@ -143,7 +144,6 @@ class ReloadableRequestLoggerIT {
 
   /// A removed destination drains its backlog after a held export is released.
   @Test
-  @Timeout(value = 50, unit = TimeUnit.SECONDS)
   void removedDestinationDoesNotBlockTheReload() throws Exception {
     assertReloadDrainsHeldExport(
         ReloadableRequestLoggerTest.config(ReloadableRequestLoggerTest.stdout(false)), 20);
@@ -151,7 +151,6 @@ class ReloadableRequestLoggerIT {
 
   /// A replaced destination also drains its backlog after a held export is released.
   @Test
-  @Timeout(value = 50, unit = TimeUnit.SECONDS)
   void replacedDestinationSendsItsBacklog() throws Exception {
     assertReloadDrainsHeldExport(ReloadableRequestLoggerTest.config(fixture.otlp("vl", 2)), 50);
   }
@@ -184,12 +183,14 @@ class ReloadableRequestLoggerIT {
                     fixture.logOneRequest();
                   }
                 })
-            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        assertThat(fixture.exportHeld.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            .get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertThat(fixture.exportHeld.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
             .as("the original destination has an export held by the log server")
             .isTrue();
 
-        caller.submit(() -> fixture.reload(replacement)).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        caller
+            .submit(() -> fixture.reload(replacement))
+            .get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       } finally {
         release.countDown();
       }

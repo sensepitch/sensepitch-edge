@@ -2,7 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.sensepitch.edge.CompleteTest.COMMON_CONFIG;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 
 import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -87,7 +87,7 @@ class ProxyOptionsTest {
           .singleElement()
           .asString()
           .contains("\"event.name\":\"sensepitch.request\"");
-      ExportLogsServiceRequest post = posts.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      ExportLogsServiceRequest post = posts.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertThat(post).isNotNull();
       LogRecord record = post.getResourceLogs(0).getScopeLogs(0).getLogRecords(0);
       assertThat(record.getAttributesList())

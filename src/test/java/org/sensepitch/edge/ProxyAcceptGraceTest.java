@@ -3,7 +3,7 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.sensepitch.edge.CompleteTest.COMMON_CONFIG;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -174,7 +174,7 @@ class ProxyAcceptGraceTest {
             nanos -> {
               waiting.countDown();
               try {
-                assertThat(release.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+                assertThat(release.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
               } catch (InterruptedException e) {
                 throw new AssertionError(e);
               }
@@ -182,7 +182,7 @@ class ProxyAcceptGraceTest {
             });
     CompletableFuture<Void> first = CompletableFuture.runAsync(proxy::shutdown);
     try {
-      assertThat(waiting.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      assertThat(waiting.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       assertThat(proxy.isShuttingDown()).isTrue();
       assertThat(proxy.reload(cfg).applied()).isFalse();
       FutureTask<Void> second = new FutureTask<>(proxy::shutdown, null);
@@ -192,11 +192,11 @@ class ProxyAcceptGraceTest {
           () -> caller.getState() == Thread.State.WAITING || second.isDone());
       assertThat(second.isDone()).isFalse();
       release.countDown();
-      first.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      second.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      first.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      second.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     } finally {
       release.countDown();
-      first.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      first.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       proxy.shutdown();
     }
   }

@@ -178,7 +178,7 @@ outages, negative assertions, deliberate pauses and outer test guards retain the
 The timeout is a failure bound, not a substitute for the planned fake clock. It is also the
 assumed worst case delay of any single action, which the rules for concurrent tests in
 [`AGENTS.md`](../../AGENTS.md) build on: no maximum time is asserted, timers that must not fire
-are set to `OUT_OF_REACH_MILLIS` (10 × `TIMEOUT`). The tests that still break these rules are
+are set to `OUT_OF_REACH_MILLIS` (10 × `EVENT_TIMEOUT`). The tests that still break these rules are
 listed in [`TODO.md`](../../TODO.md).
 
 One baseline/final run on 2026-11-17 in the scheduled x86_64 sandbox (2 available CPUs,

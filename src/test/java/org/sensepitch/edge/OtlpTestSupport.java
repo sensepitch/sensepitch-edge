@@ -1,6 +1,6 @@
 package org.sensepitch.edge;
 
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.sun.net.httpserver.HttpExchange;
@@ -118,7 +118,7 @@ final class OtlpTestSupport {
               }
             });
     try {
-      return done.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      return done.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     } catch (Exception e) {
       throw new AssertionError("request body", e);
     }

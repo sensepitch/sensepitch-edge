@@ -1,9 +1,10 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.PROCESS_START_TIMEOUT;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
@@ -41,7 +42,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /// JAR started in a separate JVM proves that the tcnative library of the build host was found in
 /// the JAR, extracted and loaded. The libraries of the other platforms cannot be loaded here, so
 /// for those the JAR entry is checked to be a binary for the expected OS and CPU.
-@Timeout(value = 60, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 class ShadedJarIT {
 
   private static Path jar;
@@ -62,7 +63,7 @@ class ShadedJarIT {
   void stopProcess() throws InterruptedException {
     if (process != null) {
       process.destroy();
-      if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+      if (!process.waitFor(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
         process.destroyForcibly();
       }
     }
@@ -141,7 +142,7 @@ class ShadedJarIT {
       awaitOutput(stderr, "Proxy listening on 127.0.0.1:" + port);
       assertThat(get(port)).startsWith("HTTP/1.1 200");
       process.destroy();
-      assertThat(process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("exited").isTrue();
+      assertThat(process.waitFor(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("exited").isTrue();
       assertThat(Files.readAllLines(stdout)).singleElement().asString().contains("\"url.path\"");
       assertThat(records.get()).as("OTLP record sent before the exit").isOne();
       assertThat(Files.readAllLines(stderr)).noneMatch(line -> line.contains("Shutdown:"));
@@ -170,7 +171,7 @@ class ShadedJarIT {
           exchange.getRequestBody().readAllBytes();
           exportStarted.countDown();
           try {
-            releaseExport.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            releaseExport.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             exchange.sendResponseHeaders(HttpURLConnection.HTTP_OK, -1);
             exportAnswered.countDown();
           } catch (InterruptedException e) {
@@ -210,14 +211,14 @@ class ShadedJarIT {
       awaitOutput(stderr, "Proxy listening on 127.0.0.1:" + port);
       assertThat(get(port)).startsWith("HTTP/1.1 200");
       process.destroy();
-      assertThat(exportStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(exportStarted.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("shutdown export started")
           .isTrue();
-      assertThat(process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(process.waitFor(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("exited after draining")
           .isTrue();
       releaseExport.countDown();
-      assertThat(exportAnswered.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(exportAnswered.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("collector answered the export, so the exchange ended before its stop")
           .isTrue();
       assertThat(Files.readString(stderr))
@@ -369,7 +370,7 @@ class ShadedJarIT {
         null);
     try (SSLSocket socket =
         (SSLSocket) context.getSocketFactory().createSocket("127.0.0.1", port)) {
-      socket.setSoTimeout((int) TIMEOUT.toMillis());
+      socket.setSoTimeout((int) EVENT_TIMEOUT.toMillis());
       socket
           .getOutputStream()
           .write(

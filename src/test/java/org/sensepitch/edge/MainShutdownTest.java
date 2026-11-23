@@ -2,8 +2,9 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import java.util.ArrayList;
@@ -20,7 +21,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /// The shutdown order of [Main]: services first, Log4j2 last. [ShadedJarIT] checks the same with
 /// a real `SIGTERM` against the deployed JAR.
-@Timeout(10)
+@Timeout(TEST_TIMEOUT_SECONDS)
 class MainShutdownTest {
 
   /// Log4j2's own hook would run concurrently with ours and stop logging while the proxy drains.
@@ -73,7 +74,7 @@ class MainShutdownTest {
             () -> {
               loggingStarted.countDown();
               try {
-                assertThat(releaseLogging.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+                assertThat(releaseLogging.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
               } catch (InterruptedException e) {
                 throw new AssertionError(e);
               }
@@ -81,7 +82,7 @@ class MainShutdownTest {
             });
     Thread first = Thread.ofPlatform().start(shutdown);
     try {
-      assertThat(loggingStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+      assertThat(loggingStarted.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       Thread second =
           Thread.ofPlatform()
               .start(
@@ -92,8 +93,8 @@ class MainShutdownTest {
       // the only monitor the second thread enters is the lock of the shutdown
       await("second caller waits for the lock", () -> second.getState() == Thread.State.BLOCKED);
       releaseLogging.countDown();
-      assertThat(first.join(TIMEOUT)).as("first caller finished").isTrue();
-      assertThat(second.join(TIMEOUT)).as("second caller finished").isTrue();
+      assertThat(first.join(EVENT_TIMEOUT)).as("first caller finished").isTrue();
+      assertThat(second.join(EVENT_TIMEOUT)).as("second caller finished").isTrue();
       assertThat(events).containsExactly(LOGGING_STOPPED, SECOND_RETURNED);
     } finally {
       releaseLogging.countDown();

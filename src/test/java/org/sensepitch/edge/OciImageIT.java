@@ -39,7 +39,7 @@ class OciImageIT {
     } finally {
       if (smoke.isAlive()) {
         smoke.destroy();
-        if (!smoke.waitFor(TestingParameters.TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        if (!smoke.waitFor(TestingParameters.EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
           smoke.destroyForcibly();
         }
       }

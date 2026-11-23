@@ -3,38 +3,45 @@ package org.sensepitch.edge;
 import com.sun.net.httpserver.HttpServer;
 import java.time.Duration;
 
-/// Shared upper bound for waiting on another thread or process in tests.
+/// Shared bounds of the tests: for one event, for one test, and for timers that must not fire.
 final class TestingParameters {
 
-  /// [#TIMEOUT] in seconds, for APIs that take a count and a unit.
-  static final int TIMEOUT_SECONDS = 10;
+  /// [#EVENT_TIMEOUT] in seconds, for APIs that take a count and a unit.
+  static final int EVENT_TIMEOUT_SECONDS = 10;
 
-  /// Maximum time per test. Any test reaching this timeout is a failure.
+  /// Bound of one wait for one event of another thread, process or timer. The scheduler may
+  /// delay any step of the code under test or of the test itself by up to this long, and a test
+  /// must still pass, so every single wait allows it in full: a shorter bound may flake, a wait
+  /// that runs out means the event did not come. A normal run ends far below it.
   ///
-  /// A passing test stays far below it, so it is also the bound of every single wait for
-  /// another thread, process or timer: a wait that reaches it has already failed the test, a
-  /// shorter one may flake under scheduler delays, a multiple of it is never needed. The only
-  /// exception is an event of several steps with its own named bound, like
-  /// [#PROCESS_START_TIMEOUT]. A timer of the code under test that must not fire is set to
-  /// [#OUT_OF_REACH], never to this value.
-  static final Duration TIMEOUT = Duration.ofSeconds(TIMEOUT_SECONDS);
+  /// An event of several steps has its own named bound, like [#PROCESS_START_TIMEOUT]. A timer of
+  /// the code under test that must not fire is set to [#OUT_OF_REACH], never to this value. The
+  /// limit of a whole test is [#TEST_TIMEOUT_SECONDS].
+  static final Duration EVENT_TIMEOUT = Duration.ofSeconds(EVENT_TIMEOUT_SECONDS);
+
+  /// Outer guard of one test, for the `@Timeout` of a test class, in seconds: an annotation needs
+  /// a constant, not a [Duration]. Above the sum of the waits of any test, so a wait that runs out
+  /// reports the missing event before this guard fires. Reaching it is a failure, never part of a
+  /// passing run. The largest user is a child JVM start of [#PROCESS_START_TIMEOUT] plus waits.
+  static final int TEST_TIMEOUT_SECONDS = 6 * EVENT_TIMEOUT_SECONDS;
 
   /// For a timer the test relies on never firing (flush interval, age limit): far beyond any
-  /// wait, so a scheduler delay of up to [#TIMEOUT] cannot reach it.
-  static final Duration OUT_OF_REACH = TIMEOUT.multipliedBy(10);
+  /// wait, so a scheduler delay of up to [#EVENT_TIMEOUT] cannot reach it.
+  static final Duration OUT_OF_REACH = EVENT_TIMEOUT.multipliedBy(10);
 
   /// [#OUT_OF_REACH] for the `int` millisecond fields of the configuration.
   static final int OUT_OF_REACH_MILLIS = (int) OUT_OF_REACH.toMillis();
 
   /// Bounds the start of a child JVM until it serves: class loading, native library extraction,
-  /// configuration and binding are many steps, each of which may be delayed by up to [#TIMEOUT].
-  static final Duration PROCESS_START_TIMEOUT = TIMEOUT.multipliedBy(3);
+  /// configuration and binding are many steps, each of which may be delayed by up to
+  /// [#EVENT_TIMEOUT].
+  static final Duration PROCESS_START_TIMEOUT = EVENT_TIMEOUT.multipliedBy(3);
 
   private TestingParameters() {}
 
   /// Bounds asynchronous completion waits and identifies the missing event on failure.
   static void await(String description, Condition condition) throws Exception {
-    await(description, TIMEOUT, condition);
+    await(description, EVENT_TIMEOUT, condition);
   }
 
   /// [#await(String, Condition)] for an event that takes several steps, like
@@ -55,7 +62,7 @@ final class TestingParameters {
   /// counts as finished only when its response is complete: a handler that closes it without
   /// response headers makes this wait the whole grace.
   static void stop(HttpServer server) {
-    server.stop(TIMEOUT_SECONDS);
+    server.stop(EVENT_TIMEOUT_SECONDS);
   }
 
   /// Allows completion probes that read files or sockets to report checked failures.

@@ -2,7 +2,7 @@ package org.sensepitch.edge;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -61,7 +61,7 @@ class ConfigFileWatcherTest {
   /// The test never drives the watcher here. A permit preserves a signal before the wait starts.
   void awaitWatchedCondition(String description, BooleanSupplier condition)
       throws InterruptedException {
-    long deadline = System.nanoTime() + TIMEOUT.toNanos();
+    long deadline = System.nanoTime() + EVENT_TIMEOUT.toNanos();
     while (!condition.getAsBoolean()) {
       long remaining = deadline - System.nanoTime();
       if (remaining <= 0 || !checkedEvents.tryAcquire(remaining, NANOSECONDS)) {

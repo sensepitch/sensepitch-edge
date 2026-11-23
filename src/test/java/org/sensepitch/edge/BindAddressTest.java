@@ -1,9 +1,9 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -15,7 +15,7 @@ class BindAddressTest {
   /// let the test hit its timeout once (2026-10-08). Most of the remaining second is the warm-up
   /// of Netty and OpenSSL, when this class runs first in the test JVM.
   @Test
-  @Timeout(value = 5, unit = TimeUnit.SECONDS)
+  @Timeout(TEST_TIMEOUT_SECONDS)
   void invalidBindAddressThrows() {
     var listenConfig =
         ListenConfig.builder()

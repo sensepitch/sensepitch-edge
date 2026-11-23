@@ -1,8 +1,9 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT;
-import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
+import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -38,7 +39,7 @@ import org.junit.jupiter.api.parallel.Isolated;
 /// Boots the proxy on a real TCP port with TLS.
 ///
 /// @author Raid Thabet
-@Timeout(value = 40, unit = TimeUnit.SECONDS)
+@Timeout(TEST_TIMEOUT_SECONDS)
 // alone: captures the log of all threads, the proxy logs from its event loops
 @Isolated
 class ExternalTcpIT {
@@ -192,7 +193,7 @@ class ExternalTcpIT {
       assertThat(response).startsWith("HTTP/1.1 200").contains("from upstream");
     }
     TraceContext forwarded =
-        TraceContext.parse(upstreamTraceparents.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        TraceContext.parse(upstreamTraceparents.poll(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS));
     assertThat(forwarded).as("valid traceparent forwarded").isNotNull();
     assertThat(forwarded.traceId())
         .as("client trace is not trusted by default")
@@ -370,7 +371,7 @@ class ExternalTcpIT {
   @SuppressWarnings("resource")
   private void drainEventLoops() throws InterruptedException {
     for (EventExecutor executor : proxy.eventLoopGroup()) {
-      assertThat(executor.submit(() -> {}).await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+      assertThat(executor.submit(() -> {}).await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .describedAs("event loop did not drain")
           .isTrue();
     }
@@ -386,8 +387,8 @@ class ExternalTcpIT {
     byte[] bytes = new byte[512];
     new Random(42).nextBytes(bytes);
     try (Socket socket = new Socket()) {
-      socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
-      socket.setSoTimeout((int) TIMEOUT.toMillis());
+      socket.connect(new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis());
+      socket.setSoTimeout((int) EVENT_TIMEOUT.toMillis());
       socket.getOutputStream().write(bytes);
       socket.getOutputStream().flush();
       try {
@@ -419,8 +420,8 @@ class ExternalTcpIT {
         },
         new SecureRandom());
     SSLSocket socket = (SSLSocket) context.getSocketFactory().createSocket();
-    socket.connect(new InetSocketAddress("127.0.0.1", port), (int) TIMEOUT.toMillis());
-    socket.setSoTimeout((int) TIMEOUT.toMillis());
+    socket.connect(new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis());
+    socket.setSoTimeout((int) EVENT_TIMEOUT.toMillis());
     return socket;
   }
 
