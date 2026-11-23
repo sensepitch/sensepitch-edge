@@ -171,9 +171,9 @@ delay.
   not. A timer that must not fire during a test is set to `TestingParameters.OUT_OF_REACH_MILLIS`,
   never a literal.
 - Until a class has the clock seam, its real time unit tests stay for coverage (see above) and
-  are listed under "Timing related tests" in `TODO.md`; do not add new ones. The fake clock is
-  `FakeTime`; `FakeLogServer` stands in for the log server of a request log sender. The
-  production seams take JDK or Netty types.
+  are listed under "Real time and races in the remaining tests" in `TODO.md`; do not add new
+  ones. The fake clock is `FakeTime`; `FakeLogServer` stands in for the log server of a request
+  log sender. The production seams take JDK or Netty types.
 - A transient state can be missed. `await` only monotonic conditions (`>=` on a counter) or a
   state the test freezes by holding the other side (worker, server, upstream on a latch or
   semaphore); assert while it is held, then release.
@@ -230,8 +230,8 @@ delay.
 - **Run `./mvnw spotless:apply` only on your changed files** after editing, or run it project-wide and then verify via `git diff` that no unrelated files were touched. If Spotless reformatted unrelated files, revert them with `git checkout -- <file>` before committing.
 - **Run tests before AND after** your changes to confirm you didn't break anything and code coverage is not worsened.
 - **Check `git diff` before committing** to review exactly what changed — reject any accidental reformatting of unrelated files.
-- **Keep docs and tasks current**: update the documentation the change affects and the status of
-  its `TODO.md` entry in the same change.
+- **Keep docs and tasks current**: update the documentation the change affects and its `TODO.md`
+  entry in the same change; finished work is removed from `TODO.md`, not marked done.
 
 ## Security & Configuration Tips
 - Test TLS keys/certs live under `src/test/resources/ssl/` and `src/test/resources/letsencrypt/`; do not reuse these in production.

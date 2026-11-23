@@ -1,149 +1,73 @@
 # TODO
 
-Open work, grouped by area. Moved here from the README roadmap and from the `TODO`/`FIXME`
-comments in the code; an entry from the code names the class and method it is about.
+Open work, grouped by area, one entry per piece of work; finished work is removed, git keeps its
+history. An entry from a `TODO`/`FIXME` comment names the class and method it is about.
 
 Current focus (2026-11-21): first fast tests without flakiness, then run the standalone edge on
 Kubernetes as the ingress of our own infrastructure, terminating TLS directly on the nodes,
 without a provider load balancer. Optional work outside this focus is parked in
-[NOT-YET.md](NOT-YET.md), among it the Gateway API controller; bugs and robustness issues stay
-here.
+[NOT-YET.md](NOT-YET.md), among it the Gateway API controller, the failover endpoints and disk
+spool of the request log, and slow calls and the failure threshold of the circuit breaker for
+upstreams. Bugs and robustness issues stay here.
 
-Ordered by priority: fast tests without flakiness first, then bugs, then Kubernetes, then the
-other areas. Priority suggestions: P1 = fast and reliable tests, bugs, and what the direct node
-ingress on Kubernetes needs; P2 = robustness; P3 = the rest. Notes below record decisions to
-make before implementation.
+Priorities: P1 = fast and reliable tests, bugs, and what the direct node ingress on Kubernetes
+needs; P2 = robustness; P3 = the rest. Notes record decisions to make before implementation.
 
 ## Fast tests without flakiness
 
 First, because every other task depends on it: a quick test loop and a failure that always
-means a defect speed up and secure all work below. Measurements and what was tried are in
-[doc/design/test-speed.md](doc/design/test-speed.md). The flaky tests found by the nightly hunt
-are listed under Bugs.
+means a defect speed up and secure all work below. Measurements, the fake clock library and what
+was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 
-- [ ] Timing related tests: fake clock and a scheduler the test moves forward, then back into
-  the test scope.
-  Today these tests wait on real timers and for completions on other threads,
-  which makes them slow, load sensitive, and forces `LogCapture.ofAllThreads()` with `@Isolated`.
-  - P1.
-  - Library (decided 2026-11-21): morimekta `net.morimekta.utils:testing` (test scope, see
-    `pom.xml`), `FakeClock` with `ImmediateScheduledExecutor`, which runs due tasks in the thread
-    that ticks. Not `FakeScheduledExecutor`: it runs tasks on real threads and needs a sleep after
-    the tick. The production seams take JDK or Netty types (`ScheduledExecutorService`, Netty
-    `Ticker`, monotonic in production), never the library's; in tests `FakeTime`, a `Ticker`
-    adapter over the `FakeClock`, drives the breaker and the scheduler from one time.
-    `CircuitBreaker` already takes a `Ticker` and `CircuitBreakerBDDTest` drives it with a mock. Why not
-    cache2k-testing: see [doc/design/test-speed.md](doc/design/test-speed.md#alternatives-considered).
-  - The load sensitive assertions are listed in the next entry; this is the general remedy.
-  - Seams needed in `HttpBatchSender` (under the 100% coverage rule), the first user: the timer,
-    now `CompletableFuture.delayedExecutor` in `scheduleFlush` and `scheduleProbe`; the clock, now
-    `System.nanoTime()` for the age of a batch; and the transport, now `httpClient.sendAsync` in
-    `post`, so a test completes a request itself with a status, a `Retry-After` or an
-    `IOException`. Production defaults stay as they are, no config change.
-  - Candidates: `ReloadableRequestLoggerTest` (3.3 s on 2026-11-16; since 2026-11-18 it sets 10
-    to 50 ms retry delays, real time still), `RequestLoggerFactoryTest`,
-    `AsyncRequestLogWriterTest`, `ConfigFileWatcherTest`, and the durations in `ProxyShutdownIT`.
-  - Done 2026-11-23: `OtlpLogDestinationTest` runs its sender scenarios (retry, give up, outage,
-    buffer limit, breaker, slow start window, flush) on `FakeTime` with a `FakeLogServer`,
-    in the test thread. It captures the log per thread and is no longer `@Isolated`; 1.3 s, was
-    3.6 s. The wire format (compression, headers, the exported record) stays against the real
-    log server, which `OtlpLogDestinationIT` also uses. Unit test coverage unchanged per class.
-  - Survey 2026-11-23, by readiness for `FakeTime`:
-    - Need a seam first: `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (they build
-      the destination via the public constructor), `AsyncRequestLogWriterTest` and
-      `ConfigFileWatcherTest` (no clock or scheduler seam; the watcher also waits on the file
-      system).
-    - Not worth it: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
-      `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
-  - The tests stay in the test scope meanwhile, see the coverage rule in `AGENTS.md`. Moving
-    `OtlpLogDestinationTest`'s 27 server tests to an `*IT` was tried 2026-11-14 and undone: it
-    saved about 4 s in `./mvnw test`, but the unit tests alone lost coverage, lines 95.1 % ->
-    94.5 %, branches 89.8 % -> 89.0 % (`HttpBatchSender` +20 lines and +11 branches missed,
-    `ThreadBatcher`, `OtlpBatchPayload`, `OtlpLogDestination`, `OtlpConfig`).
-  - On the fake clock a test needs no `@Isolated` any more. Keep a few real ones in addition, as
-    `*IT`: the wire format (headers, content type, gzip, body parsed by the OTLP classes), a
-    refused connection, and one multi threaded end to end run. They may only repeat what a unit
-    test covers.
-  - Write the converted tests as step chains (`*BDDTest`).
-  - Scenarios for the configurable retry delays (done 2026-11-23): the nominal delay stops at
-    `initialRetryDelayMillis × 2^20` below a larger `maxRetryDelayMillis` (see Limitations in
-    [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md)), pinned in
-    `BackoffTest.doublesAtMostTwentyTimes`. `OtlpOutageBDDTest` checks batches aging out while
-    the breaker is open, with the next probe delivering a fresh batch.
-- [ ] Load sensitive timing assertions in tests, against the rules for concurrent tests in
+- [ ] Real time and races in the remaining tests, against the rules for concurrent tests in
   `AGENTS.md`
-  - P1: each one can fail on a loaded machine although the code is right.
-  - Done 2026-11-23: `ReloadableRequestLoggerIT` checks that replacing or removing a destination
-    returns while the log server is holding an export.
-  - Done 2026-11-23: `ProxyShutdownIT` and `ShadedJarIT` check shutdown outcomes and diagnostics
-    in place of maximum elapsed times. The minimum elapsed checks for intentional waits stay.
-  - Done 2026-11-23, from the test audit:
-    - Hand-picked wait bounds replaced by `TIMEOUT`, `OUT_OF_REACH` or `PROCESS_START_TIMEOUT`
-      in `MainShutdownTest`, `HttpBatchSenderTest` (request timeout), `OtlpLogDestinationTest`
-      (`poll(2 s)` against a backoff or probe timeout now out of reach), `JvmMemoryMetricsIT`
-      (sleep loop now `await`), `ChallengeJavaScriptIT`, `OciImageIT`.
-    - `MainShutdownTest.concurrentCallerWaitsForLoggingShutdown` holds the first caller until the
-      second waits for the lock, and asserts the order instead of `isNotDone()`.
-    - `OtlpLogDestinationTest`: the partial batch flush tests run on `FakeTime` (a real 500 ms
-      flush raced the workers), `await` on counters uses `>=`, the maximum elapsed time of the
-      post duration histogram is no longer asserted.
-    - `ProxyShutdownIT.slowRequestIsAbortedAndStillLogged` drains for the full `EVENT_TIMEOUT`.
-  - Short configured timings that race the test's own steps:
-    - `ReloadableRequestLoggerIT.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
-      `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
-      inferred, not reproduced).
+  - P1: each one is slow or can fail on a loaded machine although the code is right.
+  - On simulated time (`FakeTime`, `FakeLogServer`) once the class has a clock seam:
+    `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (they build the destination via
+    the public constructor), `AsyncRequestLogWriterTest` and `ConfigFileWatcherTest` (no clock or
+    scheduler seam; the watcher also waits on the file system), `ProxyOptionsTest` (OTLP posting
+    with a 1 ms flush interval), and the durations in `ProxyShutdownIT`. The tests stay in the
+    test scope meanwhile, see the coverage rule in `AGENTS.md`.
+  - Races with the test's own steps, they need a hook or a held state:
     - `ProxyShutdownIT.requestInFlightCompletes`: the upstream answers after a fixed 300 ms; if
       the shutdown has not marked the connection for close by then, the response lacks
       `connection: close`. Needs a hook that tells when the drain of the connections started.
+    - `ReloadableRequestLoggerIT.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
+      `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
+      inferred, not reproduced).
   - Thread state waits that any park satisfies, a false pass rather than a flake:
     `ProxyAcceptGraceTest` (`WAITING`), `ProxyShutdownIT.shutdownWaitsForReload` (`BLOCKED`).
-  - Real timers in a unit test, not on `FakeTime` yet: `ProxyOptionsTest` (OTLP posting with a
-    1 ms flush interval).
-  - Done 2026-11-23: `OtlpOutageBDDTest` checks the OTLP expiry and retry scenarios on
-    simulated time. `OtlpLogDestinationIT` checks recovery over HTTP.
-  - Done 2026-11-23: `OtlpLogDestinationIT.concurrentRequestsUpToTheLimit` and
-    `OtlpSlowStartIT.slowStartAfterAnOutage` wait for the HTTP handlers to signal arrival.
   - Short absence checks: `poll(100 ms)` in `OtlpLogDestinationIT.retryAfterIsHonoured` and
     `ReloadableRequestLoggerTest.awaitReceived`; the latter is paid in full by every caller.
-  - Remedy for the timers, ages, backoff and the probe rate: the simulated clock, see "Timing
-    related tests" above. The `TimeBox` of cache2k pinpoint for maximum times is not needed any
-    more, maximum times are not asserted at all.
-- [ ] Event driven waits instead of polling
-  - P1, test speed and clarity: `LogCapture`/`LogSink` and `RequestLogCapture` cannot wait for
-    an entry, so `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`, `awaitHandshakeErrors`),
-    `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and gauge `await`s in
-    `ReloadableRequestLoggerTest` poll.
-  - Remedy: a blocking wait for an entry on the captures, see "Instance scoped diagnostic
-    logging" below; test log servers that signal each post with a `Semaphore` or queue (several
-    have a `received` queue already), a latch in the reload callback. `TestingParameters.await`
-    stays where no hook exists.
-  - Done 2026-11-23: `ConfigFileWatcherTest` waits for watcher checks using a semaphore in its
-    fixture.
-  - Done 2026-11-23: `AsyncRequestLogWriterTest` waits for a flush signal and checks that the
-    caller finishes while the output stays blocked on a latch.
-- [ ] Instance scoped diagnostic logging, plan in
+  - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
+    `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
+- [ ] Instance scoped diagnostic logging and event driven waits, plan in
   [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
   - P1, test speed and clarity, no operator visible change: non-trace loggers become instance
     fields owned by a `LogScope` (proxy instance and component), trace stays on a `static final`
     `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
     and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
     polling.
+  - Polling to replace: `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`,
+    `awaitHandshakeErrors`), `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and
+    gauge `await`s in `ReloadableRequestLoggerTest`. Where no log is involved: a test log server
+    that signals each post with a `Semaphore` or queue, a latch in the reload callback.
+    `TestingParameters.await` stays where no hook exists.
 
 ## Bugs
 
-- [ ] Check the nightly flaky test hunt, the workflow "Flaky tests":
-  https://github.com/sensepitch/sensepitch-edge/actions/workflows/flaky-tests.yml
-  - P1: a test that failed in any of its runs is a flaky test, and fixing it has priority over
-    all other work here. Its run summary lists each failed test with the number of runs it failed
-    in; add an entry below per flaky test until it is fixed. The general remedies are in
-    "Fast tests without flakiness" above. Act only on flaky tests the workflow reported in its
-    recent runs; a failure seen once in a local or agent build is not added here.
-- [ ] Check the nightly build, the workflow "Nightly" (full gate plus the `@Tag("excessive")`
-  tests, 21:47 Singapore time):
+- [ ] Check the nightly workflows, "Flaky tests" (`./mvnw clean verify` ten times in a row) and
+  "Nightly" (full gate plus the `@Tag("excessive")` tests, 21:47 Singapore time):
+  https://github.com/sensepitch/sensepitch-edge/actions/workflows/flaky-tests.yml and
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/nightly.yml
-  - P1: a failed run is a bug, fix it before other work. An excessive test that fails is load
-    sensitive or a real regression of allocation or timing; add an entry below per problem until
-    it is fixed. The failed run uploads `nightly-test-reports` (kept 7 days).
+  - P1: a test that failed in any run of the flaky test hunt, or a failed nightly run, is a bug
+    and has priority over all other work here; add an entry below per problem until it is fixed.
+    The flaky test summary lists each failed test with the number of runs it failed in; a failed
+    nightly run uploads `nightly-test-reports` (kept 7 days). An excessive test that fails is load
+    sensitive or a real regression of allocation or timing.
+  - Act only on what the workflows reported in their recent runs; a failure seen once in a local
+    or agent build is not added here. The general remedies are in "Fast tests without
+    flakiness" above.
 
 ## Kubernetes, direct node ingress
 
@@ -157,8 +81,8 @@ so `bypass.remotes` and the IP traits keep working without PROXY protocol. The e
 `config.yml` from the [standalone chart](charts/sensepitch-edge/README.md); the Gateway API
 controller (Kubernetes items 6 to 8, milestones M1 to M3) is in [NOT-YET.md](NOT-YET.md).
 
-The numbers are kept from the earlier plan, other documents refer to them. Items after item 3
-build on its kind deployment check in CI.
+The numbers are kept from the earlier plan, other documents refer to them; missing numbers are
+done or merged. Items after item 3 build on its kind deployment check in CI.
 
 - [ ] 2. OCI image: Dockerfile with a Java 25 runtime, non-root, `java` as PID 1 so `SIGTERM`
   arrives (exec form); CI builds and pushes it
@@ -181,42 +105,29 @@ build on its kind deployment check in CI.
   - Verify pod readiness and HTTPS through the Service. Rotate a mounted Secret and verify the
     running edge uses the new value. Terminate a pod and verify graceful shutdown within
     `terminationGracePeriodSeconds`. Reuse the same setup and smoke check locally.
-- [x] 4. secrets out of the config file: `SecretConfig` (`value` or `file`) for `tokenGenerators`
-  and the OTLP `secretHeaders`; the TLS keys and the IP databases are files already. The files a
-  configuration read are recorded by `ConfigFiles` and watched by `ConfigFileWatcher`, so a
-  renewed certificate Secret (cert-manager) reloads; the ConfigMap symlink swap is tested.
-  See [doc/design/config-files.md](doc/design/config-files.md).
-- [x] 5. plain HTTP listener: `listen.httpPort` (default `0` = disabled, backward compatible)
-  binds a second listener on `listen.address` and answers every request with a `308 Permanent
-  Redirect` to `https://<host>[:<httpsPort>]<path[?query]>`; the port is omitted at `443`, the
-  `Host` header is normalized (port and trailing dot removed), a missing or unusable host is
-  `400`. Covered by `HttpToHttpsRedirectHandlerBDDTest` and `PlainHttpListenerIT`.
-  - P1: with direct node ingress the edge owns port 80 on the node, no other server answers it.
-    Also needed for an HTTP-01 challenge (item 12). The listener model stays compatible with the
-    Gateway API listeners (NOT-YET.md), without waiting for them. Several listeners remain open.
-- [ ] 9. node ingress mode in the chart: DaemonSet on labelled ingress nodes, ports 80 and 443 on
-  the node addresses. Decide how the ports are bound:
+- [ ] 9. node ingress mode in the chart, and a restart without refused connections: DaemonSet on
+  labelled ingress nodes, ports 80 and 443 on the node addresses. How the ports are bound decides
+  whether a restart can overlap the old and the new pod.
   - P1.
-  - [ ] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
-    non-root need a capability; `capabilities.add: [NET_BIND_SERVICE]` is not effective for a
-    non-root process without file capabilities on `java`, and the
-    `net.ipv4.ip_unprivileged_port_start` sysctl is the node's in the host network namespace
-    (inferred from the Kubernetes and Linux capability rules, verify on the cluster).
-    `1-architecture.md` assumes the capability is enough.
-  - [ ] `hostPort` 80/443 to container ports 17080/17443: the pod stays non-root in its own
-    network namespace; the CNI `portmap` plugin forwards with DNAT, which keeps the client
-    address (verify with the chosen CNI). The scheduler allows one pod per host port and node,
-    which rules out the overlap of item 10.
+  - Port binding, tick one:
+    - [ ] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
+      non-root need a capability; `capabilities.add: [NET_BIND_SERVICE]` is not effective for a
+      non-root process without file capabilities on `java`, and the
+      `net.ipv4.ip_unprivileged_port_start` sysctl is the node's in the host network namespace
+      (inferred from the Kubernetes and Linux capability rules, verify on the cluster).
+      `1-architecture.md` assumes the capability is enough.
+    - [ ] `hostPort` 80/443 to container ports 17080/17443: the pod stays non-root in its own
+      network namespace; the CNI `portmap` plugin forwards with DNAT, which keeps the client
+      address (verify with the chosen CNI). The scheduler allows one pod per host port and node,
+      so a restart cannot overlap.
+  - Restart: with host ports a DaemonSet update stops the old pod before the new one binds
+    (`maxSurge: 0`), and the node refuses connections in between. Tick one:
+    - [ ] accept it: browsers try the next address of the name; check the clients that matter,
+      e.g. payment provider webhooks, which may not retry
+    - [ ] `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one,
+      which stops accepting once the new one is ready (`shutdownAcceptGraceMillis`). Needs
+      `hostNetwork` and the Netty epoll or io_uring transport (today NIO, `Proxy`).
   - The node firewall must let 80 and 443 through to the chosen path.
-- [ ] 10. restart on a node without refused connections: with host ports a DaemonSet update
-  stops the old pod before the new one binds (`maxSurge: 0`), and the node refuses connections
-  in between. Tick one:
-  - P1, decide together with item 9.
-  - [ ] accept it: browsers try the next address of the name; check the clients that matter,
-    e.g. payment provider webhooks, which may not retry
-  - [ ] `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one, which
-    stops accepting once the new one is ready (`shutdownAcceptGraceMillis`). Needs
-    `hostNetwork` and the Netty epoll or io_uring transport (today NIO, `Proxy`).
 - [ ] 11. dual stack: the default `listen.address` `0.0.0.0` accepts IPv4 only, the nodes have
   IPv6 as well. Verify that `address: "::"` accepts both on one socket, and that an IPv4 client
   then appears as IPv4, not `::ffff:` mapped, in `bypass.remotes`, the IP traits, the request log
@@ -225,11 +136,13 @@ build on its kind deployment check in CI.
 - [ ] 12. certificates on Kubernetes: an ACME client on the host writes the Let's Encrypt directory
   `listen.letsEncrypt` reads today. Tick one:
   - P1.
-  - [ ] cert-manager with DNS-01, one Secret per host or wildcard, mounted through `snis`;
-    renewal reloads (item 4). Needs a DNS provider with an API cert-manager supports
+  - [ ] cert-manager with DNS-01, one Secret per host or wildcard, mounted through `snis`; a
+    renewed Secret reloads, see [doc/design/config-files.md](doc/design/config-files.md). Needs a
+    DNS provider with an API cert-manager supports
   - [ ] cert-manager with HTTP-01: its solver publishes the challenge through Ingress or
     HTTPRoute objects, which only a controller serves; the standalone edge would need a fixed
-    route for `/.well-known/acme-challenge/` to the solver (item 5)
+    route for `/.well-known/acme-challenge/` to the solver, on the plain HTTP listener
+    (`listen.httpPort`)
   - [ ] an ACME client in the edge, with the account and keys shared by all nodes
   - Also: the chart mounts one TLS Secret (`tls.existingSecret`); many hosts need a list of
     Secrets or the `letsEncrypt` directory layout from one volume.
@@ -254,12 +167,6 @@ build on its kind deployment check in CI.
   upstreams become Service names, the upstream still served by old infrastructure
   (`127.0.0.1:3080`) a host address on the private network; list what does not fit.
   - P1: shows early what the chart or the edge lacks.
-- [x] `/readyz` answers `200` only after the upstreams were probed and at least one configured
-  upstream is available
-  - P3: probed with a short-timeout plain TCP connect, short-circuiting on the first success; a
-    configuration with only static-response sites is ready immediately. Reusing an upstream
-    circuit breaker is N/A: upstreams are plain HTTP with one connect per request and no pool or
-    breaker exists today.
 
 ## Protection, admission
 
@@ -280,32 +187,6 @@ build on its kind deployment check in CI.
     - [ ] migration policy for the current unsigned challenge and token format
   - Stays here as a security issue. With several nodes a node-local set lets a replay succeed
     once per node.
-- [x] expire granted admissions and preserve the original token across revisits
-  - The default maximum age is five days with five seconds of future clock skew. On expiry,
-    the challenge records the original token and revisit count in a signed `admission0` cookie.
-    Fresh admissions preserve the history. See [PoW admission design](doc/design/pow-admission.md).
-
-## Request log
-
-Decisions, alternatives and limitations are in
-[doc/design/request-log.md](doc/design/request-log.md); retry backoff is described in
-[doc/design/circuit-breaker.md](doc/design/circuit-breaker.md). Failover endpoints and the disk
-spool are in [NOT-YET.md](NOT-YET.md).
-
-- [x] compression budget: gzip runs on the common pool at a fixed level (`BEST_SPEED`)
-  - Done: one bounded compression thread per OTLP destination, `otlp.compressionLevel` from 1 (the
-    former `BEST_SPEED`, default) to 9. CPU and size measurements are in
-    [the request log design](doc/design/request-log.md#gzip-on-one-dedicated-compression-thread).
-    zstd remains contingent on the target log servers accepting it.
-
-## Circuit breaker
-
-Limitations and the reasoning are in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
-Slow calls and the failure threshold for upstreams are in [NOT-YET.md](NOT-YET.md).
-
-- [x] manual control: force a breaker open, e.g. for maintenance of a log server or upstream
-  - P3: through the admin server, `POST /circuit-breakers/<component>/<name>/open` and `/close`
-    (2026-11-20), see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
 
 ## Ingress, HTTP
 
@@ -344,387 +225,18 @@ Slow calls and the failure threshold for upstreams are in [NOT-YET.md](NOT-YET.m
     - [ ] total request receive timeout in `listen.connection`, answered with 408
     - [ ] minimum upload rate
     - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
-- [x] `SiteSelector`: support single-label wildcard hosts
-  - Exact hosts win before URI selection. See [routing and certificates](README.md#several-sites-for-one-host).
-
-## Build, tests
-
-The test speed and flakiness work is the first section, "Fast tests without flakiness". The
-optional test work (cache2k pinpoint, component level config tests, unified request level
-logging) is in [NOT-YET.md](NOT-YET.md).
 
 ## Evergreen / Cleanups
 
-- [ ] Scrutinise the todos listed here and suggest removals or lower prio for things that have no
-  visible effect to the operator; move optional work to [NOT-YET.md](NOT-YET.md)
-- [ ] Check on GitHub CI actions and add a TODO or fix right away if something is broken
+- [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without
+  a visible effect for the operator, move optional work to [NOT-YET.md](NOT-YET.md), and check the
+  GitHub CI actions; add an entry or fix right away if something is broken
 - [ ] Improve code according to styling rules
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
-  - `IngressTimeoutHandler.TimeoutTask` (2026-11-21, done 2026-11-22): removed the
-    always-true `assert future == null` in `schedule`. Close before the timeout is covered by
-    `TimeoutsTest.closeIdleConnectionBeforeReadTimeout`.
-    - Fixed 2026-11-23: the `!ctx.channel().isOpen()` early return in `run` is reachable and
-      is restored. Netty fires `channelInactive` in a later event-loop task than the close, so
-      a due timer can run in between; without the return it counted a `first_request` receive
-      timeout and wrote a 408 to the closed channel. Covered by
-      `TimeoutsTest.readTimeoutDueBetweenCloseAndInactiveIsIgnored`.
 
 ## Governance
 
 - [ ] add LICENSE
   - P2 before an image is published (Kubernetes item 2): a public image needs a license.
-
-## Done
-
-- [x] `ShadedJarIT` no longer waits the full stop grace of its test servers (2026-11-22). The
-  collector closed the exchange without an answer, so the JDK server never counted it as ended
-  and `stop` waited the whole grace; it now answers, the class went from 30.0 s to 9.9 s. The
-  child JVM start has its own bound, `TestingParameters.PROCESS_START_TIMEOUT` (3 × `TIMEOUT`).
-  (`ShadedJarIT.sigtermKeepsFinalShutdownDiagnostic`)
-- [x] Release the request-log sender before completing `stopped` (2026-11-21). The sender shuts down
-  its HTTP client and compression executor and removes its metrics registrations before notifying
-  waiters. Covered by `HttpBatchSenderTest.stoppedCompletesAfterTheSenderIsReleased`.
-
-- [x] Show the requested host on the challenge page (2026-11-21). `Deflector` HTML-escapes the
-  sanitized host and omits the line when there is no usable host. Covered by
-  `ChallengePageHostBDDTest`.
-
-- [x] Complete config records, plan in
-  [plans/complete-config-records.md](plans/complete-config-records.md) (2026-11-20). Builders
-  materialize constant and derived defaults, and the YAML dump loads again as an equal record
-  with secrets restored. `OtlpConfig` and `ProxyConfig` use plain accessors for resolved values.
-  See the plan for settings that now reject an explicit zero.
-
-- [x] Add the historic admission token to the log (2026-11-20). JSON and OTLP logs include the
-  original token and revisit count from verified `admission0` history. See
-  [PoW admission design](doc/design/pow-admission.md).
-
-- [x] Upstream informational responses (1xx, e.g. `100 Continue`) (2026-11-20). `ForwardHandler`
-  keeps the upstream attached to the downstream and `DownstreamHandler` keeps the exchange active
-  through a 1xx and its `LastHttpContent`; the final response then ends it as before. Both still
-  sanitize hop-by-hop response headers. Covered end to end by `InformationalResponseBDDTest` with
-  a `100 Continue` during an upload, the final response after the body, and a normal single
-  response.
-
-- [x] Unify timeout and keep-alive handling (2026-11-20). `IngressTimeoutHandler` decides
-  keep-alive itself, `HttpServerKeepAliveHandler` left the pipeline. A response that starts while
-  the client still sends the request body gets `Connection: close`; the connection is closed after
-  the rest of the body was read, or after the read timeout (phase `after_response` of
-  `sensepitch_ingress_receive_timeout`), instead of waiting for another request.
-
-- [x] Resume client reads paused by upstream backpressure when the response finishes before
-  the upstream becomes writable again (2026-11-20).
-
-- [x] Ignore upstream writability changes after the final response content has been forwarded
-  (2026-11-20). A late notification no longer closes the upstream or reports an upstream error.
-
-- [x] Cleanup: first occurrence logging per metric series, counted by the logger (2026-11-20).
-  `LOG.incrementAndWarnOnce(counter, labelValues, channel, message, cause)` replaces
-  `requestProblem` and its `RequestProblem` record: it counts the event and logs it in one call.
-  `LOG.warnOnce(...)` logs an event that is counted elsewhere (request outcome, aborted). The first
-  occurrence is per series (data point, e.g. per ingress), and the `WARNING` names the series, e.g.
-  `sensepitch_ingress_request_errors_total{ingress="a",phase="waiting",type="timeout"}`, instead
-  of a `<Class>.<problem>` key. Label values come from the enums `IngressErrorType`,
-  `UpstreamErrorType`, `RequestOutcome`. A second request during an exchange is now counted in
-  `sensepitch_ingress_request_errors_total{type="another_request"}`. Upstream connect and write
-  failures warn separately, by their `outcome`. An upstream exception during an exchange is logged
-  by `ForwardHandler` at `DEBUG` only, since `ExceptionHandler` counts it and warns. It is no longer
-  counted a second time as upstream `closed_in_flight` when the upstream is closed afterwards.
-
-- [x] Log each request level problem once at warning level (2026-11-19). The first occurrence in
-  the JVM is logged at `WARNING` and names the metric that counts it. Subsequent occurrences
-  are logged at `DEBUG`. Uses include downstream, upstream and exception handling, JA4, IP
-  traits lookup, and request-log writer failures. Follow-up in Build, tests.
-
-- [x] `sensepitch_edge_server_live` per ingress (2026-11-19): one series with the value 1 and the
-  label `ingress` per known host, the hosts `SanitizeHostHandler` accepts (sites and
-  `listen.hosts`, without the special hosts), sorted. Ingress identity is the sanitized host, as on
-  every ingress metric; summed by `ingress` over all instances it gives the number of servers of an
-  ingress. Read from the current `EdgeState` at every scrape, so a reload adds and removes series
-  without a restart. No series without known hosts. Incompatible for queries that match the
-  former series without labels exactly; aggregate first, e.g. `max without (ingress)`. Covered by
-  `MetricsExportTest.serverLivePerIngress`/`serverLiveFollowsReload` and the exposition golden
-  files.
-
-- [x] Failed response writes are logged as aborted deliveries (2026-11-18):
-  `RequestLoggingHandler` reports 499 and `CLIENT_ABORTED` when the final write fails, counts the
-  request as aborted instead of completed, and logs only content written before the failed write.
-  The upstream response status, or the upstream status replaced by a fallback page, remains in
-  `sensepitch.upstream.status`. Covered by `RequestLoggingHandlerTest` for a full response, a
-  streamed body, a fallback and a completed write.
-
-- [x] `Retry-After` as an HTTP date (2026-11-17): `Backoff` converts dates against the current
-  wall clock, with an explicit time input for tests. Seconds, the 300 s cap and the minimum
-  exponential backoff are preserved; invalid, past and current dates add no delay. See
-  [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
-
-- [x] Move redundant real server tests to `*IT` (2026-11-17): five OTLP scenarios now run in
-  `OtlpLogDestinationIT`, four reload scenarios in `ReloadableRequestLoggerIT`, with the unit
-  classes as fixtures. Thirteen individual exclusions and cumulative comparisons retained both
-  packing tests, aged-batch expiry and draining-destination finish in the unit suite. Unit line
-  and branch coverage is unchanged; the fake clock remains separate work. Measurements and the
-  retained cases are in [test speed design](doc/design/test-speed.md#move-only-redundant-server-scenarios).
-
-- [x] Request level events are logged at debug and counted (2026-11-17): every failure that can
-  happen per request or connection, an unexpected exception included, is `DEBUG` with channel,
-  phase and stack trace, and counted (`sensepitch_ingress_request_errors` with type `ja4`, new
-  `sensepitch_upstream_errors`, `sensepitch_request_log_errors`, `sensepitch_ip_lookup_errors`).
-  The rule is in the `ProxyLogger` doc and `AGENTS.md`, the reason in
-  [diagnostic logging](doc/design/diagnostic-logging.md).
-
-- [x] Error log flood while an upstream is down (2026-11-17):
-  `DownstreamHandler.failExchange` logs upstream connect and write failures at debug with the
-  outcome, exception type and message. Request-log exceptions, outcomes, metrics and response
-  behavior are preserved. `UpstreamFailureBDDTest` checks these reports and ignored late failures.
-
-- [x] Accept grace at shutdown (2026-11-17): `shutdownAcceptGraceMillis` (default 0) keeps
-  accepting and serving after readiness turned `503`, within the shutdown deadline and without
-  taking the request log's reservation; no `preStop` `sleep` needed. Tested on a fake clock
-  (`ProxyAcceptGraceTest`) and with real connections (`ProxyShutdownIT`). Renamed and moved from
-  `admin.drainDelayMillis` before release. See [README](README.md#shutdown) and
-  [shutdown design](doc/design/request-log.md#graceful-shutdown-drains-the-request-log-last).
-
-- [x] Lock on a private lock object (2026-11-17): `HttpBatchSender`, `ThreadBatcher`,
-  `CircuitBreakerMetrics`, `Proxy` and `ConfigFileWatcher` now encapsulate synchronization.
-  Preserved critical sections, lock ordering and callbacks outside locks; retained volatile
-  visibility for reads outside locks. The shutdown/reload integration test coordinates an actual
-  reload without holding the proxy monitor. See
-  [doc/design/request-log.md](doc/design/request-log.md#private-locks-preserve-ownership-and-lock-ordering).
-
-- [x] Configurable OTLP retry backoff (2026-11-17): per-destination
-  `initialRetryDelayMillis` and `maxRetryDelayMillis`, defaulting to 1000 ms and 30000 ms.
-  Reject negative or reversed effective bounds; reload replaces the destination while its old
-  backlog drains with the old settings. See [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
-
-- [x] One central test timeout instead of literal waits (2026-11-17): `TestingParameters`
-  supplies the 10-second completion bound, descriptive `await` and graceful HTTP server stop.
-  Replaced the listed completion waits, deadline loops and unbounded queue reads; intentional
-  outages, negative waits, deliberate pauses and outer test guards remain explicit. See
-  [test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound).
-
-- [x] Log4j2 shutdown hook ran concurrently with ours and dropped the shutdown reports on
-  `SIGTERM` (2026-11-17), see [doc/design/diagnostic-logging.md](doc/design/diagnostic-logging.md).
-  Found on the way: `long` config values (`shutdownTimeoutMillis`,
-  `requestLog.drainTimeoutMillis`) could not be set via YAML or environment.
-- [x] Rename the `ProxyLogger` constant `DEBUG` to `LOG` in `DownstreamHandler`,
-  `RequestLoggingHandler`, and `JsonRequestLogger` for consistent naming; no behavior change.
-
-- [x] Flaky test: `OtlpLogDestinationTest.badRequestGivesUpTheBatch` expected one log line and got
-  two in CI run 43810408003 (2026-11-16). The extra line, "Request log export to ... failed:
-  java.io.IOException: HTTP/1.1 header parser received no bytes. Buffering records and retrying",
-  came from the sender of an earlier test, not from this one: the log assertion is the last of the
-  test, so its `export_retries` was zero, its own sender never retried. Root cause in the test
-  server: it put a post into `received` before writing the answer, a test could end right after
-  taking its last post, and `server.stop(0)` closes open connections at once (JDK 25
-  `sun.net.httpserver.ServerImpl.stop`). The cut post failed, and the sender of the ended test,
-  which does not wait in `@AfterEach`, logged the warning on its own thread into the all threads log
-  capture of the next test. The sender is not at fault: each `HttpBatchSender` has its own
-  `HttpClient`, so the first post of a test cannot reuse a pooled connection, and a connection
-  closed by the server is a retryable failure as the OTLP specification asks. Shown with a throwaway
-  test that delays the answer by 300 ms after publishing (2026-11-16, not committed): with `stop(0)`
-  exactly this warning is logged, with `stop(1)` nothing. The CI flake itself was not reproduced,
-  and the port of the extra line is not in the TODO, so which earlier test cut its post is inferred.
-  Fix: `@AfterEach` of `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest` stops the server
-  with `stop(1)`, which lets a running exchange write its answer and returns at once when none runs.
-  Publishing only after answering was tried and dropped: tests that wait for the sender and then
-  read `received` without blocking, e.g. `closeSendsPendingRecords`, failed 1 of 5 runs.
-  `ProxyOptionsTest` is unaffected, `Proxy.shutdown()` drains the request log before its collector
-  stops.
-- [x] CI did not run (2026-11-16): every run since at least 2026-11-15 23:03 UTC stayed `queued`
-  on the `self-hosted` runner, probably offline (not verified). Both workflows run on
-  `ubuntu-latest` now, free for a public repository; a new push cancels the run of the previous
-  one (`concurrency` in `ci.yml`), setup-java caches the Maven dependencies. First hosted run
-  green in about 1.5 min. The runs queued for the self-hosted runner are left over.
-- [x] Flaky test: `ReloadableRequestLoggerTest.noRecordIsLostWhileReloading` dropped 4-5 records
-  (2026-11-16, failed 7 of 8 runs alone). Root cause in the test: it logged from plain threads
-  into a logger built for one thread, so a worker could log into a replaced destination for the
-  first time after it finished, which refuses the record. Fix: the workers are executors passed
-  to the logger as logging threads, as the event loops are. Now in `ReloadableRequestLoggerIT`.
-- [x] Flaky test: `OtlpAllocationTest.loggingDoesNotAllocate(false)` measured 357 bytes per
-  record against the bound of 256 in one parallel `./mvnw verify` (2026-11-16), it passed alone
-  and in the next run. Inferred, not verified: under the parallel load the warm-up was not
-  enough for the C2 compilation. Moved to `OtlpAllocationIT`, it measures the JIT more than our
-  code. Its only unit coverage, the ranged `OtlpRequestLogSink.string` for a URI with a query,
-  was ported to `OtlpLogDestinationTest.recordIsExportedWithResourceScopeAndAttributes`; unit
-  line coverage is the same before and after (5017 lines), one branch of
-  `AsyncRequestLogWriter.reportError` varies with timing between runs. Tagged `excessive`: it
-  runs nightly and with `-Dexcessive`, not in `./mvnw verify`, see
-  [doc/design/test-speed.md](doc/design/test-speed.md).
-- [x] Flaky build: `OtlpLogDestinationTest.outageLosesNothing` timed out on machines with 2 CPUs
-  (2026-11-15). Root cause: `maxBufferedBytes` default (2×event_loops×batchBytes) was 512 KiB on
-  2 CPUs, smaller than the 1000-record backlog the test builds; records were dropped and the count
-  was never reached. The 30-second timeout was reproduced on baseline `e22c564` with
-  `./mvnw clean test -Dtest='OtlpLogDestinationTest#outageLosesNothing'`; it does not establish
-  the cause of the earlier unrecorded failure. Fix: set `maxBufferedBytes(64 MiB)` explicitly in
-  that test. 3 of 3 runs pass
-  in 0.9 s. `ProxyShutdownIT`, `ShadedJarIT.sigtermSendsTheRequestLogAndExits` are under Bugs.
-  - CI preserves both unit and integration test report directories for investigation.
-- [x] explain PoW admission: [doc/design/pow-admission.md](doc/design/pow-admission.md), overview
-  and current limitations (2026-11-16).
-- [x] shutdown report: print elapsed phase times and report a still-running event loop group
-  (`Proxy.shutdownOnce`). Naming the stuck loops was dropped, see
-  [doc/design/request-log.md](doc/design/request-log.md).
-- [x] Removed the unused WebCrypto-only `src/main/resources/challenge.html`.
-  - The current challenge JavaScript PoW suite already tests WebCrypto and the JS fallback during
-    `./mvnw verify`.
-- [x] `DownstreamHandler.isSharable`: removed the redundant override; the handler remains unshared.
-
-- [x] Kubernetes 1. `/healthz` and `/readyz` on the admin port (2026-11-16). `/healthz` answers
-  `200` while the admin server runs; `/readyz` answers `503` from the start of the shutdown
-  (`Proxy.isShuttingDown`), before the listener closes, `200` before. Readiness does not wait for
-  the listener to start; the configuration is loaded before the admin server starts, so it needs
-  no extra wait for the first load. Tests: `AdminServerTest`.
-
-- [x] request log post latency: a histogram of the OTLP post duration per destination; today a slow log server
-  shows only once requests time out and the breaker opens (2026-11-15).
-  `sensepitch_request_log_post_duration_seconds{destination}`, buckets 30 ms–5 s;
-  recorded in `HttpBatchSender.complete`. See branch
-  `hermes/otlp-post-latency-histogram`.
-
-- [x] `DownstreamHandler.completeWithError`: the response may have been sent already; drop the
-  upstream connection (2026-11-15). `completeWithError` now always closes the upstream of the
-  exchange (also one still connecting) and ends the exchange. Before the response has started it
-  answers with the error status as before; once `DownstreamHandler.write` has passed the response
-  headers it closes the client connection without a second response, so the client sees a
-  truncated response (short content length or missing last chunk), and the request log records
-  the reported outcome (e.g. `UPSTREAM_WRITE_FAILED`). Callers: a failed request write upstream,
-  a failed connect, and a second request before the response is complete. The upstream reports
-  the failed write asynchronously, possibly after the response was complete; `failExchange`
-  ignores a failure whose exchange is over (the upstream future is no longer the active one), so
-  it neither sends a second response nor changes the log of the next keep-alive request. Tests:
-  `UpstreamFailureBDDTest` (before the response, after the headers, after a partial body, after
-  the complete response, pipelined request). `ExceptionHandler` already checks
-  `RequestLoggingHandler.isResponseStarted` and was not changed.
-
-- [x] `CircuitBreaker.onIgnored` closes an open or half open breaker (2026-11-15). Before, an
-  ignored result of the probe, e.g. a status 400, left the breaker `HALF_OPEN` and the next probe
-  waited for the probe timeout (11 s with the default request timeout). Decided to close rather
-  than only release the probe: the server answered, so it is up, and a released probe would most
-  likely succeed one round trip later anyway. `HttpBatchSender` logs the recovery for a batch
-  given up as for one sent. Covered by `CircuitBreakerBDDTest.ignoredProbe_closes` and
-  `OtlpLogDestinationTest.badRequestOfTheProbeEndsTheOutage`.
-
-- [x] Failure counters (2026-11-16): `sensepitch_ingress_request_outcomes_total{ingress,outcome}`
-  counts every logged request by its `RequestOutcome`. Counted once in `RequestLoggingHandler`
-  when the request is logged, not where an outcome is reported: the first report wins, so
-  counting at the report sites (`IngressTimeoutHandler`, `DownstreamHandler`) would double count,
-  and the sum would no longer match the request log. The `ingress` label is the sanitized host,
-  like on every ingress metric. No zero series for outcomes that did not happen, like the other
-  labelled counters; a per ingress cache to create them was dropped, the Prometheus `Counter`
-  already caches its data points.
-
-- [x] `ingress` label on `sensepitch_ingress_request_errors`, `sensepitch_ingress_receive_timeout`
-  and `sensepitch_ingress_requests_{started,completed,aborted,in_flight}` (2026-11-16). The
-  ingress is the host of the request in progress. Without one (a handshake error, or a timeout
-  or error before the first request or between keep-alive requests) it is the TLS server name
-  (SNI), sanitized like the host header: `SanitizeHostHandler` stores the `SniCompletionEvent`
-  and sanitizes it only when an error or timeout is counted
-  (`ProxyMetrics.ingress(ChannelHandlerContext)`); `missing_host` without a name, also for bytes
-  that are no TLS (netty fires the event with no name, seen in `ExternalTcpIT`), `nil_host`
-  before the client sent anything. The requests counters are Prometheus metrics
-  now instead of `LongAdder`s with a custom collector; `in_flight` is a gauge incremented and
-  decremented with them, the shutdown report sums it over the ingresses. Incompatible for
-  queries that match the series exactly, sums are unchanged. The fixed data point fields
-  `ingressReceiveTimeoutFirstRequest`/`KeepAlive` are gone, the label values are dynamic now.
-  `request_errors` counts the upstream response and the response write timeout as
-  `type="timeout"`, before `other`: they are no unexpected errors, and are also in
-  `request_outcomes`; each metric counts a timeout once.
-  `sensepitch_ingress_connections_{opened,closed,active}` stay without label, the documented
-  exception in the `ProxyMetrics` class doc: labelling them by SNI was tried and dropped, it
-  sanitizes the name and looks up labelled data points on every connection for a breakdown that
-  is rarely needed.
-
-- [x] `DownstreamHandler.channelInactive` logs an unexpected close (2026-11-15). Expected is a
-  close without an exchange in progress (idle keep-alive, after the response, shutdown drain) or
-  one the proxy requested: every close of ours passes `DownstreamHandler.close` (error responses,
-  timeouts, `ExceptionHandler` incl. connection resets, which it already counts). Unexpected is
-  any other close during an exchange, i.e. the client closing it, or the event loops ending after
-  the drain timed out. It is no fault of ours, so it is logged once per channel at debug, with the
-  phase (`upload`, `waiting`, `responding`, named like the `ExceptionHandler` phases) and the
-  upstream state (`connecting`, `connected`, `connect failed`). The request log already has the
-  request as `CLIENT_ABORTED`, so the debug line carries only what it lacks. No metric: `ingressRequestsAborted` counts these.
-  `channelInactive`, `channelWritabilityChanged` and `exceptionCaught` no longer call `resultNow()`
-  on a failed connect (it threw). `ProxyLogger` got a debug level, the levels are in `AGENTS.md`.
-- [x] Serenity: reporting off by default, `-Dserenity.reports` switches it on (2026-11-14).
-  Serenity stays for the BDD step chains. The `pom.xml` deactivates
-  `SerenityTestExecutionListener`, so no test is recorded and nothing is written to
-  `target/serenity-reports` (1163 files otherwise). Measured in one session, parallel unit tests
-  with JaCoCo: test phase 13.3 s and 14.6 s with reports, 9.6 s and 9.5 s without; full
-  `./mvnw clean verify` about 33 s. Not solved by a Serenity setting, there is none: an empty
-  `output.formats` is rejected, and running the Serenity classes last saved under a second.
-- [x] Failing `@Step` passed silently (2026-11-14). Cause: a step object injected with `@Steps`
-  is a Serenity proxy that records a failure and returns normally;
-  `SerenityJUnit5Extension.afterEach` rethrows it only if the listener started a test outcome
-  whose name matches the method, which is never the case for a `@ParameterizedTest`, and not at
-  all without the listener. Affected were the three classes using `@Steps`
-  (`AdmissionChecksumBDDTest`, `CircuitBreakerBDDTest`, `UnservicedHostHandlerBDDTest`), in
-  practice the 2 parameterized tests of `AdmissionChecksumBDDTest`; the other parameterized BDD
-  tests created their step objects with `new` and were never affected (an earlier version of
-  this entry listed 6 classes, which was wrong). Fix: step objects are created with `new`
-  everywhere, `SerenityUsageTest` fails on an injected one. Checked by breaking steps in plain
-  and parameterized tests, with reports off and on.
-
-
-- [x] refuse methods other than GET without admission or bypass with an empty 403;
-  count and log the deflector outcome as `method_rejected`. Challenge telemetry uses GET
-  (XHR with an image fallback) instead of `sendBeacon`, which always sends POST
-
-- [x] Admission performance: decode the received checksum and compare hash bytes instead of
-  Base62-encoding the computed checksum in `DefaultAdmissionTokenGenerator.checkAdmission`
-
-- [x] `IngressTimeoutHandler` response timeout: fire `UpstreamResponseTimeoutException` to close
-  the upstream, let `ExceptionHandler` send the 504 once, and wait for the write before closing
-- [x] `ExceptionHandler`: respond to `UpstreamResponseTimeoutException` with 504 instead of 502
-
-- [x] `DownstreamHandler.write`: remove upstream hop-by-hop response headers, including headers
-  named in `Connection`; keep chunked framing for the downstream HTTP codec
-
-- [x] `IpTraitsHandler`: include custom key/value traits in the upstream header, sorted by key;
-  `IpTraits.Builder.addLabel` rejects reserved keys and separators, `DetectCrawler` matches the
-  `crawler` key exactly instead of a substring
-
-- [x] remove the commented-out debug log lines (`ForwardHandler`, `IngressTimeoutHandler`,
-  `IpTraitsHandler`, `RequestLoggingHandler`) and the commented-out Netty `LoggingHandler`
-  (`Proxy.addHttpHandlers`)
-
-Checked against the code when moving the list here, 2026-11-13:
-
-- [x] config: stop / complain if option is unknown (`RecordConstructor`, "Unknown parameter")
-- [x] send 404 for any non / URL for unserviced domain (`UnservicedHost`: 404 without a default
-  location, else a redirect to the not found page for any URL but `/`)
-- [x] only allow known HTTP methods (`SanitizeHostHandler` maps others to `INVALID`, answered
-  with 400)
-- [x] add netty memory pool statistics to monitoring / expose allocator statistics via
-  prometheus (`NettyAllocatorMetrics`)
-- [x] use delombok, so JavaDoc has proper documentation in the builder (bound to `verify`)
-- [x] Enable tracing / debugging switch (`log4j2-trace.xml`, `SENSEPITCH_EDGE_DISABLE_TRACE`,
-  see `ProxyLogger`)
-- [x] standard logging target (Log4j2 to standard error, the request log to standard out)
-- [x] cleanup debugging code / use Netty logger (`ProxyLogger` on Log4j2, no `System.out`; the
-  leftover commented-out lines were removed later, see the first entry)
-- [x] obsolete: Logging: Netty LoggingHandler seems not to respect the origin class (not used)
-- [x] minimal POC with transparent passthrough
-- [x] expose statistics counters
-- [x] simple request log, with request, response status, content length
-- [x] SNI ssl configuration
-- [x] bypass config for URL prefixes
-- [x] redirect option if host does not match
-- [x] proxy headers
-- [x] pass to NGINX configuration
-- [x] host based upstream routing
-- [x] pow deflection: use server IP in token
-- [x] pow deflection: make time a parameter
-- [x] make admission secret configurable
-- [x] can we use Builder in lombok?
-- [x] openssl support for HTTPS
-- [x] upstream backpressure
-- [x] YAML based configuration
-- [x] improve default configuration
-- [x] metrics: byte IO count per ingress
-- [x] Remove MetricsBridge, we exclusively use Prometheus
-- [x] markdown JavaDoc, https://openjdk.org/jeps/467
-- [x] rename the headers the edge adds from `X-Sensepitch-*` to a short `Sp-*` prefix, like
-  Cloudflare's `Cf-*` (e.g. `Sp-Protection-Bypass`); upstreams reading them must follow
-- [x] reload configuration without closing the port

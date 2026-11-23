@@ -3,8 +3,8 @@
 Design notes for how the build runs the tests and why it is set up this way: what was measured,
 what was changed, and what was tried and dropped. The rules for writing tests are in
 [`AGENTS.md`](../../AGENTS.md); this document records the reasoning behind them. Open work is in
-[`TODO.md`](../../TODO.md) (the load sensitive assertions) and
-[`NOT-YET.md`](../../NOT-YET.md), both in section "Build, tests".
+[`TODO.md`](../../TODO.md#fast-tests-without-flakiness) (section "Fast tests without flakiness")
+and [`NOT-YET.md`](../../NOT-YET.md) (section "Build, tests").
 
 All numbers were measured on 2026-11-14 on one developer machine (16 cores, Java 25) with
 `./mvnw clean ...`. Runs vary by about ±1 s, so differences below 2 s are noise unless they were

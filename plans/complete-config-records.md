@@ -82,7 +82,7 @@ by the preset `builder()`, so they stay complete.
   loaded again, gives an equal record."
 - `OtlpConfig`, `ProxyConfig`, `RequestLogConfig` docs: "defaults to" stays, "omitted or zero"
   becomes "omitted". README sections on these keys likewise; the example block shows defaults.
-- `TODO.md`: Done entry.
+- `TODO.md`: remove the entry.
 
 ## Tests
 - Round trip: `Main.parseConfig(Proxy.toYaml(config))` equals `config`, for a minimal YAML and

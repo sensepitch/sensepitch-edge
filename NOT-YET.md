@@ -178,7 +178,7 @@ moved to [TODO.md](TODO.md#fast-tests-without-flakiness) as top priority on 2026
     `finishCoversDrainingDestinations` 1.4 s, `finishedDestinationEndsWhenItsRecordsAgedOut`
     0.3 s, `disableAndEnableByReload` 0.2 s, `removedDestinationDoesNotBlockTheReload` 0.15 s.
     Probably real timers (retry backoff after 503, age limit), not verified. What cannot move
-    for coverage gets a fake clock instead, see "Timing related tests" in
+    for coverage gets a fake clock instead, see "Real time and races in the remaining tests" in
     [TODO.md](TODO.md#fast-tests-without-flakiness).
 - [ ] Performance test: different Netty allocators, leak detection,
   `-XX:NativeMemoryTracking=summary`
