@@ -7,6 +7,7 @@ import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
 import static org.sensepitch.edge.OtlpLogDestinationTest.request;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
@@ -17,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,13 +51,15 @@ class OtlpLogDestinationIT {
   /// Full batches are posted concurrently, at most `maxConcurrentRequests` at a time
   @Test
   void concurrentRequestsUpToTheLimit() throws Exception {
+    int limit = 3;
     java.util.concurrent.atomic.AtomicInteger inFlight =
         new java.util.concurrent.atomic.AtomicInteger();
     java.util.concurrent.atomic.AtomicInteger maxInFlight =
         new java.util.concurrent.atomic.AtomicInteger();
     java.util.concurrent.atomic.AtomicInteger records =
         new java.util.concurrent.atomic.AtomicInteger();
-    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+    CountDownLatch limitReached = new CountDownLatch(limit);
+    CountDownLatch release = new CountDownLatch(1);
     HttpServer slow = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     slow.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
     slow.createContext(
@@ -63,6 +67,7 @@ class OtlpLogDestinationIT {
         exchange -> {
           byte[] body = exchange.getRequestBody().readAllBytes();
           maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+          limitReached.countDown();
           awaitQuietly(release);
           inFlight.decrementAndGet();
           records.addAndGet(
@@ -80,7 +85,7 @@ class OtlpLogDestinationIT {
                   .endpoint("http://127.0.0.1:" + slow.getAddress().getPort() + "/v1/logs")
                   .batchBytes(batchBytes)
                   .maxBufferedBytes(64 << 20)
-                  .maxConcurrentRequests(3)
+                  .maxConcurrentRequests(limit)
                   .flushIntervalMillis(OUT_OF_REACH_MILLIS)
                   .build());
       OtlpRequestLogger logger = new OtlpRequestLogger(fixture.destination);
@@ -88,11 +93,13 @@ class OtlpLogDestinationIT {
       for (int i = 0; i < total; i++) {
         logger.logRequest(request("/" + i));
       }
-      await("concurrent request limit reached", () -> inFlight.get() == 3);
-      Thread.sleep(100);
-      assertThat(maxInFlight.get()).as("requests at the same time").isEqualTo(3);
+      assertThat(limitReached.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("the concurrent request limit was reached")
+          .isTrue();
+      assertThat(inFlight.get()).as("requests held at the server").isEqualTo(limit);
       release.countDown();
       HttpBatchSenderTest.close(fixture.destination);
+      assertThat(maxInFlight.get()).as("peak concurrent requests").isEqualTo(limit);
       assertThat(records.get()).isEqualTo(total);
       assertThat(fixture.destination.droppedCount()).isZero();
     } finally {

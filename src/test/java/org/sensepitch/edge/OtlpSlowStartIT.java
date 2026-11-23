@@ -5,13 +5,16 @@ import static org.sensepitch.edge.OtlpLogDestinationTest.decode;
 import static org.sensepitch.edge.OtlpLogDestinationTest.framedSize;
 import static org.sensepitch.edge.OtlpLogDestinationTest.request;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.net.InetSocketAddress;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Tag;
@@ -34,8 +37,9 @@ class OtlpSlowStartIT {
   void slowStartAfterAnOutage() throws Exception {
     AtomicBoolean available = new AtomicBoolean();
     AtomicInteger inFlight = new AtomicInteger();
-    AtomicInteger maxInFlight = new AtomicInteger();
     AtomicInteger records = new AtomicInteger();
+    CountDownLatch probeArrived = new CountDownLatch(1);
+    CountDownLatch twoRequestsInFlight = new CountDownLatch(1);
     Semaphore answers = new Semaphore(0);
     HttpServer held = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     held.setExecutor(Executors.newCachedThreadPool());
@@ -48,7 +52,10 @@ class OtlpSlowStartIT {
             exchange.close();
             return;
           }
-          maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), Math::max);
+          if (inFlight.incrementAndGet() == 2) {
+            twoRequestsInFlight.countDown();
+          }
+          probeArrived.countDown();
           answers.acquireUninterruptibly();
           inFlight.decrementAndGet();
           records.addAndGet(
@@ -83,14 +90,16 @@ class OtlpSlowStartIT {
       assertThat(destination.window()).as("after a failure").isOne();
       available.set(true);
       // the probe alone
-      await("one recovery probe is in flight", () -> inFlight.get() == 1);
-      Thread.sleep(100);
-      assertThat(maxInFlight.get()).as("only the probe").isOne();
+      assertThat(probeArrived.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("the recovery probe arrived")
+          .isTrue();
+      assertThat(inFlight.get()).as("only the probe is held").isOne();
       // its success allows two
       answers.release();
-      await("two requests follow the successful probe", () -> inFlight.get() == 2);
-      Thread.sleep(100);
-      assertThat(maxInFlight.get()).as("two after the probe").isEqualTo(2);
+      assertThat(twoRequestsInFlight.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("two requests followed the successful probe")
+          .isTrue();
+      assertThat(inFlight.get()).as("two requests are held after the probe").isEqualTo(2);
       answers.release(1_000);
       HttpBatchSenderTest.close(destination);
       assertThat(records.get()).isEqualTo(total);

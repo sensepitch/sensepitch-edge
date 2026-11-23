@@ -86,10 +86,11 @@ are listed under Bugs.
     inferred, not reproduced).
   - Done 2026-11-23: `OtlpOutageBDDTest` checks the OTLP expiry and retry scenarios on
     simulated time. `OtlpLogDestinationIT` checks recovery over HTTP.
-  - Sleep then assert, cannot fail but proves little and costs time: `Thread.sleep(100)` before
-    `maxInFlight` in `OtlpLogDestinationTest` and `OtlpSlowStartIT`, `poll(100 ms)` is null in
-    `OtlpLogDestinationTest` and `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)`
-    before `isNotDone()` in `ProxyShutdownIT.shutdownWaitsForReload`.
+  - Done 2026-11-23: `OtlpLogDestinationIT.concurrentRequestsUpToTheLimit` and
+    `OtlpSlowStartIT.slowStartAfterAnOutage` wait for the HTTP handlers to signal arrival.
+  - Short absence checks: `poll(100 ms)` in `OtlpLogDestinationIT.retryAfterIsHonoured` and
+    `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)` before `isNotDone()` in
+    `ProxyShutdownIT.shutdownWaitsForReload`.
   - Remedy for the timers, ages, backoff and the probe rate: the simulated clock, see "Timing
     related tests" above. The `TimeBox` of cache2k pinpoint for maximum times is not needed any
     more, maximum times are not asserted at all.
