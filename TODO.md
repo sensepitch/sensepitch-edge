@@ -94,6 +94,8 @@ are listed under Bugs.
     stays where no hook exists.
   - Done 2026-11-23: `ConfigFileWatcherTest` waits for watcher checks using a semaphore in its
     fixture.
+  - Done 2026-11-23: `AsyncRequestLogWriterTest` waits for a flush signal and checks that the
+    caller finishes while the output stays blocked on a latch.
 - [ ] Instance scoped diagnostic logging, plan in
   [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
   - P1, test speed and clarity, no operator visible change: non-trace loggers become instance

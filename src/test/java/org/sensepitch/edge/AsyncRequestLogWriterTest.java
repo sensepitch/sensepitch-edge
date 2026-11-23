@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.ByteArrayOutputStream;
@@ -8,6 +9,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -41,18 +43,41 @@ public class AsyncRequestLogWriterTest {
   @Test
   public void recordIsVisibleWithoutCloseWhenIdle() throws Exception {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(out, 16);
-    writer.writeLine("single");
-    while (out.size() == 0) {
-      Thread.sleep(1);
+    CountDownLatch flushed = new CountDownLatch(1);
+    OutputStream latchOnFlush =
+        new OutputStream() {
+          @Override
+          public void write(int b) {
+            out.write(b);
+          }
+
+          @Override
+          public void write(byte[] b, int off, int len) {
+            out.write(b, off, len);
+          }
+
+          @Override
+          public void flush() {
+            flushed.countDown();
+          }
+        };
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(latchOnFlush, 16);
+    try {
+      writer.writeLine("single");
+      assertThat(flushed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("single record flushed without close")
+          .isTrue();
+      assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("single\n");
+    } finally {
+      writer.close();
     }
-    assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("single\n");
-    writer.close();
   }
 
   /// The point of the writer: a stuck standard out must not block the calling event loop.
   @Test
+  @Timeout(value = 30, unit = TimeUnit.SECONDS)
   public void blockedOutputDropsInsteadOfBlockingTheCaller() throws Exception {
+    CountDownLatch writerStarted = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
     ByteArrayOutputStream sink = new ByteArrayOutputStream();
     OutputStream blocking =
@@ -64,6 +89,7 @@ public class AsyncRequestLogWriterTest {
 
           @Override
           public void write(byte[] b, int off, int len) throws IOException {
+            writerStarted.countDown();
             try {
               release.await();
             } catch (InterruptedException e) {
@@ -73,26 +99,36 @@ public class AsyncRequestLogWriterTest {
           }
         };
     int capacity = 4;
+    int records = 100;
     AsyncRequestLogWriter writer = new AsyncRequestLogWriter(blocking, capacity);
-    long start = System.nanoTime();
-    for (int i = 0; i < 100; i++) {
-      writer.writeLine("line " + i);
+    try (var caller = Executors.newVirtualThreadPerTaskExecutor()) {
+      try {
+        var write =
+            caller.submit(
+                () -> {
+                  for (int i = 0; i < records; i++) {
+                    writer.writeLine("line " + i);
+                  }
+                });
+        assertThat(writerStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            .as("writer reached the blocked output")
+            .isTrue();
+        write.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        // The writer holds at most one drained batch (capacity + 1) and one queue of records.
+        assertThat(writer.droppedCount()).isGreaterThanOrEqualTo(records - 2 * capacity - 1);
+        assertThat(logs.messages(AsyncRequestLogWriter.class))
+            .describedAs("first drop is reported once")
+            .singleElement()
+            .asString()
+            .contains("dropping records");
+      } finally {
+        release.countDown();
+      }
+    } finally {
+      writer.close();
     }
-    assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start))
-        .describedAs("caller must not wait for the output")
-        .isLessThan(2_000);
-    // the writer thread holds at most one drained batch (capacity + 1) while blocked, and the
-    // queue another capacity records, everything else is dropped
-    assertThat(writer.droppedCount()).isGreaterThanOrEqualTo(100 - 2 * capacity - 1);
-    assertThat(logs.messages(AsyncRequestLogWriter.class))
-        .describedAs("first drop is reported once")
-        .singleElement()
-        .asString()
-        .contains("dropping records");
-    release.countDown();
-    writer.close();
     long written = sink.toString(StandardCharsets.UTF_8).lines().count();
-    assertThat(written + writer.droppedCount()).isEqualTo(100);
+    assertThat(written + writer.droppedCount()).isEqualTo(records);
   }
 
   @Test
