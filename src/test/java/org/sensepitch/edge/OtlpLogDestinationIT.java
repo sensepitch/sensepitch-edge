@@ -226,9 +226,9 @@ class OtlpLogDestinationIT {
   }
 
   /// A server asking for a delay via `Retry-After` is not asked again meanwhile, although the
-  /// backoff of this destination is only milliseconds. The exact delay is tested with
-  /// [Backoff#delayMillis(int, long)], without waiting. At shutdown the batch gets a last
-  /// attempt, regardless of the requested delay, before its records would be dropped.
+  /// backoff of this destination is only milliseconds. The exact delay on the simulated clock is
+  /// checked by [OtlpLogDestinationTest#retryAfterWinsOverTheBackoff]. At shutdown the batch gets
+  /// a last attempt, regardless of the requested delay, before its records would be dropped.
   @Test
   void retryAfterIsHonoured() throws Exception {
     fixture.answers.add(new OtlpLogDestinationTest.Answer(429, "30"));
@@ -236,12 +236,14 @@ class OtlpLogDestinationIT {
     new OtlpRequestLogger(fixture.destination)
         .logRequest(TestRequestLogInfo.of(HttpMethod.GET, 200));
     assertThat(fixture.receive().status()).isEqualTo(429);
-    assertThat(fixture.received.poll(100, TimeUnit.MILLISECONDS))
-        .as("no retry before the delay")
-        .isNull();
+    await("the retry counted", () -> fixture.counter("sensepitch_request_log_export_retries") >= 1);
     assertThat(fixture.counter("sensepitch_request_log_export_retries")).isOne();
+    assertThat(fixture.bufferedBytesGauge()).as("the batch waits for the delay").isPositive();
     HttpBatchSenderTest.close(fixture.destination);
     assertThat(fixture.receive().status()).as("last attempt at shutdown").isEqualTo(200);
+    assertThat(fixture.counter("sensepitch_request_log_export_retries"))
+        .as("no retry in between")
+        .isOne();
     assertThat(fixture.destination.droppedCount()).isZero();
   }
 }

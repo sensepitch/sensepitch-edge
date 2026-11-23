@@ -31,7 +31,12 @@ final class FakeLogServer implements HttpBatchSender.Transport {
   }
 
   void succeed(int status) {
-    pending.removeFirst().complete(response(status));
+    succeed(status, null);
+  }
+
+  /// Answers the oldest open request with the status and a `Retry-After` header
+  void succeed(int status, String retryAfter) {
+    pending.removeFirst().complete(response(status, retryAfter));
   }
 
   void fail(Throwable failure) {
@@ -49,6 +54,10 @@ final class FakeLogServer implements HttpBatchSender.Transport {
   }
 
   private static HttpResponse<Void> response(int status) {
+    return response(status, null);
+  }
+
+  private static HttpResponse<Void> response(int status, String retryAfter) {
     return new HttpResponse<>() {
       @Override
       public int statusCode() {
@@ -62,7 +71,9 @@ final class FakeLogServer implements HttpBatchSender.Transport {
 
       @Override
       public HttpHeaders headers() {
-        return HttpHeaders.of(Map.of(), (first, second) -> true);
+        Map<String, List<String>> headers =
+            retryAfter == null ? Map.of() : Map.of("Retry-After", List.of(retryAfter));
+        return HttpHeaders.of(headers, (first, second) -> true);
       }
 
       @Override
