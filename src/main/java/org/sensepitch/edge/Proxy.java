@@ -546,6 +546,13 @@ public class Proxy implements ProxyContext {
     return shutdown.get() != null;
   }
 
+  /// Callers blocked in [#shutdown()] waiting for the first call, for tests. The wait in
+  /// `CompletableFuture.join` registers a dependent on the first call's future.
+  int shutdownWaiters() {
+    CompletableFuture<Void> running = shutdown.get();
+    return running == null ? 0 : running.getNumberOfDependents();
+  }
+
   /// Shuts down gracefully within [ProxyConfig#shutdownTimeoutMillis()], and faster
   /// when everything is done earlier:
   ///

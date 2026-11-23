@@ -33,7 +33,7 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
       `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
       inferred, not reproduced).
   - Thread state waits that any park satisfies, a false pass rather than a flake:
-    `ProxyAcceptGraceTest` (`WAITING`), `ProxyShutdownIT.shutdownWaitsForReload` (`BLOCKED`).
+    `ProxyShutdownIT.shutdownWaitsForReload` (`BLOCKED`).
   - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
     `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
 - [ ] Instance scoped diagnostic logging and event driven waits, plan in

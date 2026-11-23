@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
@@ -180,20 +181,34 @@ class ProxyAcceptGraceTest {
               }
               now.addAndGet(nanos);
             });
+    assertThat(proxy.shutdownWaiters()).isZero();
     CompletableFuture<Void> first = CompletableFuture.runAsync(proxy::shutdown);
     try {
       assertThat(waiting.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
       assertThat(proxy.isShuttingDown()).isTrue();
       assertThat(proxy.reload(cfg).applied()).isFalse();
-      FutureTask<Void> second = new FutureTask<>(proxy::shutdown, null);
+      AtomicBoolean returnedAfterRelease = new AtomicBoolean();
+      FutureTask<Void> second =
+          new FutureTask<>(
+              () -> {
+                proxy.shutdown();
+                returnedAfterRelease.set(release.getCount() == 0);
+              },
+              null);
       Thread caller = Thread.ofPlatform().start(second);
+      // The first shutdown is held on release, so the waiter stays registered and parked without
+      // a timeout; the thread state alone would also accept any other park, the waiters count
+      // alone a timed wait.
       TestingParameters.await(
           "second shutdown waits for the first",
-          () -> caller.getState() == Thread.State.WAITING || second.isDone());
+          () ->
+              proxy.shutdownWaiters() >= 1 && caller.getState() == Thread.State.WAITING
+                  || second.isDone());
       assertThat(second.isDone()).isFalse();
       release.countDown();
       first.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       second.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      assertThat(returnedAfterRelease).isTrue();
     } finally {
       release.countDown();
       first.get(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
