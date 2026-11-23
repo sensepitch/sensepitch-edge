@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -12,6 +13,10 @@ import org.junit.jupiter.api.io.TempDir;
 /// Exercises the built OCI image through Docker when the oci-image Maven profile is enabled.
 @EnabledIfSystemProperty(named = "ociImage.enabled", matches = "true")
 class OciImageIT {
+
+  /// Bounds the whole smoke script: the container starts, serves traffic and stops on
+  /// `SIGTERM`, three steps that each may take up to [TestingParameters#PROCESS_START_TIMEOUT].
+  static final Duration SMOKE_TIMEOUT = TestingParameters.PROCESS_START_TIMEOUT.multipliedBy(3);
 
   @TempDir Path dir;
 
@@ -25,7 +30,7 @@ class OciImageIT {
             .redirectOutput(output.toFile())
             .start();
     try {
-      assertThat(smoke.waitFor(90, TimeUnit.SECONDS))
+      assertThat(smoke.waitFor(SMOKE_TIMEOUT.toSeconds(), TimeUnit.SECONDS))
           .as("OCI smoke test timed out; output:%n%s", Files.readString(output))
           .isTrue();
       assertThat(smoke.exitValue())

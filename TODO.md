@@ -80,17 +80,34 @@ are listed under Bugs.
     returns while the log server is holding an export.
   - Done 2026-11-23: `ProxyShutdownIT` and `ShadedJarIT` check shutdown outcomes and diagnostics
     in place of maximum elapsed times. The minimum elapsed checks for intentional waits stay.
+  - Done 2026-11-23, from the test audit:
+    - Hand-picked wait bounds replaced by `TIMEOUT`, `OUT_OF_REACH` or `PROCESS_START_TIMEOUT`
+      in `MainShutdownTest`, `HttpBatchSenderTest` (request timeout), `OtlpLogDestinationTest`
+      (`poll(2 s)` against a backoff or probe timeout now out of reach), `JvmMemoryMetricsIT`
+      (sleep loop now `await`), `ChallengeJavaScriptIT`, `OciImageIT`.
+    - `MainShutdownTest.concurrentCallerWaitsForLoggingShutdown` holds the first caller until the
+      second waits for the lock, and asserts the order instead of `isNotDone()`.
+    - `OtlpLogDestinationTest`: the partial batch flush tests run on `FakeTime` (a real 500 ms
+      flush raced the workers), `await` on counters uses `>=`, the maximum elapsed time of the
+      post duration histogram is no longer asserted.
+    - `ProxyShutdownIT.slowRequestIsAbortedAndStillLogged` drains for the full `TIMEOUT`.
   - Short configured timings that race the test's own steps:
-    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
-    `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
-    inferred, not reproduced).
+    - `ReloadableRequestLoggerIT.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
+      `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
+      inferred, not reproduced).
+    - `ProxyShutdownIT.requestInFlightCompletes`: the upstream answers after a fixed 300 ms; if
+      the shutdown has not marked the connection for close by then, the response lacks
+      `connection: close`. Needs a hook that tells when the drain of the connections started.
+  - Thread state waits that any park satisfies, a false pass rather than a flake:
+    `ProxyAcceptGraceTest` (`WAITING`), `ProxyShutdownIT.shutdownWaitsForReload` (`BLOCKED`).
+  - Real timers in a unit test, not on `FakeTime` yet: `ProxyOptionsTest` (OTLP posting with a
+    1 ms flush interval).
   - Done 2026-11-23: `OtlpOutageBDDTest` checks the OTLP expiry and retry scenarios on
     simulated time. `OtlpLogDestinationIT` checks recovery over HTTP.
   - Done 2026-11-23: `OtlpLogDestinationIT.concurrentRequestsUpToTheLimit` and
     `OtlpSlowStartIT.slowStartAfterAnOutage` wait for the HTTP handlers to signal arrival.
   - Short absence checks: `poll(100 ms)` in `OtlpLogDestinationIT.retryAfterIsHonoured` and
-    `ReloadableRequestLoggerTest.awaitReceived`, `Thread.sleep(200)` before `isNotDone()` in
-    `ProxyShutdownIT.shutdownWaitsForReload`.
+    `ReloadableRequestLoggerTest.awaitReceived`; the latter is paid in full by every caller.
   - Remedy for the timers, ages, backoff and the probe rate: the simulated clock, see "Timing
     related tests" above. The `TimeBox` of cache2k pinpoint for maximum times is not needed any
     more, maximum times are not asserted at all.

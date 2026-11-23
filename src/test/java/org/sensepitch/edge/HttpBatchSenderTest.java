@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 
@@ -12,7 +13,6 @@ import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -124,7 +124,7 @@ class HttpBatchSenderTest {
             "text",
             URI.create(endpoint),
             headers,
-            Duration.ofSeconds(5),
+            OUT_OF_REACH,
             batchBytes,
             maxBufferedBytes,
             maxConcurrentRequests,
@@ -186,7 +186,7 @@ class HttpBatchSenderTest {
                 "text",
                 URI.create(UNREACHABLE),
                 Map.of(),
-                Duration.ofSeconds(5),
+                OUT_OF_REACH,
                 OtlpConfig.MIN_BATCH_BYTES,
                 64L * 1024 * 1024,
                 2,
@@ -321,7 +321,7 @@ class HttpBatchSenderTest {
             "text",
             URI.create(UNREACHABLE),
             Map.of(),
-            Duration.ofSeconds(5),
+            OUT_OF_REACH,
             batchBytes,
             1024,
             1,

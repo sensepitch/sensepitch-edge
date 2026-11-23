@@ -281,7 +281,8 @@ class OtlpLogDestinationTest {
     destination = fastDestination(config().build());
     long start = System.currentTimeMillis();
     new OtlpRequestLogger(destination).logRequest(request("/a"));
-    await("sent record metric updated", () -> counter("sensepitch_request_log_sent_records") == 1);
+    await("sent record metric updated", () -> counter("sensepitch_request_log_sent_records") >= 1);
+    assertThat(counter("sensepitch_request_log_sent_records")).isOne();
     assertThat(counter("sensepitch_request_log_sent_bytes"))
         .as("the request body")
         .isEqualTo(sentBodyBytes());
@@ -297,10 +298,7 @@ class OtlpLogDestinationTest {
                     "destination",
                     destination.destination());
     assertThat(postDuration.getCount()).as("the failed and the successful post").isEqualTo(2);
-    assertThat(postDuration.getSum())
-        .as("seconds, both posts within the test run")
-        .isPositive()
-        .isLessThan((System.currentTimeMillis() - start + 1) / 1000.0);
+    assertThat(postDuration.getSum()).as("seconds of both posts").isPositive();
     assertThat(breakerCounter("transitions", "from", "closed", "to", "open", "reason", "http_503"))
         .isOne();
     assertThat(
@@ -608,7 +606,8 @@ class OtlpLogDestinationTest {
     }
     assertThat(bufferedBytesGauge()).isGreaterThan(10L * batchBytes);
     status = 200;
-    await("all records delivered", () -> deliveredPaths().size() == total);
+    await("all records delivered", () -> deliveredPaths().size() >= total);
+    assertThat(deliveredPaths()).hasSize(total);
     await("buffered batches released", () -> bufferedBytesGauge() == 0);
     assertThat(destination.pooledBatches()).as("one thread plus a spare").isLessThanOrEqualTo(2);
   }
@@ -684,78 +683,84 @@ class OtlpLogDestinationTest {
   /// At the flush interval, the partly filled batches of all threads go out in one request
   @Test
   void partialBatchesOfThreadsArriveInOneRequest() throws Exception {
-    destination = new OtlpLogDestination("otlp", config().flushIntervalMillis(500).build());
-    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     int threads = 4;
     int perThread = 5;
-    java.util.concurrent.CountDownLatch logged = new java.util.concurrent.CountDownLatch(threads);
-    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
-    List<Thread> workers = new ArrayList<>();
-    for (int t = 0; t < threads; t++) {
-      int thread = t;
-      Thread worker =
-          new Thread(
-              () -> {
-                for (int i = 0; i < perThread; i++) {
-                  logger.logRequest(request("/" + thread + "/" + i));
-                }
-                logged.countDown();
-                // alive until the flush took the batch
-                awaitQuietly(release);
-              });
-      worker.start();
-      workers.add(worker);
-    }
-    assertThat(logged.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("worker logged").isTrue();
-    Received first = receive();
-    release.countDown();
-    for (Thread worker : workers) {
-      assertThat(worker.join(TIMEOUT)).as("logging worker finished").isTrue();
-    }
-    assertThat(first.records()).as("all threads in one request").isEqualTo(threads * perThread);
-    assertThat(new HashSet<>(first.paths())).hasSize(threads * perThread);
+    List<List<String>> posted = flushPartialBatchesOfLiveThreads(config(), threads, perThread);
+    assertThat(posted).as("all threads in one request").hasSize(1);
+    assertThat(new HashSet<>(posted.getFirst())).hasSize(threads * perThread);
   }
 
   /// Partly filled batches beyond the batch size are split into several requests
   @Test
   void partialBatchesBeyondTheBatchSizeAreSplit() throws Exception {
     int batchBytes = OtlpConfig.MIN_BATCH_BYTES;
-    destination =
-        new OtlpLogDestination(
-            "otlp", config().batchBytes(batchBytes).flushIntervalMillis(500).build());
-    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     // each thread fills about 60% of a batch, two of them do not fit into one request
     int perThread = batchBytes * 6 / 10 / framedSize(request("/0/0000"));
-    java.util.concurrent.CountDownLatch logged = new java.util.concurrent.CountDownLatch(2);
-    java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+    List<List<String>> posted =
+        flushPartialBatchesOfLiveThreads(config().batchBytes(batchBytes), 2, perThread);
+    assertThat(posted).extracting(List::size).containsExactly(perThread, perThread);
+  }
+
+  /// Runs the flush of partly filled batches of threads that are still alive, on the simulated
+  /// clock, so the flush cannot come before all threads logged: each worker logs `perThread`
+  /// records and waits, then the flush interval passes, then the workers end.
+  ///
+  /// @return the record paths of each posted request, in posting order
+  static List<List<String>> flushPartialBatchesOfLiveThreads(
+      OtlpConfig.Builder config, int threads, int perThread) throws Exception {
+    FakeTime clock = new FakeTime();
+    ControlledTransport transport = new ControlledTransport();
+    // uncompressed, so the flush posts on the test thread
+    OtlpConfig built = config.compression(OtlpConfig.NONE).flushIntervalMillis(500).build();
+    OtlpLogDestination destination =
+        new OtlpLogDestination(
+            "otlp",
+            built,
+            new RequestLogMetrics(),
+            0,
+            clock,
+            clock.scheduler()::schedule,
+            transport);
+    OtlpRequestLogger logger = new OtlpRequestLogger(destination);
+    CountDownLatch logged = new CountDownLatch(threads);
+    CountDownLatch release = new CountDownLatch(1);
     List<Thread> workers = new ArrayList<>();
-    for (int t = 0; t < 2; t++) {
-      int thread = t;
-      Thread worker =
-          new Thread(
-              () -> {
-                for (int i = 0; i < perThread; i++) {
-                  logger.logRequest(request(String.format("/%d/%04d", thread, i)));
-                }
-                logged.countDown();
-                awaitQuietly(release);
-              });
-      worker.start();
-      workers.add(worker);
+    List<List<String>> posted;
+    try {
+      for (int t = 0; t < threads; t++) {
+        int thread = t;
+        workers.add(
+            Thread.ofPlatform()
+                .start(
+                    () -> {
+                      for (int i = 0; i < perThread; i++) {
+                        logger.logRequest(request(String.format("/%d/%04d", thread, i)));
+                      }
+                      logged.countDown();
+                      // alive until the flush took the batch
+                      awaitQuietly(release);
+                      destination.endThread();
+                    }));
+      }
+      assertThat(logged.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("workers logged").isTrue();
+      assertThat(transport.requests()).as("nothing posted before the flush").isEmpty();
+      clock.advanceMillis(built.flushIntervalMillis());
+      posted = transport.requests().stream().map(OtlpOutageBDDTest::paths).toList();
+    } finally {
+      release.countDown();
     }
-    assertThat(logged.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("worker logged").isTrue();
-    Received first = receive();
-    Received second = receive();
-    release.countDown();
     for (Thread worker : workers) {
       assertThat(worker.join(TIMEOUT)).as("logging worker finished").isTrue();
     }
-    assertThat(first.records()).isEqualTo(perThread);
-    assertThat(second.records()).isEqualTo(perThread);
+    for (int i = 0; i < posted.size(); i++) {
+      transport.succeed(200);
+    }
+    assertThat(destination.finish()).as("all sent").isDone();
     assertThat(destination.droppedCount()).isZero();
+    return posted;
   }
 
-  static void awaitQuietly(java.util.concurrent.CountDownLatch latch) {
+  static void awaitQuietly(CountDownLatch latch) {
     try {
       assertThat(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("worker released").isTrue();
     } catch (InterruptedException e) {
@@ -797,16 +802,19 @@ class OtlpLogDestinationTest {
   @Test
   void badRequestDoesNotOpenTheBreaker() throws Exception {
     answers.add(new Answer(400, null));
-    // a long backoff, an open breaker would hold the second batch for seconds
+    // an open breaker would hold the second batch beyond the wait of `receive`
     destination =
         new OtlpLogDestination(
-            "otlp", config().initialRetryDelayMillis(10_000).maxRetryDelayMillis(10_000).build());
+            "otlp",
+            config()
+                .initialRetryDelayMillis(OUT_OF_REACH_MILLIS)
+                .maxRetryDelayMillis(OUT_OF_REACH_MILLIS)
+                .build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     logger.logRequest(request("/bad"));
     assertThat(receive().status()).isEqualTo(400);
     logger.logRequest(request("/good"));
-    Received next = received.poll(2, TimeUnit.SECONDS);
-    assertThat(next).as("sent without waiting for a backoff").isNotNull();
+    Received next = receive();
     assertThat(next.status()).isEqualTo(200);
     assertThat(next.paths()).containsExactly("/good");
   }
@@ -817,16 +825,17 @@ class OtlpLogDestinationTest {
   void badRequestOfTheProbeEndsTheOutage() throws Exception {
     answers.add(new Answer(503, null));
     answers.add(new Answer(400, null));
-    destination = fastDestination(config().build());
+    // a probe still open would hold the next batch beyond the wait of `receive`
+    destination = fastDestination(config().timeoutMillis(OUT_OF_REACH_MILLIS).build());
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     logger.logRequest(request("/a"));
     assertThat(receive().status()).isEqualTo(503);
     assertThat(receive().status()).as("the probe").isEqualTo(400);
     await(
-        "failed export metric updated", () -> counter("sensepitch_request_log_export_failed") == 1);
+        "failed export metric updated", () -> counter("sensepitch_request_log_export_failed") >= 1);
+    assertThat(counter("sensepitch_request_log_export_failed")).isOne();
     logger.logRequest(request("/b"));
-    Received next = received.poll(2, TimeUnit.SECONDS);
-    assertThat(next).as("sent without waiting for the probe timeout").isNotNull();
+    Received next = receive();
     assertThat(next.status()).isEqualTo(200);
     assertThat(next.paths()).containsExactly("/b");
     assertThat(
@@ -849,7 +858,8 @@ class OtlpLogDestinationTest {
     logger.logRequest(request("/bad2"));
     assertThat(receive().status()).isEqualTo(400);
     await(
-        "both failed exports counted", () -> counter("sensepitch_request_log_export_failed") == 2);
+        "both failed exports counted", () -> counter("sensepitch_request_log_export_failed") >= 2);
+    assertThat(counter("sensepitch_request_log_export_failed")).isEqualTo(2);
     assertThat(logs.messages(OtlpLogDestination.class))
         .filteredOn(m -> m.contains("failed, dropped a batch"))
         .hasSize(1);

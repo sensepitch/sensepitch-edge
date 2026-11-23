@@ -194,7 +194,8 @@ class ReloadableRequestLoggerTest {
     logger = RequestLoggerFactory.create(config(otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
     var before = logger.destinations().getFirst();
     logOneRequest();
-    reload(config(otlp("vl", 30_000)));
+    // a changed flush interval, still out of reach
+    reload(config(otlp("vl", 2 * OUT_OF_REACH_MILLIS)));
     assertThat(logger.destinations().getFirst()).isNotSameAs(before);
     assertThat(received.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS))
         .as("buffered record sent by the old destination after the end marker")

@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.PROCESS_START_TIMEOUT;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,8 +21,8 @@ class ChallengeJavaScriptIT {
             .redirectOutput(output.toFile())
             .start();
     try {
-      assertThat(process.waitFor(30, TimeUnit.SECONDS))
-          .as("challenge JavaScript test completed within 30 seconds")
+      assertThat(process.waitFor(PROCESS_START_TIMEOUT.toSeconds(), TimeUnit.SECONDS))
+          .as("challenge JavaScript test completed")
           .isTrue();
       assertThat(process.exitValue()).as(Files.readString(output)).isZero();
     } finally {

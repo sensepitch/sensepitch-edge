@@ -1,6 +1,8 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.PROCESS_START_TIMEOUT;
+import static org.sensepitch.edge.TestingParameters.await;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -33,16 +35,14 @@ class JvmMemoryMetricsIT {
     final int sampleAllocation = 100 * 1024 * 1024;
     double before = snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue();
     allocateJvmDirectBuffer(sampleAllocation, before);
-    for (int i = 0; i < 100; i++) {
-      System.gc();
-      if (snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue() <= before) {
-        return;
-      }
-      Thread.sleep(20);
-    }
-    assertThat(snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue())
-        .as("collected direct buffer memory returns to the JVM pool")
-        .isLessThanOrEqualTo(before);
+    // no hook tells when the cleaner ran, so poll, with a collection per attempt
+    await(
+        "collected direct buffer memory returns to the JVM pool",
+        () -> {
+          System.gc();
+          return snapshots().gauge("jvm_buffer_pool_used_bytes", "pool", "direct").getValue()
+              <= before;
+        });
   }
 
   private void allocateJvmDirectBuffer(int size, double before) {
@@ -73,7 +73,9 @@ class JvmMemoryMetricsIT {
             .redirectErrorStream(true)
             .start();
     try {
-      assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("RSS probe completes").isTrue();
+      assertThat(process.waitFor(PROCESS_START_TIMEOUT.toSeconds(), TimeUnit.SECONDS))
+          .as("RSS probe completes")
+          .isTrue();
       String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
       assertThat(process.exitValue()).as("RSS probe output: %s", output).isZero();
     } finally {

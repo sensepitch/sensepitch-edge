@@ -767,6 +767,7 @@ public class FlowAndExceptionTest {
                     .endsWith(
                         "unexpected close during the exchange, phase=upload, upstream=connecting"));
     pendingConnect.setFailure(new SocketException("Connection refused"));
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
   }
 
   /// The client closes while the response is sent
@@ -786,6 +787,7 @@ public class FlowAndExceptionTest {
                         "unexpected close during the exchange, phase=responding,"
                             + " upstream=connected"));
     ingressChannel.finishAndReleaseAll();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
   }
 
   /// The upstream connect failed, but the client closes before the request is complete, so no 502
@@ -803,6 +805,7 @@ public class FlowAndExceptionTest {
                     .endsWith(
                         "unexpected close during the exchange, phase=upload,"
                             + " upstream=connect failed"));
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
   }
 
   /// A close after the response, e.g. of an idle keep-alive connection, is expected

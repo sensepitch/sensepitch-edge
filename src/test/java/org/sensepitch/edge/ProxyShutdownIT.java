@@ -236,11 +236,14 @@ class ProxyShutdownIT {
 
   /// A request that takes longer than the shutdown allows is aborted when only the drain timeout
   /// is left. Its record, status 499, is still sent within the drain timeout, and the requests in
-  /// flight are reported. The request log is drained, so that phase logs no diagnostic.
+  /// flight are reported. The request log is drained, so that phase logs no diagnostic. The drain
+  /// timeout is the full [TestingParameters#TIMEOUT], so a delayed post cannot run out of it; the
+  /// drain ends as soon as the record is sent.
   @Test
   void slowRequestIsAbortedAndStillLogged() throws Exception {
-    startProxy(2_000, 1_000L);
-    upstreamDelayMillis = 5_000;
+    startProxy(1_000 + TIMEOUT.toMillis(), TIMEOUT.toMillis());
+    // answers only when the test is over, long after the abort
+    upstreamDelayMillis = OUT_OF_REACH_MILLIS;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
       assertThat(upstreamGotRequest.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();

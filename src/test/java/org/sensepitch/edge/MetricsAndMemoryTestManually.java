@@ -335,10 +335,6 @@ class MetricsAndMemoryTestManually {
       return (CounterSnapshot.CounterDataPointSnapshot) datapoint(metricName, labelKeyValues);
     }
 
-    GaugeSnapshot.GaugeDataPointSnapshot gouge(String metricName) {
-      return (GaugeSnapshot.GaugeDataPointSnapshot) datapoint(metricName);
-    }
-
     String getPrometheusExpositionText() {
       return prometheusText;
     }
