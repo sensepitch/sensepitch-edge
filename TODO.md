@@ -110,7 +110,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   whether a restart can overlap the old and the new pod.
   - P1.
   - Port binding, tick one:
-    - [ ] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
+    - [x] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
       non-root need a capability; `capabilities.add: [NET_BIND_SERVICE]` is not effective for a
       non-root process without file capabilities on `java`, and the
       `net.ipv4.ip_unprivileged_port_start` sysctl is the node's in the host network namespace
@@ -122,9 +122,9 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
       so a restart cannot overlap.
   - Restart: with host ports a DaemonSet update stops the old pod before the new one binds
     (`maxSurge: 0`), and the node refuses connections in between. Tick one:
-    - [ ] accept it: browsers try the next address of the name; check the clients that matter,
+    - [x] accept it: browsers try the next address of the name; check the clients that matter,
       e.g. payment provider webhooks, which may not retry
-    - [ ] `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one,
+    - [ ] Move to NOT-YET: `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one,
       which stops accepting once the new one is ready (`shutdownAcceptGraceMillis`). Needs
       `hostNetwork` and the Netty epoll or io_uring transport (today NIO, `Proxy`).
   - The node firewall must let 80 and 443 through to the chosen path.
@@ -139,7 +139,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   - [ ] cert-manager with DNS-01, one Secret per host or wildcard, mounted through `snis`; a
     renewed Secret reloads, see [doc/design/config-files.md](doc/design/config-files.md). Needs a
     DNS provider with an API cert-manager supports
-  - [ ] cert-manager with HTTP-01: its solver publishes the challenge through Ingress or
+  - [x] cert-manager with HTTP-01: its solver publishes the challenge through Ingress or
     HTTPRoute objects, which only a controller serves; the standalone edge would need a fixed
     route for `/.well-known/acme-challenge/` to the solver, on the plain HTTP listener
     (`listen.httpPort`)
