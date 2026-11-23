@@ -83,7 +83,7 @@ comment giving the reason. JUnit then runs it while no other class runs. Today t
 | Class | Reason |
 |---|---|
 | `OtlpLogDestinationTest`, `ConfigFileWatcherTest`, `AsyncRequestLogWriterTest`, `ProxyShutdownIT`, `ExternalTcpIT` | capture the log of all threads |
-| `LoggingTest`, `LogTargetTest` | capture what arrives in Log4j2, change a Log4j2 level |
+| `LoggingTest`, `Log4jOutputTest` | capture what arrives in Log4j2, change a Log4j2 level |
 | `MetricsAndMemoryTest` | asserts on memory counters of the JVM |
 
 The first two groups are enforced: `LogCapture.ofAllThreads()` and

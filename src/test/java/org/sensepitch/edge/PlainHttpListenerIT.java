@@ -15,7 +15,6 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.parallel.Isolated;
 
 /// The plain HTTP listener on a real TCP port: `listen.httpPort` opens a second listener that
 /// answers with a permanent redirect to the HTTPS URL on `listen.httpsPort`, and both listeners
@@ -24,8 +23,6 @@ import org.junit.jupiter.api.parallel.Isolated;
 ///
 /// @author Jens Wilke
 @Timeout(value = 40, unit = TimeUnit.SECONDS)
-// alone: captures the log of all threads, the proxy logs from its event loops
-@Isolated
 class PlainHttpListenerIT {
 
   private Proxy proxy;
