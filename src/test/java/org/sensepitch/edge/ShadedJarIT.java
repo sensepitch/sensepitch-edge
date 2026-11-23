@@ -1,12 +1,14 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.TestingParameters.PROCESS_START_TIMEOUT;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT;
 import static org.sensepitch.edge.TestingParameters.TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.await;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.ServerSocket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -151,11 +153,17 @@ class ShadedJarIT {
 
   /// A blocked exporter forces a diagnostic at the end of the shutdown budget, after SIGTERM
   /// started all JVM hooks. Both deployed logging configurations must keep that message.
+  ///
+  /// The collector answers the export once the JVM has exited. The JDK server counts an exchange
+  /// as ended only when its response is complete; a close without response headers drops the
+  /// connection but leaves the exchange open, and [TestingParameters#stop] then waits its whole
+  /// grace. With no body, `sendResponseHeaders` completes the response itself.
   @ParameterizedTest
   @ValueSource(strings = {"log4j2.xml", "log4j2-trace.xml"})
   void sigtermKeepsFinalShutdownDiagnostic(String loggingConfig) throws Exception {
     var exportStarted = new CountDownLatch(1);
     var releaseExport = new CountDownLatch(1);
+    var exportAnswered = new CountDownLatch(1);
     var collector =
         com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
     collector.createContext(
@@ -165,6 +173,8 @@ class ShadedJarIT {
           exportStarted.countDown();
           try {
             releaseExport.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            exchange.sendResponseHeaders(HttpURLConnection.HTTP_OK, -1);
+            exportAnswered.countDown();
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           } finally {
@@ -207,6 +217,10 @@ class ShadedJarIT {
           .isTrue();
       assertThat(process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("exited after draining")
+          .isTrue();
+      releaseExport.countDown();
+      assertThat(exportAnswered.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("collector answered the export, so the exchange ended before its stop")
           .isTrue();
       assertThat(Files.readString(stderr))
           .contains("Shutdown: request log not drained after")
@@ -322,6 +336,7 @@ class ShadedJarIT {
   private void awaitOutput(Path log, String text) throws Exception {
     await(
         "JAR logs " + text,
+        PROCESS_START_TIMEOUT,
         () -> {
           if (Files.readString(log).contains(text)) {
             return true;

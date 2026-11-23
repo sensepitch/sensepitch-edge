@@ -102,14 +102,6 @@ are listed under Bugs.
     `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
     and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
     polling.
-- [ ] `ShadedJarIT` waits the full stop grace of its test servers
-  - P1: with `TestingParameters.stop(HttpServer)` the class went from 10.3 s to 29.8 s, about
-    12.85 s per `sigtermKeepsFinalShutdownDiagnostic` case, see
-    [test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound). A
-    connection of the child JVM is the suspected cause, not verified.
-  - The wait for the child JVM to listen went from 30 s to the 10 s `TIMEOUT`. A JVM start is
-    many steps, not one action, so it needs its own bound, a multiple of `TIMEOUT` in
-    `TestingParameters`.
 
 ## Bugs
 
@@ -364,6 +356,11 @@ logging) is in [NOT-YET.md](NOT-YET.md).
 
 ## Done
 
+- [x] `ShadedJarIT` no longer waits the full stop grace of its test servers (2026-11-22). The
+  collector closed the exchange without an answer, so the JDK server never counted it as ended
+  and `stop` waited the whole grace; it now answers, the class went from 30.0 s to 9.9 s. The
+  child JVM start has its own bound, `TestingParameters.PROCESS_START_TIMEOUT` (3 × `TIMEOUT`).
+  (`ShadedJarIT.sigtermKeepsFinalShutdownDiagnostic`)
 - [x] Release the request-log sender before completing `stopped` (2026-11-21). The sender shuts down
   its HTTP client and compression executor and removes its metrics registrations before notifying
   waiters. Covered by `HttpBatchSenderTest.stoppedCompletesAfterTheSenderIsReleased`.

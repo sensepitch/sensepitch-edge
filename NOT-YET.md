@@ -126,9 +126,10 @@ the failure threshold for upstreams is under Upstream.
 
 ## Build, tests
 
-The test speed and flakiness work (fake clock, event driven waits, instance scoped logging,
-`ShadedJarIT` stop grace) moved to [TODO.md](TODO.md#fast-tests-without-flakiness) as top
-priority on 2026-11-21.
+The test speed and flakiness work (fake clock, event driven waits, instance scoped logging)
+moved to [TODO.md](TODO.md#fast-tests-without-flakiness) as top priority on 2026-11-21; the
+`ShadedJarIT` stop grace is fixed (2026-11-22), see
+[test speed design](doc/design/test-speed.md#asynchronous-waits-share-one-upper-bound).
 
 - [ ] google-java-format 2, https://github.com/google/google-java-format/releases#release-v2.0.0
   (stuck at 1.36.1: Spotless cannot load 1.37+, 2.x changes the lambda layout). Impact: one-time

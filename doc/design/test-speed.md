@@ -184,10 +184,21 @@ One baseline/final run on 2026-11-17 in the scheduled x86_64 sandbox (2 availabl
 Oracle Java 25.0.5, Node 26.12.1), measured with `/usr/bin/time -v ./mvnw -o clean verify`,
 took 62.72 / 75.85 seconds. `ShadedJarIT` rose from 10.34 to 29.83 seconds; its two
 `sigtermKeepsFinalShutdownDiagnostic` cases each took about 12.85 seconds after the change.
-The wider collector teardown grace is the inferred cause; an HTTP server can consume its grace
-while a connection is still ending. Both gates passed with identical coverage. These single
-runs establish the observed cost, not a stable performance estimate. A grace that is consumed in
-full every run is a defect; finding its cause is in [`NOT-YET.md`](../../NOT-YET.md).
+Both gates passed with identical coverage. These single runs establish the observed cost, not a
+stable performance estimate.
+
+The cause, found on 2026-11-22: the collector of that test closed its exchange without response
+headers once the child JVM had gone. In the JDK 25 sources (`sun.net.httpserver`),
+`ExchangeImpl.close` then only closes the connection; the exchange count of `ServerImpl` drops
+only on the `WriteFinished` event that completing a response posts, and `ServerImpl.stop` waits
+for a count of zero or the end of its delay. So every stop waited the whole grace (inferred from
+the sources, confirmed by the change below). The collector now answers with
+`sendResponseHeaders(200, -1)`, which completes an empty response, and the test asserts that
+answer on a latch before the stop. With the old handler that assertion fails. One full gate
+each before and after, same sandbox (2 CPUs, Temurin 25): `ShadedJarIT` 30.01 to 10.04 seconds,
+the two cases 12.80 / 12.81 to 2.79 / 2.85 seconds, the gate 82.5 to 60.7 seconds wall clock.
+A test server handler must answer every exchange it receives; one that only closes it costs the
+whole grace.
 
 ### Move only redundant server scenarios
 
