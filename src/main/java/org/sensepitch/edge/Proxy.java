@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
@@ -106,6 +107,10 @@ public class Proxy implements ProxyContext {
   /// Completed when the shutdown is done, set under `lock` by the first [#shutdown()] call.
   /// Read without the lock by [#isShuttingDown()].
   private final AtomicReference<CompletableFuture<Void>> shutdown = new AtomicReference<>();
+
+  /// Counts the calls that entered [#shutdown()], incremented before the call contends for the
+  /// reload lock; a test seam that shows the shutdown call actually started.
+  private final AtomicInteger shutdownCallers = new AtomicInteger();
 
   /// Request log destinations plus the metrics per status code, closed on shutdown
   private final RequestLogger requestLogger;
@@ -553,6 +558,12 @@ public class Proxy implements ProxyContext {
     return running == null ? 0 : running.getNumberOfDependents();
   }
 
+  /// The number of calls that entered [#shutdown()], for the shutdown-waits-for-reload test to
+  /// await the call deterministically instead of polling its thread state.
+  int shutdownCallers() {
+    return shutdownCallers.get();
+  }
+
   /// Shuts down gracefully within [ProxyConfig#shutdownTimeoutMillis()], and faster
   /// when everything is done earlier:
   ///
@@ -574,6 +585,7 @@ public class Proxy implements ProxyContext {
   /// Does not stop process-wide Log4j2: other proxy instances or the embedding application may
   /// still need it. The command-line application [Main] owns logging shutdown.
   public void shutdown() {
+    shutdownCallers.incrementAndGet();
     CompletableFuture<Void> done = new CompletableFuture<>();
     CompletableFuture<Void> running;
     // waits for a running reload, see reload()

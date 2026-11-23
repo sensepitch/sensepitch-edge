@@ -323,8 +323,10 @@ class ProxyShutdownIT {
     assertThat(result.message()).isEqualTo("Shutting down");
   }
 
-  /// A shutdown waits for an actual reload paused while reading its configuration. Once the
-  /// shutdown thread is blocked, the listener is still open; releasing the reload lets both end.
+  /// A shutdown waits for an actual reload paused while reading its configuration. The test
+  /// awaits the shutdown call entering [Proxy#shutdown()] via the `shutdownCallers()` seam instead
+  /// of polling the thread state; while it waits, the listener is still open. Releasing the
+  /// reload lets both end.
   @Test
   void shutdownWaitsForReload() throws Exception {
     startProxy(10_000, null);
@@ -354,13 +356,10 @@ class ProxyShutdownIT {
       assertThat(readingConfig.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("reload reading configuration")
           .isTrue();
-      Thread shutdownThread = Thread.ofPlatform().name("shutdown-during-reload").start(shutdown);
+      Thread.ofPlatform().name("shutdown-during-reload").start(shutdown);
       TestingParameters.await(
-          "shutdown waits for reload",
-          () -> shutdownThread.getState() == Thread.State.BLOCKED || shutdown.isDone());
-      assertThat(shutdownThread.getState())
-          .as("shutdown waits for reload")
-          .isEqualTo(Thread.State.BLOCKED);
+          "shutdown entered and waits for reload", () -> proxy.shutdownCallers() >= 1);
+      assertThat(proxy.shutdownCallers()).as("shutdown call entered").isGreaterThanOrEqualTo(1);
       assertThat(shutdown.isDone()).isFalse();
       assertThat(proxy.isShuttingDown()).isFalse();
       try (Socket probe = new Socket()) {
