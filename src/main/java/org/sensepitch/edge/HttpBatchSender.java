@@ -259,8 +259,6 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
 
   private final AtomicLong bufferedRecords = new AtomicLong();
 
-  private final AtomicBoolean failureReported = new AtomicBoolean();
-
   /// No new batchers are registered, see [#finish()]. Written under the lock, so a batcher is
   /// either registered before or refused after. Volatile for the read in `stopIfDone()`.
   private volatile boolean finishing;
@@ -288,6 +286,9 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
 
   /// Dropping aged batches was logged in this outage
   private boolean ageReported;
+
+  /// A batch dropped because of an export failure was logged, once per sender
+  private boolean failureReported;
 
   HttpBatchSender(Settings settings, BatchPayload<B> payload, RequestLogMetrics metrics) {
     this(settings, payload, metrics, null, null, null);
@@ -800,14 +801,15 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
 
   /// Logs the transitions of failures only: the first failure of an outage and the first dropped
   /// batch; everything else is counted in the metrics. The recovery is logged by
-  /// [#answered(CircuitBreaker.State, int)].
+  /// [#answered(CircuitBreaker.State, int)]. Called under the lock.
   ///
   /// @param before the state of the breaker before a retryable failure, `null` otherwise
   private void report(Result result, CircuitBreaker.State before) {
     switch (result.outcome()) {
       case SENT -> {}
       case GIVE_UP -> {
-        if (failureReported.compareAndSet(false, true)) {
+        if (!failureReported) {
+          failureReported = true;
           log.error(
               "Request log export to "
                   + endpoint.uri()
