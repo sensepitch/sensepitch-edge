@@ -9,11 +9,12 @@ import lombok.Builder;
 /// @param letsEncryptPrefix Directory prefix for the let's encrypt keys and certificates. Default
 ///   is {@value #DEFAULT_LETS_ENCRYPT_PREFIX}.
 /// @param address Local IP address or hostname to bind the proxy server to. Use `"0.0.0.0"` to bind
-///   on all available network interfaces (the default).
+///   on all available IPv4 interfaces (the default), or `"::"` to bind the IPv6 wildcard; on a
+///   dual-stack runtime, `"::"` accepts IPv4 clients as well and reports them as IPv4 addresses.
 ///
 ///   **IPv4 example:** `"192.168.1.100"`
 ///
-///   **IPv6 example:** `"::1"` — pass the raw address without brackets.
+///   **IPv6 wildcard example:** `"::"` — accepts IPv4 and IPv6 clients on a dual-stack runtime.
 ///   [java.net.InetSocketAddress] handles it natively.
 ///
 ///   In YAML configuration, IPv6 addresses **must be quoted** because colons are YAML special

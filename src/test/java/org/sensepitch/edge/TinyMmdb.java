@@ -6,9 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/// Writes a minimal IPv4 database in the MaxMind DB format, like the IPinfo database read by
-/// [IpInfoCountryAndAsnLookup]: every address maps to one record `{country_code: ...}`. For tests
-/// that need a database file without shipping one and without a writer library.
+/// Writes minimal IPv4 databases in the MaxMind DB format. For tests that need a database file
+/// without shipping one and without a writer library.
 ///
 /// The layout follows the MaxMind DB format specification 2.0: a search tree of one node with
 /// 24-bit records both pointing to the data record, 16 zero bytes, the data section, the metadata
@@ -40,16 +39,41 @@ final class TinyMmdb {
 
   private TinyMmdb() {}
 
-  /// Writes a database that maps every IPv4 address to the country
+  /// Writes an IPinfo database that maps every IPv4 address to a flat `country_code`.
   static void writeCountry(Path file, String countryCode) throws IOException {
+    write(file, ipInfoRecord(countryCode), "ipinfo");
+  }
+
+  /// Writes a GeoLite2-Country database that maps every IPv4 address to `country.iso_code`.
+  static void writeGeoLite2Country(Path file, String countryCode) throws IOException {
+    write(file, geoLite2Record(countryCode), "GeoLite2-Country");
+  }
+
+  private static byte[] ipInfoRecord(String countryCode) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    control(out, MAP, 1);
+    string(out, "country_code");
+    string(out, countryCode);
+    return out.toByteArray();
+  }
+
+  private static byte[] geoLite2Record(String countryCode) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    control(out, MAP, 1);
+    string(out, "country");
+    control(out, MAP, 1);
+    string(out, "iso_code");
+    string(out, countryCode);
+    return out.toByteArray();
+  }
+
+  private static void write(Path file, byte[] record, String databaseType) throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     // the only node: left and right record point to the data record
     record24(out, DATA_RECORD);
     record24(out, DATA_RECORD);
     out.write(new byte[16]);
-    control(out, MAP, 1);
-    string(out, "country_code");
-    string(out, countryCode);
+    out.writeBytes(record);
     out.write(METADATA_MARKER);
     control(out, MAP, 9);
     string(out, "node_count");
@@ -62,7 +86,7 @@ final class TinyMmdb {
     control(out, UINT16, 1);
     out.write(4);
     string(out, "database_type");
-    string(out, "test");
+    string(out, databaseType);
     string(out, "languages");
     extended(out, ARRAY, 1);
     string(out, "en");

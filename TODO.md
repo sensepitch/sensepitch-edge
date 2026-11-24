@@ -129,7 +129,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
       which stops accepting once the new one is ready (`shutdownAcceptGraceMillis`). Needs
       `hostNetwork` and the Netty epoll or io_uring transport (today NIO, `Proxy`).
   - The node firewall must let 80 and 443 through to the chosen path.
-- [ ] 11. dual stack: the default `listen.address` `0.0.0.0` accepts IPv4 only, the nodes have
+- [x] 11. dual stack: the default `listen.address` `0.0.0.0` accepts IPv4 only, the nodes have
   IPv6 as well. Verify that `address: "::"` accepts both on one socket, and that an IPv4 client
   then appears as IPv4, not `::ffff:` mapped, in `bypass.remotes`, the IP traits, the request log
   and `X-Forwarded-For`. With `hostPort` the cluster and CNI need dual stack too.
