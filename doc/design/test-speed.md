@@ -401,8 +401,12 @@ build.
   `@Isolated`. This is the largest gain left. A few real tests stay as `*IT` in addition.
   Done for the OTLP destination (2026-11-23): `OtlpOutageBDDTest` and the sender scenarios of
   `OtlpLogDestinationTest` run on the shared `FakeTime` and `FakeLogServer`, the latter
-  no longer `@Isolated`. `OtlpLogDestinationIT` checks recovery over real HTTP. Left:
-  `ReloadableRequestLoggerTest`, see `TODO.md`.
+  no longer `@Isolated`. `OtlpLogDestinationIT` checks recovery over real HTTP. Started for
+  the reload (2026-11-24): `RequestLoggerFactory.SenderSeams` passes the three seams to the
+  `otlp` destinations a `ReloadableRequestLogger` creates, and the age-out of a removed
+  destination, moved to `ReloadableRequestLoggerIT` on 2026-11-17 (table above), is back in
+  `ReloadableRequestLoggerTest` on simulated time. Left: the other tests of that class and of
+  `RequestLoggerFactoryTest`, see `TODO.md`.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 

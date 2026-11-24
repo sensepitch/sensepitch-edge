@@ -204,7 +204,8 @@ moved to [TODO.md](TODO.md#fast-tests-without-flakiness) as top priority on 2026
     coverage) to `ReloadableRequestLoggerIT`, which uses the unit test class as its fixture.
   - Next: `ReloadableRequestLoggerTest` still takes 3.3 s in the full run (2026-11-16):
     `finishCoversDrainingDestinations` 1.4 s, `finishedDestinationEndsWhenItsRecordsAgedOut`
-    0.3 s, `disableAndEnableByReload` 0.2 s, `removedDestinationDoesNotBlockTheReload` 0.15 s.
+    0.3 s (on simulated time since 2026-11-24), `disableAndEnableByReload` 0.2 s,
+    `removedDestinationDoesNotBlockTheReload` 0.15 s.
     Probably real timers (retry backoff after 503, age limit), not verified. What cannot move
     for coverage gets a fake clock instead, see "Real time and races in the remaining tests" in
     [TODO.md](TODO.md#fast-tests-without-flakiness).

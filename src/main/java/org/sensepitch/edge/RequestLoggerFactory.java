@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.util.concurrent.Ticker;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,6 +21,19 @@ public final class RequestLoggerFactory {
 
   private RequestLoggerFactory() {}
 
+  /// The test seams of the `otlp` senders, see [OtlpLogDestination] and [HttpBatchSender]: a
+  /// test passes a simulated clock, a timer on it and a fake log server, so the flush, the age
+  /// limit and the answers run in the test thread.
+  ///
+  /// @param timer `null` for the shared timer, see [HttpBatchSender.Timer#production()]
+  /// @param transport `null` for an HTTP client of each sender
+  record SenderSeams(
+      Ticker clock, HttpBatchSender.Timer timer, HttpBatchSender.Transport transport) {
+
+    /// The system clock, the shared timer and an HTTP client of each sender
+    static final SenderSeams PRODUCTION = new SenderSeams(Ticker.systemTicker(), null, null);
+  }
+
   /// Validates the configuration and creates a logger passing each request to all destinations.
   /// The logger can be reconfigured on a configuration reload, see [ReloadableRequestLogger].
   /// Finishing the logger sends what `otlp` destinations buffered and stops them, the standard
@@ -38,14 +52,26 @@ public final class RequestLoggerFactory {
       RequestLogMetrics metrics,
       Iterable<? extends Executor> loggingThreads,
       ConfigFiles files) {
-    return new ReloadableRequestLogger(config, stdout, metrics, loggingThreads, files);
+    return new ReloadableRequestLogger(
+        config, stdout, metrics, loggingThreads, files, SenderSeams.PRODUCTION);
   }
 
   /// For a single thread that logs and reloads, e.g. a test: the end marker of a replaced
   /// destination runs right away on the reloading thread. The referenced files are not collected.
   public static ReloadableRequestLogger create(
       RequestLogConfig config, RequestLogOutput stdout, RequestLogMetrics metrics) {
-    return create(config, stdout, metrics, List.<Executor>of(Runnable::run), new ConfigFiles());
+    return create(config, stdout, metrics, SenderSeams.PRODUCTION);
+  }
+
+  /// For a single thread that logs and reloads, with the `otlp` senders on the test seams, e.g.
+  /// a simulated clock, see [#create(RequestLogConfig, RequestLogOutput, RequestLogMetrics)]
+  static ReloadableRequestLogger create(
+      RequestLogConfig config,
+      RequestLogOutput stdout,
+      RequestLogMetrics metrics,
+      SenderSeams seams) {
+    return new ReloadableRequestLogger(
+        config, stdout, metrics, List.<Executor>of(Runnable::run), new ConfigFiles(), seams);
   }
 
   /// The configured destinations, or one standard out destination in the format selected by
@@ -82,13 +108,15 @@ public final class RequestLoggerFactory {
   ///
   /// @param files reads the secret headers, see [#resolveSecretHeaders(String, OtlpConfig,
   ///   ConfigFiles)]
+  /// @param seams clock, timer and transport of an `otlp` sender
   /// @throws IllegalArgumentException if the `otlp` settings are invalid
   static RequestLogger createDestination(
       String name,
       RequestLogDestinationConfig destination,
       RequestLogOutput stdout,
       RequestLogMetrics metrics,
-      ConfigFiles files) {
+      ConfigFiles files,
+      SenderSeams seams) {
     RequestLogger logger =
         switch (destination.type()) {
           case RequestLogDestinationConfig.TYPE_STDOUT ->
@@ -101,7 +129,10 @@ public final class RequestLoggerFactory {
                       name,
                       resolveSecretHeaders(name, destination.otlp(), files),
                       metrics,
-                      destination.sampleHeadersInterval()));
+                      destination.sampleHeadersInterval(),
+                      seams.clock(),
+                      seams.timer(),
+                      seams.transport()));
           default -> throw new IllegalStateException("type validated before");
         };
     return destination.anonymizeClientIp() ? new AnonymizingRequestLogger(logger) : logger;

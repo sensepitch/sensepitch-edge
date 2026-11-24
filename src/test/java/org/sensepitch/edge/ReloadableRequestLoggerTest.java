@@ -243,6 +243,58 @@ class ReloadableRequestLoggerTest {
     assertThat(got).isEqualTo(2);
   }
 
+  /// A removed destination whose log server does not come back ends once its records are older
+  /// than the maximum age, they are counted as dropped. On the simulated clock: the test posts the
+  /// first export and answers it, so the records cannot age out before an attempt.
+  @Test
+  void finishedDestinationEndsWhenItsRecordsAgedOut() {
+    int ageMillis = 300;
+    int records = 10;
+    FakeTime clock = new FakeTime();
+    FakeLogServer logServer = new FakeLogServer();
+    RequestLogDestinationConfig shortAge =
+        RequestLogDestinationConfig.builder()
+            .type("otlp")
+            .name("vl")
+            .otlp(
+                OtlpConfig.builder()
+                    .endpoint(endpoint())
+                    // no compression thread, all runs in the test thread
+                    .compression(OtlpConfig.NONE)
+                    .flushIntervalMillis(1)
+                    .maximumUnsentLogAgeMillis(ageMillis)
+                    // the breaker lets no retry through, only the last attempt of finishing
+                    .initialRetryDelayMillis(OUT_OF_REACH_MILLIS)
+                    .maxRetryDelayMillis(OUT_OF_REACH_MILLIS)
+                    .build())
+            .build();
+    logger =
+        RequestLoggerFactory.create(
+            config(shortAge),
+            stdout,
+            metrics,
+            new RequestLoggerFactory.SenderSeams(clock, clock.scheduler()::schedule, logServer));
+    CompletableFuture<Void> removedStopped = stoppedOfActiveDestination();
+    for (int i = 0; i < records; i++) {
+      logOneRequest();
+    }
+    clock.advanceMillis(1);
+    assertThat(logServer.requests()).as("the first flush posts the export").hasSize(1);
+    logServer.succeed(503);
+    reload(config(stdout(false)));
+    assertThat(logServer.requests()).as("finishing makes one last attempt").hasSize(2);
+    logServer.succeed(503);
+    clock.advanceMillis(ageMillis - 1);
+    assertThat(removedStopped).as("the records are not too old yet").isNotDone();
+    assertThat(queuedDestinations()).contains("vl");
+    assertThat(dropped("vl")).isZero();
+    clock.advanceMillis(1);
+    assertThat(removedStopped).as("the destination ended").isDone();
+    assertThat(queuedDestinations()).doesNotContain("vl");
+    assertThat(dropped("vl")).isEqualTo(records);
+    assertThat(logServer.requests()).as("no further attempt").hasSize(2);
+  }
+
   void awaitAttempts(int expected) throws Exception {
     await("at least " + expected + " export attempts", () -> attempts.get() >= expected);
   }

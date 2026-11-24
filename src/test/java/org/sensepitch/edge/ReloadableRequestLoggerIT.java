@@ -100,29 +100,6 @@ class ReloadableRequestLoggerIT {
     }
   }
 
-  /// A removed destination whose log server does not come back ends once its records are older
-  /// than the maximum age, they are counted as dropped
-  @Test
-  void finishedDestinationEndsWhenItsRecordsAgedOut() throws Exception {
-    fixture.status = 503;
-    RequestLogDestinationConfig shortAge = fixture.otlp("vl", 1);
-    shortAge =
-        shortAge.toBuilder()
-            .otlp(shortAge.otlp().toBuilder().maximumUnsentLogAgeMillis(300).build())
-            .build();
-    fixture.logger =
-        RequestLoggerFactory.create(
-            ReloadableRequestLoggerTest.config(shortAge), fixture.stdout, fixture.metrics);
-    for (int i = 0; i < 10; i++) {
-      fixture.logOneRequest();
-    }
-    fixture.awaitAttempts(1);
-    fixture.reload(ReloadableRequestLoggerTest.config(ReloadableRequestLoggerTest.stdout(false)));
-    await("removed destination ended", () -> !fixture.queuedDestinations().contains("vl"));
-    assertThat(fixture.queuedDestinations()).as("the destination ended").doesNotContain("vl");
-    assertThat(fixture.dropped("vl")).isEqualTo(10);
-  }
-
   /// Switching the request log off ends its destinations, switching it on creates them again
   @Test
   void disableAndEnableByReload() throws Exception {

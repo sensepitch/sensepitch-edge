@@ -60,6 +60,7 @@ public final class ReloadableRequestLogger implements RequestLogger {
   private final RequestLogOutput stdout;
   private final RequestLogMetrics metrics;
   private final Iterable<? extends Executor> loggingThreads;
+  private final RequestLoggerFactory.SenderSeams seams;
   private volatile Destination[] destinations = new Destination[0];
 
   /// Replaced or removed batching destinations, until they stopped
@@ -70,16 +71,20 @@ public final class ReloadableRequestLogger implements RequestLogger {
   /// @param loggingThreads the threads that log requests, the event loops, as executors. A
   ///   reload runs the end marker of a replaced destination on each of them.
   /// @param files reads and records the files of the destinations, e.g. secret headers
+  /// @param seams clock, timer and transport of the `otlp` senders, a reload creates new ones on
+  ///   them as well
   /// @throws IllegalArgumentException if the configuration is invalid
   ReloadableRequestLogger(
       RequestLogConfig config,
       RequestLogOutput stdout,
       RequestLogMetrics metrics,
       Iterable<? extends Executor> loggingThreads,
-      ConfigFiles files) {
+      ConfigFiles files,
+      RequestLoggerFactory.SenderSeams seams) {
     this.stdout = stdout;
     this.metrics = metrics;
     this.loggingThreads = loggingThreads;
+    this.seams = seams;
     prepare(config, files).apply();
   }
 
@@ -122,7 +127,7 @@ public final class ReloadableRequestLogger implements RequestLogger {
           ConfigFiles destinationFiles = new ConfigFiles();
           RequestLogger logger =
               RequestLoggerFactory.createDestination(
-                  names.get(i), destinationConfig, stdout, metrics, destinationFiles);
+                  names.get(i), destinationConfig, stdout, metrics, destinationFiles, seams);
           destination =
               new Destination(names.get(i), destinationConfig, destinationFiles.snapshot(), logger);
           created.add(destination);

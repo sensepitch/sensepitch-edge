@@ -23,15 +23,13 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   `AGENTS.md`
   - P1: each one is slow or can fail on a loaded machine although the code is right.
   - On simulated time (`FakeTime`, `FakeLogServer`) once the class has a clock seam:
-    `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (they build the destination via
-    the public constructor), `AsyncRequestLogWriterTest` and `ConfigFileWatcherTest` (no clock or
-    scheduler seam; the watcher also waits on the file system), `ProxyOptionsTest` (OTLP posting
+    `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (the seam is there:
+    `RequestLoggerFactory.create` with `SenderSeams`, first used by
+    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut`),
+    `AsyncRequestLogWriterTest` and `ConfigFileWatcherTest` (no clock or scheduler seam; the
+    watcher also waits on the file system), `ProxyOptionsTest` (OTLP posting
     with a 1 ms flush interval), and the durations in `ProxyShutdownIT`. The tests stay in the
     test scope meanwhile, see the coverage rule in `AGENTS.md`.
-  - Races with the test's own steps, they need a hook or a held state:
-    - `ReloadableRequestLoggerIT.finishedDestinationEndsWhenItsRecordsAgedOut` (age 300 ms, then
-      `awaitAttempts(1)`: a pause over 300 ms may age the records out before the first attempt,
-      inferred, not reproduced).
   - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
     `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
 - [ ] Instance scoped diagnostic logging and event driven waits, plan in
