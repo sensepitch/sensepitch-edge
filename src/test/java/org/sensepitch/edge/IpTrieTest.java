@@ -22,6 +22,16 @@ public class IpTrieTest {
     Assertions.assertThat(trie.find("127.0.0.1")).isNotNull().hasSize(2);
   }
 
+  /// An address range published in two crawler lists keeps the labels of both
+  @Test
+  public void samePrefixInTwoListsKeepsBothLabels() throws UnknownHostException {
+    IpTrieWrapper trie = new IpTrieWrapper();
+    trie.insert("66.249.64.0/19", "crawler:google:googlebot");
+    trie.insert("66.249.64.0/19", "crawler:google:special");
+    Assertions.assertThat(trie.find("66.249.64.1"))
+        .containsExactly("crawler:google:googlebot", "crawler:google:special");
+  }
+
   static class IpTrieWrapper implements AnyVersionIpLookup {
     IpTrie trie = new IpTrie();
 

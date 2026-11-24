@@ -236,6 +236,15 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
+  - [ ] `AsyncRequestLogWriter#close`: closing the standard out request log while its writer is
+    blocked. `close()` gives up after 5 s, logs that pending records are not written and returns,
+    so a blocked standard out cannot stop the shutdown. Untested, a real time test would wait the
+    5 s; test it on simulated time once the class has the clock seam, see "Real time and races in
+    the remaining tests" above.
+  - [ ] `ConfigFileWatcher#watch`: stopping the configuration file watcher. The watcher thread
+    ends only on interrupt, but the class has no stop method, so the interrupt branch is
+    unreachable and the thread lives as long as the process. Decide whether the watcher gets a
+    stop, e.g. from `Main`'s shutdown or a reload test, then test it, or the branch goes.
 
 ## Governance
 

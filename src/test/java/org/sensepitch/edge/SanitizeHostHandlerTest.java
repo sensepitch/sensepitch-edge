@@ -14,6 +14,7 @@ import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.ssl.SniCompletionEvent;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /// @author Jens Wilke
@@ -99,6 +100,32 @@ class SanitizeHostHandlerTest {
     assertThat(sanitize("[2001:db8::1")).isEqualTo(UNKNOWN_HOST);
     assertThat(sanitize("[2001:db8::1]x")).isEqualTo(UNKNOWN_HOST);
     assertThat(sanitize(":443")).isEqualTo(UNKNOWN_HOST);
+    assertThat(sanitize("example.com:-1")).isEqualTo(UNKNOWN_HOST);
+    assertThat(sanitize("example.com:4/3")).isEqualTo(UNKNOWN_HOST);
+  }
+
+  /// Non-ASCII and a tab inside the host never match a configured host, also not after the
+  /// lower-casing. Netty's header validation already rejects the other control characters.
+  @Test
+  void tabOrNonAsciiCharacterIsUnknown() {
+    assertThat(sanitize("ex\u00e4mple.com")).isEqualTo(UNKNOWN_HOST);
+    assertThat(sanitize("exa\tmple.com")).isEqualTo(UNKNOWN_HOST);
+  }
+
+  /// A wildcard matches a label only within the length of a DNS name, 253 characters
+  @Test
+  void wildcardMatchLongerThanADnsNameIsUnknown() {
+    assertThat(matchesWildcardOf(253)).isTrue();
+    assertThat(matchesWildcardOf(254)).isFalse();
+  }
+
+  /// Whether a host of the length, with a short first label, matches the wildcard of its parent
+  boolean matchesWildcardOf(int length) {
+    String suffix = ".example.net";
+    String host = "a." + "b".repeat(length - 2 - suffix.length()) + suffix;
+    assertThat(host).hasSize(length);
+    String wildcard = "*" + host.substring(1);
+    return wildcard.equals(SanitizeHostHandler.matchingHost(Set.of(wildcard), host));
   }
 
   /// Host names are case-insensitive, a trailing dot denotes the same, fully qualified name.
@@ -130,6 +157,20 @@ class SanitizeHostHandlerTest {
       HttpRequest result = pass(request(HttpMethod.valueOf(method), "example.com"));
       assertThat(result.method().name()).isEqualTo(method);
     }
+  }
+
+  /// A configured special host is dropped, so a client sending it never reaches a site: the
+  /// handler sets it itself for unknown and missing hosts
+  @Test
+  void configuredSpecialHostIsDropped() {
+    assertThat(SanitizeHostHandler.filterKnownHosts(List.of("example.com", UNKNOWN_HOST)))
+        .containsExactly("example.com");
+    SanitizeHostHandler withSpecial = new SanitizeHostHandler(List.of("example.com", MISSING_HOST));
+    EmbeddedChannel channel = new EmbeddedChannel(withSpecial);
+    channel.writeInbound(request(HttpMethod.GET, MISSING_HOST));
+    HttpRequest result = channel.readInbound();
+    channel.finishAndReleaseAll();
+    assertThat(result.headers().get(HttpHeaderNames.HOST)).isEqualTo(UNKNOWN_HOST);
   }
 
   @Test

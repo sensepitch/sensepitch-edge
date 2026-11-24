@@ -112,6 +112,8 @@ class ExternalTcpIT {
                         .protection(ProtectionConfig.builder().disable(true).build())
                         .build()))
             .metrics(MetricsConfig.builder().enable(false).build())
+            // the only place the fingerprint is taken from a real ClientHello in the pipeline
+            .ja4(Ja4Config.builder().enable(true).build())
             .build();
 
     proxy = new Proxy(config, requestLog);
@@ -173,7 +175,8 @@ class ExternalTcpIT {
   }
 
   /// The upstream receives the trace context the edge assigned, and the request log reports the
-  /// same span id, plus the data only a real TLS connection has
+  /// same span id, plus the data only a real TLS connection has: the TLS details and the JA4
+  /// fingerprint of the ClientHello, which replaces the one the client sent
   @Test
   void upstreamReceivesTraceparentOfRequestLog() throws Exception {
     String clientTraceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
@@ -185,7 +188,9 @@ class ExternalTcpIT {
               ("GET /path?q=1 HTTP/1.1\r\nHost: upstream.com\r\nConnection: close\r\n"
                       + "traceparent: "
                       + clientTraceparent
-                      + "\r\n\r\n")
+                      + "\r\n"
+                      + Ja4HeaderHandler.JA4_HEADER
+                      + ": spoofed\r\n\r\n")
                   .getBytes(StandardCharsets.US_ASCII));
       socket.getOutputStream().flush();
       String response =
@@ -213,6 +218,8 @@ class ExternalTcpIT {
     assertThat(record.get("tls.protocol.name").asText()).isEqualTo("tls");
     assertThat(record.get("tls.protocol.version").asText()).isIn("1.2", "1.3");
     assertThat(record.get("tls.cipher").asText()).startsWith("TLS_");
+    assertThat(record.get(SensepitchLogFields.TLS_CLIENT_JA4).asText())
+        .matches("t1[23][di]\\d{4}\\w{2}_[0-9a-f]{12}_[0-9a-f]{12}");
     assertThat(record.get("http.response.status_code").asInt()).isEqualTo(200);
     assertThat(record.get("sensepitch.upstream.name").asText())
         .isEqualTo("sites.upstream.com.upstream");

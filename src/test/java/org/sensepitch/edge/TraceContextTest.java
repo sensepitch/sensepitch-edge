@@ -63,6 +63,11 @@ class TraceContextTest {
         "00_4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         "00-4bf92f3577b34da6a3ce929d0e0e473-600f067aa0ba902b7-01",
         "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-0g",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736_00f067aa0ba902b7-01",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7_01",
+        // a character below '0' in the trace id or the span id
+        "00-4bf92f3577b34da6a3ce929d0e0e47/6-00f067aa0ba902b7-01",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b -01",
         "zz-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
       })
   void parseInvalid(String header) {

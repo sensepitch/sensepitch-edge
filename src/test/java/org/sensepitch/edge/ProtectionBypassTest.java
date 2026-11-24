@@ -24,9 +24,12 @@ import java.net.SocketAddress;
 import java.util.List;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /// @author Jens Wilke
 public class ProtectionBypassTest {
+
+  @RegisterExtension LogCapture logs = new LogCapture();
 
   private static final String COOKIE_NAME = "edge-access";
   private static final String ACCESS_URI = "/gate";
@@ -113,6 +116,25 @@ public class ProtectionBypassTest {
     for (String uri : List.of("/", "/b", "/exact/more")) {
       assertThat(bypass.allowBypass(ctx, get(uri))).as("no bypass " + uri).isFalse();
     }
+  }
+
+  /// An unresolvable remote is logged and skipped, the proxy still starts and the other remotes
+  /// bypass, see [DefaultBypassCheckTest#unresolvableRemoteIsLogged()] for the deflector bypass
+  @Test
+  public void unresolvableRemoteIsLoggedAndSkipped() {
+    ProtectionBypass bypass =
+        new ProtectionBypass(
+            new ProtectionBypassConfig(null, List.of("does-not-exist.invalid", "192.0.2.8")));
+    assertThat(logs.messages(ProtectionBypass.class))
+        .anySatisfy(m -> assertThat(m).contains("does-not-exist.invalid"));
+    assertThat(bypass.allowBypass(contextFrom("192.0.2.8"), get("/"))).isTrue();
+    assertThat(bypass.allowBypass(contextFrom("192.0.2.7"), get("/"))).isFalse();
+  }
+
+  private static ChannelHandlerContext contextFrom(String ip) {
+    Channel channel = TestChannels.channelFrom(ip);
+    channel.pipeline().addLast(new ChannelInboundHandlerAdapter());
+    return channel.pipeline().firstContext();
   }
 
   @Test
