@@ -12,10 +12,6 @@ public class SiteSelectorHandler extends SkippingChannelInboundHandlerAdapter {
 
   private final Supplier<SiteSelector> siteSelector;
 
-  public SiteSelectorHandler(SiteSelector siteSelector) {
-    this(() -> siteSelector);
-  }
-
   /// @param siteSelector supplies the current selector, read once per request so a
   ///   configuration reload takes effect on keep-alive connections
   public SiteSelectorHandler(Supplier<SiteSelector> siteSelector) {

@@ -31,7 +31,7 @@ import java.net.InetAddress;
 /// Holds reusable state, so an instance is used by one thread at a time, see [ThreadBatcher].
 ///
 /// @author Jens Wilke
-final class OtlpRequestLogSink implements RequestLogSink {
+final class OtlpRequestLogSink implements RequestLogSink<RuntimeException> {
 
   private static final char[] HEX = "0123456789abcdef".toCharArray();
 

@@ -9,8 +9,12 @@ import java.net.InetAddress;
 /// The interface is designed so that the mapping does not allocate: values are passed as parts,
 /// ranges or primitives, and arrays are streamed. A sink that renders text may still allocate.
 ///
+/// @param <E> the checked exception the sink may throw, e.g. `IOException` of the JSON generator,
+///   `RuntimeException` for a sink that throws none; so a caller catches it once per record and
+///   not each method of the sink
+///
 /// @author Jens Wilke
-public interface RequestLogSink {
+public interface RequestLogSink<E extends Exception> {
 
   /// Record level fields, which OTLP keeps outside the attributes
   ///
@@ -26,46 +30,47 @@ public interface RequestLogSink {
       RequestLogFieldsWriter.Severity severity,
       String traceId,
       String spanId,
-      String traceFlags);
+      String traceFlags)
+      throws E;
 
   /// Parts of a short summary for log viewers, `<method> <uri> <status>`
-  void body(String method, String uri, int status);
+  void body(String method, String uri, int status) throws E;
 
-  void string(String key, CharSequence value);
+  void string(String key, CharSequence value) throws E;
 
   /// String attribute with the characters `start` (inclusive) to `end` (exclusive) of the value
-  void string(String key, CharSequence value, int start, int end);
+  void string(String key, CharSequence value, int start, int end) throws E;
 
   /// IP address attribute, rendered like [InetAddress#getHostAddress()]
-  void address(String key, InetAddress address);
+  void address(String key, InetAddress address) throws E;
 
-  void number(String key, long value);
+  void number(String key, long value) throws E;
 
-  void bool(String key, boolean value);
+  void bool(String key, boolean value) throws E;
 
   /// Starts a string array, followed by [#arrayValue(CharSequence)] calls and [#endArray()]
-  void startArray(String key);
+  void startArray(String key) throws E;
 
-  void arrayValue(CharSequence value);
+  void arrayValue(CharSequence value) throws E;
 
-  void endArray();
+  void endArray() throws E;
 
   /// String attribute, left out if the value is `null`
-  default void optionalString(String key, CharSequence value) {
+  default void optionalString(String key, CharSequence value) throws E {
     if (value != null) {
       string(key, value);
     }
   }
 
   /// IP address attribute, left out if the address is `null`
-  default void optionalAddress(String key, InetAddress address) {
+  default void optionalAddress(String key, InetAddress address) throws E {
     if (address != null) {
       address(key, address);
     }
   }
 
   /// Number attribute, left out if the value is not positive, e.g. an unknown port
-  default void optionalNumber(String key, long value) {
+  default void optionalNumber(String key, long value) throws E {
     if (value > 0) {
       number(key, value);
     }

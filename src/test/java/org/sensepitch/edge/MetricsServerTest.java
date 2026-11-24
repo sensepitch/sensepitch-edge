@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.prometheus.metrics.core.metrics.Counter;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.ConnectException;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -38,6 +40,17 @@ class MetricsServerTest {
       assertThat(response.body()).contains("test_requests_total 3.0").contains("jvm_memory_used");
     }
     assertThatThrownBy(() -> get(port)).isInstanceOf(ConnectException.class);
+  }
+
+  /// A port that is taken fails the start, with the cause
+  @Test
+  void portInUseFailsTheStart() throws Exception {
+    try (ServerSocket taken = new ServerSocket(0)) {
+      PrometheusConfig cfg = PrometheusConfig.builder().port(taken.getLocalPort()).build();
+      assertThatThrownBy(() -> MetricsServer.start(cfg, new PrometheusRegistry()))
+          .isInstanceOf(UncheckedIOException.class)
+          .hasCauseInstanceOf(IOException.class);
+    }
   }
 
   @Test

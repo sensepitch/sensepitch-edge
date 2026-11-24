@@ -70,10 +70,10 @@ public class JsonRequestLogger implements RequestLogger {
     return TIMESTAMP.format(Instant.ofEpochMilli(millis));
   }
 
-  /// Writes the fields as flat JSON properties. The sink interface does not declare
-  /// [IOException], so it is passed on unchecked. Rendering text allocates anyway, so values are
-  /// converted to strings where convenient.
-  private static final class Sink implements RequestLogSink {
+  /// Writes the fields as flat JSON properties. The [IOException] of the generator is passed on
+  /// and caught once per record in [#logRequest(RequestLogInfo)]. Rendering text allocates
+  /// anyway, so values are converted to strings where convenient.
+  private static final class Sink implements RequestLogSink<IOException> {
 
     private final JsonGenerator json;
     private String traceId;
@@ -91,14 +91,11 @@ public class JsonRequestLogger implements RequestLogger {
         RequestLogFieldsWriter.Severity severity,
         String traceId,
         String spanId,
-        String traceFlags) {
+        String traceFlags)
+        throws IOException {
       this.traceId = traceId;
       this.spanId = spanId;
-      try {
-        json.writeStringField(OtelLogFields.TIMESTAMP, timestamp(timeMillis));
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+      json.writeStringField(OtelLogFields.TIMESTAMP, timestamp(timeMillis));
     }
 
     /// Event name and trace context, at the end of the line, since they are for machines
@@ -117,67 +114,43 @@ public class JsonRequestLogger implements RequestLogger {
     public void body(String method, String uri, int status) {}
 
     @Override
-    public void string(String key, CharSequence value) {
-      try {
-        json.writeStringField(key, value.toString());
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+    public void string(String key, CharSequence value) throws IOException {
+      json.writeStringField(key, value.toString());
     }
 
     @Override
-    public void string(String key, CharSequence value, int start, int end) {
+    public void string(String key, CharSequence value, int start, int end) throws IOException {
       string(key, value.subSequence(start, end));
     }
 
     @Override
-    public void address(String key, InetAddress address) {
+    public void address(String key, InetAddress address) throws IOException {
       string(key, address.getHostAddress());
     }
 
     @Override
-    public void number(String key, long value) {
-      try {
-        json.writeNumberField(key, value);
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+    public void number(String key, long value) throws IOException {
+      json.writeNumberField(key, value);
     }
 
     @Override
-    public void bool(String key, boolean value) {
-      try {
-        json.writeBooleanField(key, value);
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+    public void bool(String key, boolean value) throws IOException {
+      json.writeBooleanField(key, value);
     }
 
     @Override
-    public void startArray(String key) {
-      try {
-        json.writeArrayFieldStart(key);
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+    public void startArray(String key) throws IOException {
+      json.writeArrayFieldStart(key);
     }
 
     @Override
-    public void arrayValue(CharSequence value) {
-      try {
-        json.writeString(value.toString());
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+    public void arrayValue(CharSequence value) throws IOException {
+      json.writeString(value.toString());
     }
 
     @Override
-    public void endArray() {
-      try {
-        json.writeEndArray();
-      } catch (IOException e) {
-        throw new UncheckedIOException(e);
-      }
+    public void endArray() throws IOException {
+      json.writeEndArray();
     }
   }
 }

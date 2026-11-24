@@ -121,7 +121,8 @@ public final class RequestLogFieldsWriter {
   }
 
   /// Emits all fields of the request into the sink, without sampled headers
-  public static void write(RequestLogInfo info, RequestLogSink sink) {
+  public static <E extends Exception> void write(RequestLogInfo info, RequestLogSink<E> sink)
+      throws E {
     write(info, sink, 0);
   }
 
@@ -131,7 +132,8 @@ public final class RequestLogFieldsWriter {
   /// @param sampleHeadersInterval if positive, about one in this many requests, picked at random,
   ///   also gets [SensepitchLogFields#REQUEST_SAMPLE_HEADERS], see
   ///   [RequestLogDestinationConfig#sampleHeadersInterval()]
-  public static void write(RequestLogInfo info, RequestLogSink sink, int sampleHeadersInterval) {
+  public static <E extends Exception> void write(
+      RequestLogInfo info, RequestLogSink<E> sink, int sampleHeadersInterval) throws E {
     HttpRequest request = info.request();
     HttpResponse response = info.response();
     HttpHeaders headers = request.headers();
@@ -175,7 +177,8 @@ public final class RequestLogFieldsWriter {
   }
 
   /// The client, its user agent and the logged request headers
-  private static void writeClient(RequestLogInfo info, HttpHeaders headers, RequestLogSink sink) {
+  private static <E extends Exception> void writeClient(
+      RequestLogInfo info, HttpHeaders headers, RequestLogSink<E> sink) throws E {
     sink.optionalAddress(OtelLogFields.CLIENT_ADDRESS, info.clientAddress());
     sink.optionalString(
         OtelLogFields.GEO_COUNTRY_ISO_CODE, headers.get(IpTraitsHandler.COUNTRY_HEADER));
@@ -203,7 +206,8 @@ public final class RequestLogFieldsWriter {
   }
 
   /// Which upstream served the request and how the protection decided
-  private static void writeRouting(RequestLogInfo info, RequestLogSink sink) {
+  private static <E extends Exception> void writeRouting(
+      RequestLogInfo info, RequestLogSink<E> sink) throws E {
     sink.optionalString(OtelLogFields.HTTP_ROUTE, info.route());
     sink.optionalString(SensepitchLogFields.UPSTREAM_NAME, info.upstreamName());
     sink.optionalString(SensepitchLogFields.UPSTREAM_TARGET, info.upstreamTarget());
@@ -213,8 +217,8 @@ public final class RequestLogFieldsWriter {
   }
 
   /// Method, host, path and query, like the request line of an access log
-  private static void writeRequestLine(
-      HttpRequest request, HttpHeaders headers, RequestLogSink sink) {
+  private static <E extends Exception> void writeRequestLine(
+      HttpRequest request, HttpHeaders headers, RequestLogSink<E> sink) throws E {
     String method = request.method().name();
     if (KNOWN_METHODS.contains(method)) {
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD, method);
@@ -234,7 +238,8 @@ public final class RequestLogFieldsWriter {
     }
   }
 
-  private static void writeProtocol(HttpRequest request, RequestLogSink sink) {
+  private static <E extends Exception> void writeProtocol(
+      HttpRequest request, RequestLogSink<E> sink) throws E {
     HttpVersion version = request.protocolVersion();
     if (version == HttpVersion.HTTP_1_1) {
       sink.string(OtelLogFields.NETWORK_PROTOCOL_NAME, "http");
@@ -253,7 +258,8 @@ public final class RequestLogFieldsWriter {
   }
 
   /// `TLSv1.3` is reported as protocol name `tls` and version `1.3`
-  private static void writeTls(RequestLogInfo info, RequestLogSink sink) {
+  private static <E extends Exception> void writeTls(RequestLogInfo info, RequestLogSink<E> sink)
+      throws E {
     String protocol = info.tlsProtocol();
     sink.string(OtelLogFields.URL_SCHEME, protocol != null ? "https" : "http");
     if (protocol == null) {
@@ -286,7 +292,8 @@ public final class RequestLogFieldsWriter {
   /// `error.type` is the exception class or, for a server error without exception, the status
   /// code, as the conventions for HTTP servers demand. The exception is described with the
   /// `exception.*` attributes of the conventions for exceptions in logs.
-  private static void writeError(RequestLogInfo info, int status, RequestLogSink sink) {
+  private static <E extends Exception> void writeError(
+      RequestLogInfo info, int status, RequestLogSink<E> sink) throws E {
     Throwable error = info.error();
     if (error != null) {
       sink.string(OtelLogFields.ERROR_TYPE, error.getClass().getName());
@@ -300,8 +307,9 @@ public final class RequestLogFieldsWriter {
   }
 
   /// The remaining Sensepitch fields: connection, fingerprints, header names, partial durations
-  private static void writeDetails(
-      RequestLogInfo info, HttpHeaders headers, RequestLogSink sink, int sampleHeadersInterval) {
+  private static <E extends Exception> void writeDetails(
+      RequestLogInfo info, HttpHeaders headers, RequestLogSink<E> sink, int sampleHeadersInterval)
+      throws E {
     sink.string(SensepitchLogFields.CONNECTION_ID, info.connectionId());
     sink.number(SensepitchLogFields.CONNECTION_REQUEST_COUNT, info.connectionRequestCount());
     sink.optionalString(SensepitchLogFields.IP_TRAITS, headers.get(IpTraitsHandler.TRAITS_HEADER));
@@ -330,7 +338,8 @@ public final class RequestLogFieldsWriter {
 
   /// The verified admission history, if the deflector set it, see
   /// [Deflector#ADMISSION_ORIGINAL_TOKEN_HEADER]
-  private static void writeAdmissionHistory(HttpHeaders headers, RequestLogSink sink) {
+  private static <E extends Exception> void writeAdmissionHistory(
+      HttpHeaders headers, RequestLogSink<E> sink) throws E {
     String originalToken = headers.get(Deflector.ADMISSION_ORIGINAL_TOKEN_HEADER);
     if (originalToken != null) {
       sink.string(SensepitchLogFields.ADMISSION_ORIGINAL_TOKEN, originalToken);
@@ -342,7 +351,8 @@ public final class RequestLogFieldsWriter {
 
   /// All request headers as `Name: value` in the order received, except
   /// [#SAMPLE_HEADERS_EXCLUDED] and the headers of the edge, see [SensepitchHeaders]. Allocates, but only for the sampled requests.
-  private static void writeSampleHeaders(HttpHeaders headers, RequestLogSink sink) {
+  private static <E extends Exception> void writeSampleHeaders(
+      HttpHeaders headers, RequestLogSink<E> sink) throws E {
     sink.startArray(SensepitchLogFields.REQUEST_SAMPLE_HEADERS);
     Iterator<Map.Entry<CharSequence, CharSequence>> entries = headers.iteratorCharSequence();
     while (entries.hasNext()) {

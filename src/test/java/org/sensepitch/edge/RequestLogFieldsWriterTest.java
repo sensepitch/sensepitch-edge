@@ -31,7 +31,7 @@ class RequestLogFieldsWriterTest {
 
   /// Collects the fields in a map, keys in emission order. Ranges become substrings, addresses
   /// strings and arrays lists.
-  static class RecordingSink implements RequestLogSink {
+  static class RecordingSink implements RequestLogSink<RuntimeException> {
 
     Record record;
     final Map<String, Object> fields = new LinkedHashMap<>();

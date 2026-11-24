@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
-/// Passes each request to all loggers, and closes all of them.
+/// Passes each request to all loggers. Closing is left to the owners of the loggers, e.g. the
+/// [Proxy] closes the request log destinations on shutdown.
 ///
 /// @author Jens Wilke
 public class DistributingRequestLogger implements RequestLogger {
@@ -15,15 +16,6 @@ public class DistributingRequestLogger implements RequestLogger {
   public void logRequest(RequestLogInfo info) {
     for (RequestLogger requestLogger : requestLogger) {
       requestLogger.logRequest(info);
-    }
-  }
-
-  // FIXME: never called, Proxy closes the request log destinations directly; remove or close the
-  // DistributingRequestLogger in Proxy#shutdown() instead
-  @Override
-  public void close() {
-    for (RequestLogger requestLogger : requestLogger) {
-      requestLogger.close();
     }
   }
 }

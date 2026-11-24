@@ -15,6 +15,8 @@ import java.util.TreeSet;
 /// @author Jens Wilke
 public class Certificates {
 
+  private Certificates() {}
+
   /// Key of the certificate used when no SNI host matches
   public static final String DEFAULT = "default";
 

@@ -90,6 +90,14 @@ class ProxyRejectedConfigBDDTest {
                     .build()),
             "protection scheme"),
         rejected(
+            "protection without a scheme",
+            siteConfig(
+                SiteConfig.builder()
+                    .response(ResponseConfig.builder().text("demo").build())
+                    .protection(ProtectionConfig.builder().build())
+                    .build()),
+            "protection scheme"),
+        rejected(
             "wildcard inside a host label",
             upstreamSite.toBuilder()
                 .sites(Map.of("app*.example.com", upstreamSite.sites().get("example.com")))

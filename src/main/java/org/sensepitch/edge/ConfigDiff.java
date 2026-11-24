@@ -12,6 +12,8 @@ import java.util.List;
 /// @author Jens Wilke
 public class ConfigDiff {
 
+  private ConfigDiff() {}
+
   /// @return the diff, or an empty string if both are identical
   public static String diff(String oldText, String newText) {
     String[] a = oldText.split("\n");
