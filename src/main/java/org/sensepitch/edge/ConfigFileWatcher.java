@@ -43,8 +43,9 @@ import java.util.function.Supplier;
 /// reload, e.g. of a certificate whose key is not written yet, is tried again when a file changes
 /// again, not on every event.
 ///
-/// Directories no longer needed are unregistered. A directory whose registration became invalid,
-/// e.g. because it was deleted, is registered again on the next reload attempt.
+/// Directories no longer needed are unregistered. The directories of the referenced files are
+/// registered again on every reload attempt, so a directory deleted and created again is watched
+/// again after the next attempt.
 ///
 /// A private lock guards the reload action, the known state and the watch registrations, and
 /// serializes file reads and reload callbacks. The initial check from `start` reenters the same
@@ -215,17 +216,19 @@ public class ConfigFileWatcher {
     for (Path referenced : referencedFiles.keySet()) {
       Path directory = referenced.getParent();
       needed.add(directory);
-      WatchKey key = watchKeys.get(directory);
-      // invalid, e.g. deleted and created again, before the watch thread removed the key
-      if (key == null || !key.isValid()) {
-        try {
-          watchKeys.put(
-              directory,
-              directory.register(watchService, ENTRY_CREATE, ENTRY_MODIFY, ENTRY_DELETE));
-        } catch (IOException e) {
-          // e.g. the directory does not exist (yet); the next reload attempt tries again
-          LOG.warn("Cannot watch directory of referenced file " + referenced + ": " + e);
+      // Registered on every attempt, not only when the key is missing or invalid: a directory
+      // deleted and created again keeps a valid key for the deleted one until the watch service
+      // processes the deletion, asynchronously. Registering returns the same key for the same
+      // directory and a new one for a new directory.
+      try {
+        WatchKey key = directory.register(watchService, ENTRY_CREATE, ENTRY_MODIFY, ENTRY_DELETE);
+        WatchKey replaced = watchKeys.put(directory, key);
+        if (replaced != null && replaced != key) {
+          replaced.cancel();
         }
+      } catch (IOException e) {
+        // e.g. the directory does not exist (yet); the next reload attempt tries again
+        LOG.warn("Cannot watch directory of referenced file " + referenced + ": " + e);
       }
     }
     watchKeys
