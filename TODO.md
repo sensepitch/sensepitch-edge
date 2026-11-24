@@ -194,19 +194,23 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
   - P3: today a challenge is a bare timestamp and an answer can be replayed for five minutes,
-    each replay minting another admission. The draft's recommendation, not a decision: sign a
-    random, host-bound challenge and derive one admission token deterministically from it, so a
-    replay and every replica return the same token without shared state. Tick the open choices
-    before implementing:
-    - [x] enforcement: stateless idempotent token, node-local consumed-challenge set, or
-      cluster-wide shared store
+    each replay minting another admission. Tick the open choices before implementing:
+    - [x] enforcement, decided: Option A of the draft, a stateless idempotent token. The
+      challenge becomes random and signed, and the admission token is derived
+      deterministically from it, so a replay on any replica returns the same token without shared
+      state. Not chosen: B (node-local consumed-challenge set), C (cluster-wide shared store),
+      D (node-local set propagated to the peers).
     - [ ] replay handling: idempotent success, or strict rejection plus a replay metric
     - [ ] permitted reuse: unlimited requests per admission until expiry, or a per-token budget
-    - [ ] bind the admission token to the site as well, or keep the challenge binding only
+    - [x] site binding, decided: none. A challenge and its admission are valid on every site
+      sharing the generator secret, so an admission can be accepted across domains without a new
+      proof of work; sites that must stay separate use separate secrets
+    - [ ] carry an admission to another domain, since cookies are host-only (see the draft's
+      limitations)
     - [ ] challenge lifetime and clock-skew window; key rotation and overlap period
     - [ ] migration policy for the current unsigned challenge and token format
-  - Stays here as a security issue. With several nodes a node-local set lets a replay succeed
-    once per node.
+  - Stays here as a security issue until implemented. With Option A, replaying an answer on
+    any node or site returns the same token, so replay no longer mints new admissions.
 
 ## Ingress, HTTP
 

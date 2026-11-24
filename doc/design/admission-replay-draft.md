@@ -1,16 +1,18 @@
 # Admission replay protection (draft)
 
-**Draft, nothing decided.** This is the research for the `TODO.md` entry "restrict admissions
-per solved challenge". It covers
+**Draft, enforcement (Option A) and no host binding decided, the rest open.** This is the
+research for the `TODO.md` entry "restrict admissions per solved challenge". It covers
 [`TimeBasedChallenge`](../../src/main/java/org/sensepitch/edge/TimeBasedChallenge.java),
 [`ChallengeGenerationAndVerification`](../../src/main/java/org/sensepitch/edge/ChallengeGenerationAndVerification.java),
 [`Deflector`](../../src/main/java/org/sensepitch/edge/Deflector.java) and
 [`DefaultAdmissionTokenGenerator`](../../src/main/java/org/sensepitch/edge/DefaultAdmissionTokenGenerator.java).
 It records the replay threat, compares enforcement and coordination options, and names the policy
-choices that the maintainer has to tick before implementation. Nothing here is a decision.
+choices that the maintainer has to tick before implementation. Only the enforcement choice and
+the absence of a host binding are decided.
 
-The flow and code references were checked against `main` at `af435f6` on 2026-11-20. The project
-is also described in [Proof-of-work admission](pow-admission.md); that document stays the
+The flow and code references were checked against `main` at `af435f6` on 2026-11-20 and
+rechecked at `c59c848` on 2026-11-24; the commits in between do not change the replay facts. The
+project is also described in [Proof-of-work admission](pow-admission.md); that document stays the
 description of the current behaviour.
 
 ## Purpose and scope
@@ -26,6 +28,12 @@ The problem in this draft is narrower: one solved challenge currently yields an 
 of admissions, and a copied admission yields unlimited requests until it expires. The questions
 are whether an answer may be used once, what "once" means across replicas, how long the evidence
 must be retained, and what coordination is acceptable.
+
+As long as an admission is an unlimited bearer cookie, many distinct admissions from one solve
+are worth no more to an attacker than one admission copied to many clients. Limiting a solve to
+one admission therefore mainly pays off together with per-token accounting, such as the
+abnormal-use detection in `TODO.md`: only when one token is one unit of observation does a replay
+stop multiplying the units. This bounds what any option below can achieve on its own.
 
 Out of scope:
 
@@ -127,7 +135,7 @@ A possible wire format, for discussion only:
 
 ```text
 v1.<payload-base64url>.<tag-base64url>
-payload: issued-at millis | 16 random bytes | host hash | generator prefix | difficulty
+payload: issued-at millis | 16 random bytes | generator prefix | difficulty
 tag:     HMAC-SHA-256(key, label | version | payload), truncated to 16 bytes
 ```
 
@@ -137,9 +145,16 @@ does not need a new proof-of-work algorithm. The proposal has these properties:
 - The random 16-byte identifier makes challenges unique even when many are issued in one
   millisecond. This matters for any consumed-challenge set: a timestamp-only identifier would
   make concurrent users collide and only one of them could answer.
-- The HMAC covers the version, issue time, host, issuing generator prefix and difficulty. A
-  challenge cannot be transplanted to another host, reused after a configuration change, or
-  given a different difficulty by the client.
+- The HMAC covers the version, issue time, issuing generator prefix and difficulty. A challenge
+  cannot be reused after a configuration change or given a different difficulty by the client.
+- The challenge is deliberately not bound to the host (decided 2026-11-24). A challenge, and the
+  admission derived from it, is valid on every site that shares the generator secret, so an
+  admission can be accepted across domains without a new proof of work. The generator secret is
+  the scope: sites that must stay separate get their own generator, which `ProtectionConfig`
+  already allows per site. Because sites sharing a generator may configure different
+  difficulties, the verifier rejects a challenge whose signed difficulty is below the difficulty
+  configured for the site that receives the answer; otherwise a solve on a cheap site would admit
+  to an expensive one.
 - A 16-byte tag is far stronger than the four-byte admission checksum. The challenge tag protects
   the server's choice of identifier and bindings; it is not the proof of work.
 - The key should be domain-separated from the admission token and history keys, for example by
@@ -151,11 +166,19 @@ does not need a new proof-of-work algorithm. The proposal has these properties:
   `challengeKeys` list is also possible.
 - Binding to the client IP or User-Agent is not recommended. Both are copyable or unstable; NAT
   and mobile networks make an IP-bound admission unreliable, and an attacker can copy the
-  header values. The host and the issuing generator are meaningful bindings; the client identity
-  is not available without a stronger authentication mechanism.
+  header values. The issuing generator is the meaningful binding; the client identity is not
+  available without a stronger authentication mechanism.
 - Comparing the submitted challenge with the `sensepitch-ch` cookie is a useful consistency check
   but not a replay defence: a client that can copy one can copy the other. The signed identifier
   and the single-use rule are what matter.
+- The proof-of-work input must be unambiguous. The browser hashes `challenge + nonce` without a
+  delimiter, so characters can be moved from the nonce into the challenge or back while the hash
+  stays the same. ALTCHA had exactly this flaw (CVE-2025-68113, see "Implementations
+  investigated"): digits moved from the solution number into the salt extended the signed expiry
+  without new work. In the format above the tag ends the challenge, so a moved character breaks
+  the tag; this holds only if the verifier checks the complete submitted challenge string against
+  the tag and does not accept a challenge that merely starts with a valid signed prefix. Fields
+  inside the signed payload need fixed lengths or delimiters for the same reason.
 
 The challenge cookie's `Max-Age` should probably follow the challenge lifetime rather than the
 current 30 days. That is a cookie-hygiene choice, not a substitute for verification.
@@ -166,7 +189,7 @@ Derive the admission deterministically from the challenge instead of generating 
 admission on every answer:
 
 ```text
-mixed = HMAC-SHA-256(admission-secret, label | host | generator-prefix | challenge-id)[0..12]
+mixed = HMAC-SHA-256(admission-secret, label | generator-prefix | challenge-id)[0..12]
 token time = challenge issued-at (second granularity)
 token prefix = generator prefix selected at challenge issue
 ```
@@ -193,11 +216,16 @@ Costs and limits:
   the challenge issue time, not the replay time, otherwise a replay produces a different token;
 - a token generated under an old generator prefix remains valid only while that generator remains
   in `tokenGenerators`. Removing a generator during the challenge window invalidates outstanding
-  answers; that is an acceptable explicit configuration change, but must be documented.
+  answers; that is an acceptable explicit configuration change, but must be documented;
+- it departs from common practice. Of the challenge products read for this draft, all except
+  go-away reject a second use of a solution with server-side state; go-away is stateless and
+  deterministic like Option A. The departure is deliberate, because the edge has no shared store
+  and puts availability first, but it should be stated as such.
 
-If the admission token must also be site-bound, the host needs to be part of the token's verified
-data. The current token has no host field, so an answer from one site can otherwise be used on
-another site that shares the generator secret. That is a separate format decision.
+The token is not site-bound, like today's token, which has no host field. Without the host in
+the derivation, the same challenge yields the same token on every site that shares the generator,
+so answering it on a second site does not create a second admission. Use across those sites is
+intended; separation between sites comes from separate generator secrets.
 
 ### Option B: node-local consumed-challenge set
 
@@ -217,13 +245,16 @@ Advantages:
 
 Costs and risks:
 
-- memory grows with the challenge issuance rate times the retention time. Using an illustrative
-  48 bytes per entry, 300 seconds and an assumed 1,000 challenge pages per second gives about
+- memory grows with the rate of accepted answers times the retention time. With a signed
+  challenge an entry is written only for an answer with a valid tag and a valid proof of work, so
+  fetching challenge pages costs no memory; only solving does. Anubis, by contrast, stores every
+  challenge when it is issued, so its store grows with page fetches. Using an illustrative 48
+  bytes per entry, 300 seconds and an assumed 1,000 accepted answers per second gives about
   14.4 MB; 10,000 per second gives about 144 MB. These numbers are assumptions, not measurements,
   and the map's real overhead depends on the implementation.
-- a challenge flood can grow the set; the size must be bounded. A hard cap, eviction and a
-  metric for rejected inserts turn the cap into a new denial path. A challenge-issuance rate limit
-  would also be needed, which is a separate protection decision.
+- an attacker who solves many challenges can still grow the set, at the cost of the work; the
+  size must be bounded. A hard cap, eviction and a metric for rejected inserts turn the cap into a
+  new denial path. How cheap a solve is depends on the configured difficulty.
 - with `N` replicas each node accepts the first answer it sees, so a replay can still produce up
   to `N` admissions unless Option A makes those admissions identical. A process restart forgets
   the set. These are not violations of a node-local rule, but they are not cluster-wide
@@ -263,10 +294,40 @@ Costs and risks:
   between the edge and the store become another correctness input.
 - a compromise of the store can suppress answers or leak challenge identifiers; it must not hold
   the admission secrets.
+- the consume step must be one atomic store operation such as `SET NX`. A read, a check and a
+  separate write are not enough: Anubis guards its double-spend check with a process-local lock
+  and then writes with a plain `SET`, so two replicas sharing its valkey store can both accept the
+  same answer concurrently.
 
 Option C is the right shape if the maintainer requires strict cluster-wide rejection. It is not
 needed merely to prevent one challenge from producing many distinct tokens; Option A does that
 without coordination.
+
+### Option D: node-local set with asynchronous propagation
+
+Cloudflare Turnstile shows a middle ground between B and C: its tokens are single-use
+network-wide, but the redemption state spreads asynchronously. Its stated objective is to reject
+at least 99% of repeats made five or more seconds after the first success, and an
+`idempotency_key` lets a client retry the same validation safely. Transferred to the edge, each
+node would keep the Option B set and broadcast consumed identifiers to its peers, without a store
+on the answer path.
+
+Advantages:
+
+- replay is rejected cluster-wide after a short propagation delay, with no store that can block
+  new admissions;
+- combined with Option A, a replay inside the propagation window still yields the same token, so
+  the window costs nothing in distinct admissions.
+
+Costs and risks:
+
+- the edge has no peer discovery or messaging between replicas today; this adds a protocol,
+  membership handling and its failure modes, which is close to the cost of a store;
+- the guarantee is probabilistic and time-bounded, not strict; a partitioned node accepts replays;
+- the memory cost of Option B on every node, since every node holds every consumed identifier.
+
+Option D is listed for completeness. It is only worth its cost if replay rejection across replicas
+is required and a store is not acceptable.
 
 ### Admission reuse limits
 
@@ -296,36 +357,43 @@ telemetry, not enforcement.
 
 ### Per-node versus cluster-wide
 
-| Property | Option A, idempotent | Option B, node-local set | Option C, shared store |
-| --- | --- | --- | --- |
-| Distinct tokens from one challenge | one everywhere | up to one per node | one |
-| State on the answer path | none | per node, bounded by issue rate | one remote operation |
-| State on normal admitted requests | none | none | none |
-| Replica restart | no effect | forgets consumed answers | retained by the store |
-| New infrastructure | none | none | Redis-like service and policy |
-| Replay rejection/visibility | none | local | cluster-wide |
-| Failure of coordination | none | none | affects new answers |
+| Property | A, idempotent | B, node-local set | C, shared store | D, propagated set |
+| --- | --- | --- | --- | --- |
+| Distinct tokens from one challenge | one everywhere | up to one per node | one | up to one per node in the window |
+| State on the answer path | none | per node, bounded by answer rate | one remote operation | per node, all answers |
+| State on normal admitted requests | none | none | none | none |
+| Replica restart | no effect | forgets consumed answers | retained by the store | refilled by peers only if designed |
+| New infrastructure | none | none | Redis-like service and policy | peer messaging |
+| Replay rejection/visibility | none | local | cluster-wide | cluster-wide after a delay |
+| Failure of coordination | none | none | affects new answers | replays pass during a partition |
+
+The "distinct tokens" row assumes B, C and D without Option A; combined with A, every column
+yields one token.
 
 ## Recommendation for approval, not a decision
 
-The draft recommends Option A as the first increment, with the signed, random, host-bound
-challenge and a versioned deterministic token. It meets "one admission per solved challenge"
+The draft recommends Option A as the first increment, with the signed, random challenge and a
+versioned deterministic token. It meets "one admission per solved challenge"
 across replicas without adding state or a failure mode to an availability-focused proxy, and it
 keeps the existing stateless architecture. The price is that replay is idempotent rather than
-rejected, and a copied admission still has unlimited reuse until expiry.
+rejected, and a copied admission still has unlimited reuse until expiry. This deliberately
+differs from the products in "Implementations investigated", which mostly reject replays with
+server-side state.
 
 Option B should be added only if replay rejection or replay telemetry is a product requirement.
-Option C should be deferred until a strict cluster-wide policy and a store are explicitly wanted.
+Option C should be deferred until a strict cluster-wide policy and a store are explicitly wanted;
+Option D only if cluster-wide rejection is wanted and a store is not.
 A per-token request budget should not be added speculatively: it puts state on the hottest path
 and its memory cost is driven by five-day token retention.
 
-None of those choices is made here. The unchecked options are in `TODO.md`.
+The maintainer has since chosen Option A for enforcement (2026-11-24); the remaining choices are
+still open and listed in `TODO.md`.
 
 ## Observability and verification plan
 
 If Option A is approved, the implementation should keep the existing `answer_accepted` and
 `answer_rejected` outcomes and add counters or bounded outcomes for the new rejection reasons:
-bad signature, wrong host, unsupported version, expired challenge, unknown generator and, if
+bad signature, too low difficulty, unsupported version, expired challenge, unknown generator and, if
 Option B exists, replay. Response statuses should distinguish an invalid answer (400) from a
 temporary configuration problem in the same way the current endpoint does; the exact status is a
 design choice. A replay that returns the same token is still an accepted answer and must not be
@@ -334,7 +402,12 @@ logged at request level above `DEBUG` without a count.
 The tests would need to cover, with a fake clock and no real timers:
 
 - the same signed challenge and nonce submitted twice produces the same token under Option A;
-- a challenge from another host, with a tampered tag or with a changed difficulty is rejected;
+- a challenge with a tampered tag, a changed difficulty, a difficulty below the site's, or
+  signed by a generator that is not configured is rejected;
+- a challenge solved on one site is accepted on another site with the same generator and
+  difficulty, and yields the same token;
+- characters moved between `challenge` and `nonce`, in both directions, are rejected even though
+  the proof-of-work hash is unchanged;
 - an expired challenge is rejected and no token is issued;
 - two different challenges produce different tokens, including two challenges issued in the same
   millisecond;
@@ -351,45 +424,112 @@ research turn.
 
 ## Implementations investigated
 
-All sources below were read in this environment on 2026-11-20. No comparable proof-of-work
-implementation was available locally, so the closest readable replay-prevention implementations
-are used as evidence; the proof-of-work products named under "Not accessible" were not examined.
+Proof-of-work and challenge products were read on 2026-11-24; the local replay-prevention
+libraries on 2026-11-20. "Read" below means the source code; "docs" means the vendor's
+documentation only, so the statement is the vendor's claim, not verified in code.
 
-### Passlib 1.9.3
+| Project | Challenge | Replay of a solution | Admission after the solve |
+| --- | --- | --- | --- |
+| Anubis | random, stored at issue | rejected, `Spent` flag in a store | signed JWT, bearer, optional IP binding |
+| ALTCHA | HMAC-signed salt with expiry | rejected by a registry the integrator keeps | up to the integrator |
+| Friendly Captcha | per visitor, vendor service | rejected centrally, `response_duplicate` | up to the integrator |
+| Cloudflare Turnstile | vendor service | rejected network-wide, eventually consistent | up to the integrator |
+| mCaptcha | short-lived config, cached | rejected, nonce cache (Redis backend) | up to the integrator |
+| go-away | derived from client data, no state | same result again, idempotent | bound to the client data |
+| haproxy-protection | optional IP binding | not investigated | cookie with a server-side time bucket |
 
-Package `python3-passlib` 1.9.3-1ubuntu1. The TOTP tutorial has a section "Preventing Token
-Reuse" in `/usr/share/doc/python3-passlib/html/_sources/narr/totp-tutorial.rst.txt` (around
-lines 672-700): an observed token can be replayed within the time window; applications are
-"strongly encouraged" to record the last counter per user in a temporary cache for at least
-`period + window` seconds and reject a counter that is not newer. The implementation in
-`/usr/lib/python3/dist-packages/passlib/totp.py` (`TOTP.match`, lines 1126-1218) raises
-`UsedTokenError` when the matched counter equals `last_counter`; `cache_seconds` is
-`period + window` (lines 1822-1843).
+All products except go-away reject a second use with server-side state; go-away is the only
+stateless and deterministic design, the shape of Option A. None limits how often an admission
+cookie may be used: where the product issues one, it is a bearer credential with an expiry and
+optional client binding. This supports the draft's advice against a per-token request budget.
 
-This is a directly comparable time-window replay defence, although it stores a monotonic counter
-per user rather than a set of challenge identifiers. It supports two conclusions used above:
-retention is the verification window, not the credential lifetime, and exact state is needed to
-reject a replay. It does not prescribe a cross-replica store, so the per-node versus shared
-choice remains open.
+### Anubis
 
-### OAuthlib 3.3.1
+[TecharoHQ/anubis](https://github.com/TecharoHQ/anubis), `lib/anubis.go` at `main` `7903b22`
+(2026-11-23), read. `issueChallenge` creates a UUIDv7 identifier and 64 random bytes and stores
+the challenge with a 30-minute TTL when the page is served. `PassChallenge` takes one of 256
+process-local mutexes selected by the identifier hash, loads the challenge, rejects it as
+`double_spend` when `Spent` is set, validates the proof of work and the policy rule, the method,
+the difficulty and the extensions recorded at issue, then stores it with `Spent = true` and signs
+a JWT with the challenge identifier, method and policy rule hash. The JWT is verified by
+signature and expiry only; `--jwt-restriction-header` optionally binds it to the hash of one
+request header, e.g. the client IP.
 
-Package `python3-oauthlib` 3.3.1-1build1. `oauthlib/oauth1/rfc5849/request_validator.py`, lines
-571-620, defines `validate_timestamp_and_nonce`. It quotes section 3.3 of the OAuth 1 specification:
-a nonce is a random string that lets the server verify that a request was never made before and
-"helps prevent replay attacks"; the nonce must be unique for the same timestamp, client
-credentials and token. The docstring says an implementation should keep a nonce/timestamp record
-and reject a pair already seen, and shows a set/database lookup. It explicitly requires a
-storage-backed check; it does not choose a TTL or a cluster topology.
+The store is pluggable (`lib/store`: memory, bbolt, valkey, s3api). The valkey store's `Set` is a
+plain `SET` with expiry, without `NX`, and the lock is per process, so with several replicas
+sharing valkey the check and the write are not atomic across replicas. This is inferred from the
+code, not tested. Conclusions used above: strict rejection needs state; storing at issue makes
+the store grow with page fetches; a shared store needs an atomic consume operation (Option C).
 
-`oauthlib/common.py` (`generate_nonce`, lines 161-167) appends a random 64-bit number to the epoch
-timestamp to make collisions unlikely. The 64-bit example is weaker than the 16-byte random
-challenge identifier recommended here; it is useful evidence for the shape (time plus random),
-not a minimum for this design.
+### ALTCHA
 
-These sources are about one-time request nonces, not proof of work, but they confirm the two
-standard mechanisms: authenticate the issued value and keep exact state for the retention window
-if replay must be rejected.
+[Security recommendations](https://altcha.org/docs/integration/security-recommendations/), docs.
+The challenge is a random salt with an optional `expires` parameter, signed with HMAC by the
+server. The docs require the server to make each challenge single-use by keeping a registry of
+solved challenges for at least the expiry time (20 minutes to one hour recommended); the hosted
+Sentinel product has this built in.
+
+[CVE-2025-68113](https://osv.dev/vulnerability/CVE-2025-68113): the HMAC did not separate the salt
+from the solution number, so an attacker could move digits between them and change the signed
+expiry while the proof-of-work hash stayed valid. Fixed by a delimiter after the salt (JS library
+1.4.1, Sentinel 1.16.0). This is the reason for the unambiguous-input requirement in "Common
+prerequisite", since this project also hashes `challenge + nonce` without a delimiter.
+
+### Friendly Captcha
+
+[Verify the response](https://developer.friendlycaptcha.com/docs/v2/getting-started/verify),
+docs. Replay is rejected by the vendor's central verification service, which reports
+`response_duplicate` (v2) or `timeout-or-duplicate` (v1). The docs advise treating a failed
+verification leniently, since it can have benign causes. Not comparable in topology, because the
+state lives in one vendor service.
+
+### Cloudflare Turnstile
+
+[Server-side validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/),
+docs. A token is valid for 300 seconds and for one validation; a repeat fails with
+`timeout-or-duplicate`. The redemption state spreads through Cloudflare's network with a delay:
+the stated objective is to reject at least 99% of repeats made five or more seconds after the
+first success. An `idempotency_key` sent with the first validation lets the integrator retry the
+same validation safely. This is the model for Option D and shows that a large operator accepts a
+short, bounded window instead of strict global single use.
+
+### mCaptcha
+
+[mCaptcha README](https://github.com/mCaptcha/mcaptcha) and
+[libmcaptcha 0.2.4 `cache`](https://docs.rs/crate/libmcaptcha/latest/source/src/cache/mod.rs),
+docs and module documentation. A proof-of-work configuration lives 30 seconds and can be used
+once; the cache keeps proof-of-work details and nonces to prevent replay and has a Redis backend.
+The Redis key scheme was not read.
+
+### go-away
+
+[go-away](https://git.gammaspectra.live/git/go-away), `lib/challenge/key.go` on `master`, read.
+The challenge key is SHA-256 over a label, the challenge name, the client's network prefix,
+selected request headers, an expiry time bucket and the private key fingerprint, separated by
+NUL bytes. No state is kept; the same client in the same bucket gets the same key, so a replay
+from the same network yields the same result, and one from another network prefix fails. It
+shows two things: a stateless, deterministic design is used in practice (Option A), and binding
+to a network prefix instead of an exact address is a middle ground, see "Alternatives
+considered". How the cookie is verified against the key was not traced.
+
+### haproxy-protection
+
+[fatchan/haproxy-protection](https://github.com/fatchan/haproxy-protection) and the
+[original README](https://git.cavemanon.xyz/Cavemanon/haproxy-protection/src/commit/c03a16214bed12af1d3c343a5a771c032d0a7ed8/README.MD),
+README only. `CHALLENGE_INCLUDES_IP` locks a solved challenge to the IP address or Tor circuit;
+cookie expiry is a server-side time bucket inside the cookie hash rather than a client-side
+expiry. Replay handling of a solution was not investigated.
+
+### Replay prevention libraries
+
+Read locally on 2026-11-20, not proof of work, but the same two mechanisms. Passlib 1.9.3
+(`python3-passlib` 1.9.3-1ubuntu1): the TOTP tutorial section "Preventing Token Reuse" and
+`TOTP.match` (`passlib/totp.py`, lines 1126-1218) reject a counter equal to the last one used and
+keep it for `period + window` seconds, i.e. for the verification window, not the credential
+lifetime. OAuthlib 3.3.1 (`python3-oauthlib` 3.3.1-1build1):
+`validate_timestamp_and_nonce` (`oauthlib/oauth1/rfc5849/request_validator.py`, lines 571-620)
+requires a stored nonce/timestamp record to reject a repeat; `generate_nonce`
+(`oauthlib/common.py`) combines a timestamp with a random number.
 
 ### This project
 
@@ -398,16 +538,11 @@ The code links in the introduction, the tests named above and
 `doc/kubernetes-support/3-gap-analysis.md` states that the challenge is not signed and that
 signing is a separate hardening item; that note is consistent with this draft.
 
-### Not accessible
+### Not read
 
-The shell has no external network in this sandbox. HTTPS requests to `www.rfc-editor.org` and
-`datatracker.ietf.org` were refused by the network policy, so RFC 6238 (TOTP), RFC 5849 (OAuth 1),
-RFC 7519 (JWT) and RFC 8555 (ACME nonces) were not read. The source and documentation of Anubis,
-Cloudflare Turnstile, hCaptcha and Hashcash were not available locally and could not be fetched.
-No claims about their implementations are made here; the comparison above is limited to sources
-that were actually readable. In particular, this draft does not claim that Turnstile or Anubis use
-a particular state model. The comparison is therefore anchored in this project and in two local
-implementations of replay prevention, not in other proof-of-work products.
+Hashcash keeps a database of spent stamps until they expire, and Privacy Pass (RFC 9576-9578)
+leaves double-spend prevention of redeemed tokens to the origin. Both are recalled, not read for
+this draft. RFC 6238 (TOTP), RFC 5849 (OAuth 1) and RFC 8555 (ACME nonces) were not read either.
 
 ## Alternatives considered
 
@@ -422,10 +557,25 @@ implementations of replay prevention, not in other proof-of-work products.
   only as an optional check.
 - **Bind to client IP or User-Agent.** Breaks mobile, CGNAT and shared clients, is copyable, and
   turns a protection feature into an access-control rule. Rejected.
+- **Bind to a network prefix.** go-away keys its challenge on the client's network prefix plus
+  selected headers, which tolerates address changes inside one network and limits copying across
+  networks. It still breaks a client that moves between networks, e.g. from Wi-Fi to mobile, during
+  the admission lifetime, and a distributed attacker solves once per prefix. It also needs a
+  trusted client address behind other proxies. Not proposed; it is the option to revisit if
+  cross-network sharing of admissions becomes a problem, and it is a separate decision from
+  replay.
 - **Bloom filter or approximate set.** Saves memory, but false positives deny legitimate first
   answers. Rejected for this purpose.
+- **Bind the challenge and token to the host.** Prevents moving an answer or admission between
+  sites, but also prevents accepting an admission across domains without a new proof of work,
+  which is wanted. Separate generator secrets give the same separation where it is needed.
+  Rejected.
 - **Strict shared store now.** Correct for cluster-wide single-use but adds a dependency and a new
   outage mode to a proxy whose architecture has no shared request state. Deferred as Option C.
+- **Store the challenge when it is issued, as Anubis does.** Needed when the challenge is not
+  signed, but every challenge page then writes state, so the store grows with page fetches rather
+  than with solved work. With a signed challenge, state is only needed after a correct answer.
+  Rejected.
 - **Make the answer a POST or require a CSRF token.** A malicious client can send a POST and copy
   a token just as easily; this changes the browser flow without solving replay. Not a fix.
 - **Count admission uses in the signed cookie.** The client can replay an earlier cookie or drop
@@ -445,6 +595,11 @@ implementations of replay prevention, not in other proof-of-work products.
   draft mentions a stronger tag but does not make that change.
 - No implementation, load test or end-to-end browser test was done. The conclusions about
   coordination and state are design reasoning checked against the code.
+- Cookies stay host-only. Accepting an admission across domains needs a way to carry it to the
+  other domain, e.g. a redirect that sets the cookie there or a cookie on a common parent domain.
+  That mechanism is not designed here; without it, a browser still solves once per domain.
+- Of the other products, only Anubis and go-away were read in code; the others are described from
+  their documentation, and Hashcash and Privacy Pass from memory.
 
 ## Planned improvements
 
