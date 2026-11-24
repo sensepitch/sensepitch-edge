@@ -10,14 +10,18 @@ import static org.sensepitch.edge.TestingParameters.await;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.management.ManagementFactory;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -59,6 +63,19 @@ class ShadedJarIT {
     assertThat(jar).as("shaded JAR, built in the package phase").isRegularFile();
   }
 
+  /// `java` with the arguments, plus the JaCoCo agent of this JVM if it has one, so the run of
+  /// the shaded JAR counts for the coverage: its classes are the same bytes as `target/classes`,
+  /// and the process ends with `SIGTERM`, which lets the agent write its data
+  static List<String> javaCommand(String... args) {
+    List<String> command = new ArrayList<>();
+    command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+    ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
+        .filter(arg -> arg.startsWith("-javaagent:") && arg.contains("org.jacoco.agent"))
+        .forEach(command::add);
+    command.addAll(List.of(args));
+    return command;
+  }
+
   @AfterEach
   void stopProcess() throws InterruptedException {
     if (process != null) {
@@ -75,11 +92,7 @@ class ShadedJarIT {
     Path config = writeConfig(port);
     Path stderr = dir.resolve("stderr.log");
     process =
-        new ProcessBuilder(
-                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-jar",
-                jar.toString(),
-                config.toString())
+        new ProcessBuilder(javaCommand("-jar", jar.toString(), config.toString()))
             .redirectOutput(dir.resolve("stdout.log").toFile())
             .redirectError(stderr.toFile())
             .start();
@@ -92,6 +105,51 @@ class ShadedJarIT {
     assertThat(lines).anyMatch(line -> line.contains("Open SSL: BoringSSL"));
     // e.g. the JDK warning about restricted methods, when native access is not enabled
     assertThat(lines).noneMatch(line -> line.startsWith("WARNING"));
+  }
+
+  /// Without a configuration file the JAR reads its configuration from `SENSEPITCH_EDGE_*`
+  /// environment variables, the way of a container without a mounted file. The admin endpoint
+  /// runs, a reload is refused, there is no file to read again.
+  @Test
+  void configuredFromEnvironmentWithAdmin() throws Exception {
+    int port = Loopback.freePort();
+    int adminPort = Loopback.freePort();
+    Path stderr = dir.resolve("stderr.log");
+    ProcessBuilder builder =
+        new ProcessBuilder(javaCommand("-jar", jar.toString()))
+            .redirectOutput(dir.resolve("stdout.log").toFile())
+            .redirectError(stderr.toFile());
+    Map<String, String> env = builder.environment();
+    env.keySet().removeIf(name -> name.startsWith(ENV_PREFIX));
+    env.put(ENV_PREFIX + "LISTEN_ADDRESS", "127.0.0.1");
+    env.put(ENV_PREFIX + "LISTEN_HTTPS_PORT", Integer.toString(port));
+    env.put(ENV_PREFIX + "LISTEN_SSL_CERT_PATH", copyResource("ssl/test.crt").toString());
+    env.put(ENV_PREFIX + "LISTEN_SSL_KEY_PATH", copyResource("ssl/test.key").toString());
+    env.put(ENV_PREFIX + "METRICS_ENABLE", "false");
+    env.put(ENV_PREFIX + "PROTECTION_DISABLE", "true");
+    env.put(ENV_PREFIX + "SITES_0_KEY", "localhost");
+    env.put(ENV_PREFIX + "SITES_0_RESPONSE_TEXT", "ok");
+    env.put(ENV_PREFIX + "ADMIN_ADDRESS", "127.0.0.1");
+    env.put(ENV_PREFIX + "ADMIN_PORT", Integer.toString(adminPort));
+    process = builder.start();
+    awaitOutput(stderr, "Proxy listening on 127.0.0.1:" + port);
+
+    assertThat(get(port)).startsWith("HTTP/1.1 200").endsWith("ok");
+    assertThat(adminStatus(adminPort, "GET", "/healthz")).isEqualTo(200);
+    assertThat(adminStatus(adminPort, "POST", "/reload")).isEqualTo(409);
+  }
+
+  private static final String ENV_PREFIX = "SENSEPITCH_EDGE_";
+
+  private static int adminStatus(int port, String method, String path) throws IOException {
+    HttpURLConnection connection =
+        (HttpURLConnection) URI.create("http://127.0.0.1:" + port + path).toURL().openConnection();
+    try {
+      connection.setRequestMethod(method);
+      return connection.getResponseCode();
+    } finally {
+      connection.disconnect();
+    }
   }
 
   /// `SIGTERM` shuts down gracefully: the request log is complete when the process exits, also the
@@ -131,11 +189,7 @@ class ShadedJarIT {
       Path stderr = dir.resolve("stderr.log");
       Path stdout = dir.resolve("stdout.log");
       process =
-          new ProcessBuilder(
-                  Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                  "-jar",
-                  jar.toString(),
-                  config.toString())
+          new ProcessBuilder(javaCommand("-jar", jar.toString(), config.toString()))
               .redirectOutput(stdout.toFile())
               .redirectError(stderr.toFile())
               .start();
@@ -200,11 +254,11 @@ class ShadedJarIT {
       Path stderr = dir.resolve("stderr.log");
       process =
           new ProcessBuilder(
-                  Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                  "-Dlog4j2.configurationFile=classpath:" + loggingConfig,
-                  "-jar",
-                  jar.toString(),
-                  config.toString())
+                  javaCommand(
+                      "-Dlog4j2.configurationFile=classpath:" + loggingConfig,
+                      "-jar",
+                      jar.toString(),
+                      config.toString()))
               .redirectOutput(dir.resolve("stdout.log").toFile())
               .redirectError(stderr.toFile())
               .start();

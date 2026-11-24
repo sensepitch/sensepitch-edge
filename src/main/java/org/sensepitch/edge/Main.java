@@ -6,6 +6,7 @@ import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.sensepitch.edge.config.RecordConstructor;
@@ -28,6 +29,9 @@ import org.yaml.snakeyaml.nodes.Node;
 /// @author Jens Wilke
 public class Main {
 
+  /// Prefix of the environment variables the configuration is read from without a file
+  static final String ENV_PREFIX = "SENSEPITCH_EDGE_";
+
   private Main() {}
 
   public static void main(String[] args) throws Exception {
@@ -36,54 +40,81 @@ public class Main {
     if (System.getProperty("java.util.logging.manager") == null) {
       System.setProperty("java.util.logging.manager", "org.apache.logging.log4j.jul.LogManager");
     }
-    ProxyConfig config;
-    Proxy proxy;
-    Supplier<ReloadResult> reload = null;
-    if (args.length > 0) {
-      Path file = Path.of(args[0]);
-      // before loading, so a change during startup is not missed
-      ConfigFileWatcher watcher = new ConfigFileWatcher(file);
-      config = loadConfig(file);
-      proxy = new Proxy(config);
-      watcher.start(content -> proxy.reload(parseConfig(content)), proxy::referencedFiles);
-      reload = watcher::forceReload;
-    } else {
-      config =
-          (ProxyConfig)
-              EnvInjector.injectFromEnv(
-                  "SENSEPITCH_EDGE_",
-                  System.getenv(),
-                  ProxyEnvironment.current(),
-                  ProxyConfig.builder());
-      proxy = new Proxy(config);
-    }
-    AdminServer admin =
-        config.admin() != null
-            ? AdminServer.start(
-                config.admin(),
-                reload,
-                proxy::isShuttingDown,
-                new UpstreamReadinessProbe(proxy::upstreamTargets)::isReady,
-                proxy.circuitBreakers())
-            : null;
-    Shutdown shutdown =
-        new Shutdown(
-            () -> {
-              try {
-                proxy.shutdown();
-              } finally {
-                // its threads are not daemon threads and would keep the JVM running
-                if (admin != null) {
-                  admin.stop();
+    Application app =
+        Application.create(
+            args, System.getenv(), AsyncRequestLogWriter.standardOut(), LogManager::shutdown);
+    Runtime.getRuntime().addShutdownHook(new Thread(app.shutdown(), "main-shutdown"));
+    app.run();
+  }
+
+  /// The proxy with its admin server and their ordered shutdown, everything of [#main] except the
+  /// process wide setup (JUL, the shutdown hook), so a test can start and stop it in the JVM.
+  ///
+  /// @param shutdown stops the proxy, the admin server and then the logging, once
+  record Application(Proxy proxy, AdminServer admin, Shutdown shutdown) {
+
+    /// Builds the proxy from the configuration file named by the first argument, or from the
+    /// `SENSEPITCH_EDGE_*` variables of `env`, and starts the admin server if configured.
+    ///
+    /// @param requestLogOutput where the proxy writes the request log, standard out in [#main]
+    /// @param stopLogging the last step of the shutdown, stops Log4j2 in [#main]
+    static Application create(
+        String[] args,
+        Map<String, String> env,
+        RequestLogOutput requestLogOutput,
+        Runnable stopLogging)
+        throws Exception {
+      ProxyConfig config;
+      Proxy proxy;
+      Supplier<ReloadResult> reload = null;
+      if (args.length > 0) {
+        Path file = Path.of(args[0]);
+        // before loading, so a change during startup is not missed
+        ConfigFileWatcher watcher = new ConfigFileWatcher(file);
+        config = loadConfig(file);
+        proxy = new Proxy(config, requestLogOutput);
+        watcher.start(content -> proxy.reload(parseConfig(content)), proxy::referencedFiles);
+        reload = watcher::forceReload;
+      } else {
+        config =
+            (ProxyConfig)
+                EnvInjector.injectFromEnv(
+                    ENV_PREFIX, env, ProxyEnvironment.current(), ProxyConfig.builder());
+        proxy = new Proxy(config, requestLogOutput);
+      }
+      AdminServer admin =
+          config.admin() != null
+              ? AdminServer.start(
+                  config.admin(),
+                  reload,
+                  proxy::isShuttingDown,
+                  new UpstreamReadinessProbe(proxy::upstreamTargets)::isReady,
+                  proxy.circuitBreakers())
+              : null;
+      Shutdown shutdown =
+          new Shutdown(
+              () -> {
+                try {
+                  proxy.shutdown();
+                } finally {
+                  // its threads are not daemon threads and would keep the JVM running
+                  if (admin != null) {
+                    admin.stop();
+                  }
                 }
-              }
-            },
-            LogManager::shutdown);
-    Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "main-shutdown"));
-    try {
-      proxy.start();
-    } finally {
-      shutdown.run();
+              },
+              stopLogging);
+      return new Application(proxy, admin, shutdown);
+    }
+
+    /// Serves until the proxy is shut down, e.g. by [#shutdown()] from the shutdown hook, then
+    /// makes sure everything is stopped
+    void run() throws Exception {
+      try {
+        proxy.start();
+      } finally {
+        shutdown.run();
+      }
     }
   }
 
