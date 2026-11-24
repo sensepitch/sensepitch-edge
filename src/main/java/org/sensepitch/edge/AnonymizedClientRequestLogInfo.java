@@ -1,7 +1,9 @@
 package org.sensepitch.edge;
 
-import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpVersion;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -191,8 +193,73 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   }
 
   @Override
-  public HttpRequest request() {
-    return info.request();
+  public HttpMethod method() {
+    return info.method();
+  }
+
+  @Override
+  public String uri() {
+    return info.uri();
+  }
+
+  @Override
+  public HttpVersion protocolVersion() {
+    return info.protocolVersion();
+  }
+
+  @Override
+  public String ingress() {
+    return info.ingress();
+  }
+
+  @Override
+  public String country() {
+    return info.country();
+  }
+
+  @Override
+  public String asn() {
+    return info.asn();
+  }
+
+  @Override
+  public String ipTraits() {
+    return info.ipTraits();
+  }
+
+  @Override
+  public String ja4() {
+    return info.ja4();
+  }
+
+  @Override
+  public String admissionToken() {
+    return info.admissionToken();
+  }
+
+  @Override
+  public String admissionOriginalToken() {
+    return info.admissionOriginalToken();
+  }
+
+  @Override
+  public long admissionRevisits() {
+    return info.admissionRevisits();
+  }
+
+  @Override
+  public String bypassReason() {
+    return info.bypassReason();
+  }
+
+  @Override
+  public String trafficType() {
+    return info.trafficType();
+  }
+
+  @Override
+  public HttpHeaders clientHeaders() {
+    return info.clientHeaders();
   }
 
   @Override

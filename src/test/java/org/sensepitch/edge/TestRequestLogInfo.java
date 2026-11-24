@@ -16,7 +16,7 @@ import java.net.UnknownHostException;
 /// this instance, each test creates its own via [#of(HttpMethod, int)].
 ///
 /// @author Jens Wilke
-final class TestRequestLogInfo implements RequestLogInfo {
+final class TestRequestLogInfo implements RequestBackedLogInfo {
 
   static final String TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
   static final String SPAN_ID = "00f067aa0ba902b7";
@@ -107,11 +107,6 @@ final class TestRequestLogInfo implements RequestLogInfo {
   @Override
   public HttpRequest request() {
     return request;
-  }
-
-  @Override
-  public String requestHeaderHost() {
-    return request.headers().get(HttpHeaderNames.HOST);
   }
 
   @Override

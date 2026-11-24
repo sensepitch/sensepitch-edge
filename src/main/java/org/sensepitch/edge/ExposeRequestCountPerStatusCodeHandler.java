@@ -67,10 +67,10 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
 
   @Override
   public void logRequest(RequestLogInfo info) {
-    String ingress = ProxyMetrics.ingress(info.request());
+    String ingress = info.ingress();
     int statusCode = info.response().status().code();
     // timeout before request was received, ignore
-    if (statusCode == 408 && info.request().method().equals(RequestLogInfo.NIL_METHOD)) {
+    if (statusCode == 408 && info.method().equals(RequestLogInfo.NIL_METHOD)) {
       return;
     }
     if (statusCode < 100) {
@@ -79,18 +79,18 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
     if (statusCode >= 600) {
       statusCode = 600;
     }
-    String[] labelValues = new String[] {ingress, info.request().method().name(), statusCode + ""};
+    String[] labelValues = new String[] {ingress, info.method().name(), statusCode + ""};
     requestDuration
         .labelValues(labelValues)
         .observe(Unit.nanosToSeconds(info.totalDurationNanos()));
     responseTime.labelValues(labelValues).observe(Unit.nanosToSeconds(info.responseTimeNanos()));
     requestSize.labelValues(ingress).observe(info.bytesReceived());
     responseSize.labelValues(ingress).observe(info.bytesSent());
-    String country = info.request().headers().get(IpTraitsHandler.COUNTRY_HEADER);
+    String country = info.country();
     if (country == null) {
       country = "unknown";
     }
-    String flavor = info.request().headers().get(Deflector.TRAFFIC_TYPE_HEADER);
+    String flavor = info.trafficType();
     if (flavor == null) {
       flavor = "unknown";
     }

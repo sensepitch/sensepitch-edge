@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import java.net.InetAddress;
 import java.text.DecimalFormat;
@@ -29,19 +28,18 @@ public class PlainTextRequestLogger implements RequestLogger {
 
   @Override
   public void logRequest(RequestLogInfo info) {
-    HttpRequest request = info.request();
     HttpResponse response = info.response();
     InetAddress clientAddress = info.clientAddress();
     String remoteHost = clientAddress != null ? clientAddress.getHostAddress() : "-";
-    String admissionToken = request.headers().get(Deflector.ADMISSION_TOKEN_HEADER);
+    String admissionToken = info.admissionToken();
     if (admissionToken == null) {
       admissionToken = "-";
     }
     String time = ZonedDateTime.now().format(CLF_TIME);
-    String requestLine = request.method() + " " + request.uri() + " " + request.protocolVersion();
-    String referer = sanitize(request.headers().get(HttpHeaderNames.REFERER));
-    String ua = sanitize(request.headers().get(HttpHeaderNames.USER_AGENT));
-    String bypass = sanitize(request.headers().get(BypassCheck.HEADER));
+    String requestLine = info.method() + " " + info.uri() + " " + info.protocolVersion();
+    String referer = sanitize(info.clientHeaders().get(HttpHeaderNames.REFERER));
+    String ua = sanitize(info.clientHeaders().get(HttpHeaderNames.USER_AGENT));
+    String bypass = sanitize(info.bypassReason());
     String host = sanitize(info.requestHeaderHost());
     int status = response.status().code();
     String timing =
@@ -50,7 +48,7 @@ public class PlainTextRequestLogger implements RequestLogger {
             + formatDeltaTime(info.responseTimeNanos())
             + "="
             + formatDeltaTime(info.totalDurationNanos());
-    String ipTraits = sanitize(IpTraitsHandler.extract(request));
+    String ipTraits = sanitize(info.ipTraits());
     String error = null;
     if (info.error() != null) {
       error = sanitize(info.error().getMessage());
@@ -61,10 +59,9 @@ public class PlainTextRequestLogger implements RequestLogger {
     if (error == null) {
       error = "-";
     }
-    String signatureAgent = sanitize(request.headers().get("Signature-Agent"));
+    String signatureAgent = sanitize(info.clientHeaders().get("Signature-Agent"));
     StringBuilder sb = new StringBuilder();
-    request
-        .headers()
+    info.clientHeaders()
         .forEach(
             kv -> {
               if (sb.length() > 0) {

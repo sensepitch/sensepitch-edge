@@ -34,7 +34,7 @@ import javax.net.ssl.SSLSession;
 /// reading thread
 ///
 /// @author Jens Wilke
-public class RequestLoggingHandler extends ChannelDuplexHandler implements RequestLogInfo {
+public class RequestLoggingHandler extends ChannelDuplexHandler implements RequestBackedLogInfo {
 
   private static final ProxyLogger LOG = ProxyLogger.get(RequestLoggingHandler.class);
 
@@ -555,11 +555,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public long totalDurationNanos() {
     return responseReceivedTimeNanos - requestStartTimeNanos;
-  }
-
-  @Override
-  public String requestHeaderHost() {
-    return request.headers().get(HttpHeaderNames.HOST);
   }
 
   public boolean isResponseStarted() {

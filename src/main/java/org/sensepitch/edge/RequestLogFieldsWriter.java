@@ -2,7 +2,6 @@ package org.sensepitch.edge;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpVersion;
 import java.util.Iterator;
@@ -134,9 +133,8 @@ public final class RequestLogFieldsWriter {
   ///   [RequestLogDestinationConfig#sampleHeadersInterval()]
   public static <E extends Exception> void write(
       RequestLogInfo info, RequestLogSink<E> sink, int sampleHeadersInterval) throws E {
-    HttpRequest request = info.request();
     HttpResponse response = info.response();
-    HttpHeaders headers = request.headers();
+    HttpHeaders headers = info.clientHeaders();
     int status = response.status().code();
     sink.record(
         info.requestStartTimeMillis(),
@@ -145,8 +143,8 @@ public final class RequestLogFieldsWriter {
         info.traceId(),
         info.spanId(),
         info.traceFlags());
-    sink.body(request.method().name(), request.uri(), status);
-    writeRequestLine(info, request, sink);
+    sink.body(info.method().name(), info.uri(), status);
+    writeRequestLine(info, sink);
     sink.number(OtelLogFields.HTTP_RESPONSE_STATUS_CODE, status);
     sink.string(SensepitchLogFields.REQUEST_OUTCOME, info.outcome().value());
     writeError(info, status, sink);
@@ -157,7 +155,7 @@ public final class RequestLogFieldsWriter {
     sink.optionalNumber(OtelLogFields.CLIENT_PORT, info.clientPort());
     sink.optionalNumber(OtelLogFields.SERVER_PORT, info.serverPort());
     writeTls(info, sink);
-    writeProtocol(request, sink);
+    writeProtocol(info.protocolVersion(), sink);
     // single valued by its definition, get does not allocate an iterator
     String contentType = response.headers().get(HttpHeaderNames.CONTENT_TYPE);
     if (contentType != null) {
@@ -180,9 +178,8 @@ public final class RequestLogFieldsWriter {
   private static <E extends Exception> void writeClient(
       RequestLogInfo info, HttpHeaders headers, RequestLogSink<E> sink) throws E {
     sink.optionalAddress(OtelLogFields.CLIENT_ADDRESS, info.clientAddress());
-    sink.optionalString(
-        OtelLogFields.GEO_COUNTRY_ISO_CODE, headers.get(IpTraitsHandler.COUNTRY_HEADER));
-    String asn = headers.get(IpTraitsHandler.ASN_HEADER);
+    sink.optionalString(OtelLogFields.GEO_COUNTRY_ISO_CODE, info.country());
+    String asn = info.asn();
     if (asn != null) {
       try {
         sink.number(SensepitchLogFields.CLIENT_ASN, Long.parseLong(asn.trim()));
@@ -218,8 +215,8 @@ public final class RequestLogFieldsWriter {
 
   /// Method, host, path and query, like the request line of an access log
   private static <E extends Exception> void writeRequestLine(
-      RequestLogInfo info, HttpRequest request, RequestLogSink<E> sink) throws E {
-    String method = request.method().name();
+      RequestLogInfo info, RequestLogSink<E> sink) throws E {
+    String method = info.method().name();
     if (KNOWN_METHODS.contains(method)) {
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD, method);
     } else {
@@ -227,7 +224,7 @@ public final class RequestLogFieldsWriter {
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD_ORIGINAL, method);
     }
     sink.optionalString(OtelLogFields.SERVER_ADDRESS, info.requestHeaderHost());
-    String uri = request.uri();
+    String uri = info.uri();
     int query = uri.indexOf('?');
     if (query < 0) {
       sink.string(OtelLogFields.URL_PATH, uri);
@@ -239,8 +236,7 @@ public final class RequestLogFieldsWriter {
   }
 
   private static <E extends Exception> void writeProtocol(
-      HttpRequest request, RequestLogSink<E> sink) throws E {
-    HttpVersion version = request.protocolVersion();
+      HttpVersion version, RequestLogSink<E> sink) throws E {
     if (version == HttpVersion.HTTP_1_1) {
       sink.string(OtelLogFields.NETWORK_PROTOCOL_NAME, "http");
       sink.string(OtelLogFields.NETWORK_PROTOCOL_VERSION, "1.1");
@@ -312,15 +308,16 @@ public final class RequestLogFieldsWriter {
       throws E {
     sink.string(SensepitchLogFields.CONNECTION_ID, info.connectionId());
     sink.number(SensepitchLogFields.CONNECTION_REQUEST_COUNT, info.connectionRequestCount());
-    sink.optionalString(SensepitchLogFields.IP_TRAITS, headers.get(IpTraitsHandler.TRAITS_HEADER));
-    sink.optionalString(
-        SensepitchLogFields.TLS_CLIENT_JA4, headers.get(Ja4HeaderHandler.JA4_HEADER));
-    sink.optionalString(
-        SensepitchLogFields.ADMISSION_TOKEN, headers.get(Deflector.ADMISSION_TOKEN_HEADER));
-    writeAdmissionHistory(headers, sink);
-    sink.optionalString(SensepitchLogFields.BYPASS, headers.get(BypassCheck.HEADER));
-    sink.optionalString(
-        SensepitchLogFields.TRAFFIC_TYPE, headers.get(Deflector.TRAFFIC_TYPE_HEADER));
+    sink.optionalString(SensepitchLogFields.IP_TRAITS, info.ipTraits());
+    sink.optionalString(SensepitchLogFields.TLS_CLIENT_JA4, info.ja4());
+    sink.optionalString(SensepitchLogFields.ADMISSION_TOKEN, info.admissionToken());
+    String originalToken = info.admissionOriginalToken();
+    if (originalToken != null) {
+      sink.string(SensepitchLogFields.ADMISSION_ORIGINAL_TOKEN, originalToken);
+      sink.number(SensepitchLogFields.ADMISSION_REVISITS, info.admissionRevisits());
+    }
+    sink.optionalString(SensepitchLogFields.BYPASS, info.bypassReason());
+    sink.optionalString(SensepitchLogFields.TRAFFIC_TYPE, info.trafficType());
     sink.bool(SensepitchLogFields.REQUEST_COOKIE_PRESENT, headers.contains(HttpHeaderNames.COOKIE));
     sink.startArray(SensepitchLogFields.REQUEST_HEADER_NAMES);
     Iterator<Map.Entry<CharSequence, CharSequence>> entries = headers.iteratorCharSequence();
@@ -334,19 +331,6 @@ public final class RequestLogFieldsWriter {
     }
     sink.number(SensepitchLogFields.DURATION_RECEIVE_NS, info.receiveDurationNanos());
     sink.number(SensepitchLogFields.DURATION_RESPONSE_NS, info.responseTimeNanos());
-  }
-
-  /// The verified admission history, if the deflector set it, see
-  /// [Deflector#ADMISSION_ORIGINAL_TOKEN_HEADER]
-  private static <E extends Exception> void writeAdmissionHistory(
-      HttpHeaders headers, RequestLogSink<E> sink) throws E {
-    String originalToken = headers.get(Deflector.ADMISSION_ORIGINAL_TOKEN_HEADER);
-    if (originalToken != null) {
-      sink.string(SensepitchLogFields.ADMISSION_ORIGINAL_TOKEN, originalToken);
-      sink.number(
-          SensepitchLogFields.ADMISSION_REVISITS,
-          Long.parseLong(headers.get(Deflector.ADMISSION_REVISITS_HEADER)));
-    }
   }
 
   /// All request headers as `Name: value` in the order received, except

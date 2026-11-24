@@ -1,7 +1,7 @@
 package org.sensepitch.edge;
 
+import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpVersion;
 import java.net.InetAddress;
@@ -99,12 +99,53 @@ public interface RequestLogInfo {
   /// The `traceparent` header as sent by the client, or `null` if absent
   String clientTraceparent();
 
-  /// The http request received from the client with augmented headers as it was sent to upstream.
-  /// If the request was not received but an error response was generated, this contains a mock
-  /// request with request method [#NIL_METHOD].
-  ///
-  /// @return augmented client request or mock, never null
-  HttpRequest request();
+  // the request: the request line, the values the edge determined, and the headers. Loggers read
+  // the request only through these, they do not depend on how the edge transports its values.
+
+  /// The method, [#NIL_METHOD] if no request was received, e.g. a timeout before it
+  HttpMethod method();
+
+  /// The request target as received, path and query
+  String uri();
+
+  /// The protocol version, [#NIL_VERSION] if no request was received
+  HttpVersion protocolVersion();
+
+  /// The ingress the request is counted for: the configured wildcard pattern the host matched, or
+  /// the host, see `ProxyMetrics.ingress`
+  String ingress();
+
+  /// ISO country code of the client address, `null` if unknown, see [IpTraitsHandler]
+  String country();
+
+  /// Autonomous system number of the client address as the lookup gave it, `null` if unknown
+  String asn();
+
+  /// The IP traits of the client address, `null` if none, see [IpTraitsHandler]
+  String ipTraits();
+
+  /// The JA4 fingerprint of the TLS connection, `null` if not enabled or not taken
+  String ja4();
+
+  /// The admission token the deflector accepted or issued, `null` if none
+  String admissionToken();
+
+  /// The original token of a verified admission history, `null` if none, see [Deflector]
+  String admissionOriginalToken();
+
+  /// Revisits of the verified admission history, `-1` without one
+  long admissionRevisits();
+
+  /// Why the protection was bypassed, `null` if it was not, see [BypassCheck]
+  String bypassReason();
+
+  /// Traffic type the deflector determined, e.g. human or bot, `null` if none
+  String trafficType();
+
+  /// The request headers in the order received, for the header based fields: the user agent, the
+  /// logged and the sampled headers, and the header names. They include the headers the edge added;
+  /// read those values through their accessors above.
+  HttpHeaders clientHeaders();
 
   /// Convenience method to retrieve the host from the host request header field. The host header
   /// will be sanitized early on. It is never null and only contains known values. If the request

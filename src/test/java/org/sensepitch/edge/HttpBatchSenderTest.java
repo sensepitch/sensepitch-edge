@@ -83,7 +83,7 @@ class HttpBatchSenderTest {
     @Override
     public RecordEncoder<TextBatch> newEncoder() {
       return (batch, info) ->
-          batch.bytes.writeBytes((info.request().uri() + "\n").getBytes(StandardCharsets.UTF_8));
+          batch.bytes.writeBytes((info.uri() + "\n").getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
