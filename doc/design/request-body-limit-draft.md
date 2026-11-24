@@ -207,7 +207,7 @@ None of these is decided. The choices are ticked in `TODO.md`.
 
 ### Default body limit
 
-- [ ] A: no limit, as today. Backpressure bounds the memory. The README says so and that the
+- [x] A: no limit, as today. Backpressure bounds the memory. The README says so and that the
   upstream enforces its own limit.
 - [ ] B: an optional limit, off by default, like Caddy and Envoy.
 - [ ] C: a default limit like NGINX's 1 MiB. Against the philosophy of the entry, listed for
@@ -240,11 +240,13 @@ None of these is decided. The choices are ticked in `TODO.md`.
 
 ### Header and request line limits
 
-- [ ] Keep the Netty defaults (4096 and 8192 bytes), but answer a decoder failure explicitly:
+- [x] Keep the Netty defaults (4096 and 8192 bytes), but answer a decoder failure explicitly:
   check `decoderResult()` in the first handler after the codec and send 431 for
   `TooLongHttpHeaderException`, 414 for `TooLongHttpLineException`, 400 otherwise, with an
   outcome or counter. This is needed whatever the limits are, since today the failure is
   (inferred) reported as a missing host.
+  Rational for keeping the defaults: Sensepitch is intended for public facing web sites and applications.
+  Keep resources tight to detect and avoid unusual use and be more robust.
 - [ ] Raise the defaults towards the streaming proxies (refused at: NGINX 9000 bytes, HAProxy
   16000, Caddy 32000, Envoy 70000). Large cookies and tokens exceed 8 KiB; the cost is memory per
   connection while the head is parsed.
@@ -253,8 +255,11 @@ None of these is decided. The choices are ticked in `TODO.md`.
 
 ### Slow uploads
 
-- [ ] A total time to receive the request, e.g. `listen.connection.requestTimeoutSeconds`,
+- [x] A total time to receive the request, e.g. `listen.connection.requestTimeoutSeconds`,
   answered with 408, next to the idle `readTimeoutSeconds`.
+  Also add TODO: Additionally. slow upload needs a separate investigation. Normal requests without body 
+  should have a more tight timeout. Would an upstream usually give us an error when a body is sent but
+  not expected, or, would the body always received?
 - [ ] A minimum upload rate after a grace period. More complex; how other servers do it was not
   verified here.
 - [ ] Only correct the `ConnectionConfig` doc: a body byte does reset the read timeout.

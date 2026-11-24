@@ -198,7 +198,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     random, host-bound challenge and derive one admission token deterministically from it, so a
     replay and every replica return the same token without shared state. Tick the open choices
     before implementing:
-    - [ ] enforcement: stateless idempotent token, node-local consumed-challenge set, or
+    - [x] enforcement: stateless idempotent token, node-local consumed-challenge set, or
       cluster-wide shared store
     - [ ] replay handling: idempotent success, or strict rejection plus a replay metric
     - [ ] permitted reuse: unlimited requests per admission until expiry, or a per-token budget
@@ -222,29 +222,22 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     29 s keeps the client and upstream connections open (inferred from the code and a decoder
     experiment).
   - Body limit, tick one:
-    - [ ] no limit, as today; document it in the README
+    - [x] no limit, as today; document it in the README
     - [ ] optional `maxRequestBodyBytes`, off by default
     - [ ] default limit like NGINX (1 MiB)
-  - With an optional limit, where:
-    - [ ] `listen.connection`
-    - [ ] per site and path route
-    - [ ] both, a global value with overrides
-  - With an optional limit, the refusal: 413 with `Connection: close` before the body when
-    `Content-Length` is too large, mid-stream close of upstream and client for chunked bodies
-    - [ ] as described
-    - [ ] also answer `Expect: 100-continue` with 413 (check today's `Expect` handling first)
   - Visibility of refusals:
-    - [ ] new `RequestOutcome` `request_too_large` in `sensepitch_ingress_request_outcomes_total`
+    - [x] new `RequestOutcome` `request_too_large` in `sensepitch_ingress_request_outcomes_total`
     - [ ] status 413 in the request log only
   - Header and request line:
-    - [ ] answer decoder failures explicitly: 431 too large header, 414 too long request line,
+    - [x] answer decoder failures explicitly: 431 too large header, 414 too long request line,
       400 other, with outcome or counter
     - [ ] raise the defaults (other proxies refused at 9000 to 70000 bytes)
     - [ ] configurable in `listen.connection` via `HttpDecoderConfig`
   - Slow uploads:
-    - [ ] total request receive timeout in `listen.connection`, answered with 408
+    - [x] total request receive timeout in `listen.connection`, answered with 408
     - [ ] minimum upload rate
     - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
+- [ ] Protection for slow requests. Have a better protection than a per request timeout, which allows more time for legit uploads and stricter timerouts for simple GET requests which should arrive in one go. Do a research design draft first
 
 ## Evergreen / Cleanups
 
