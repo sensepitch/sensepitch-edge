@@ -1,10 +1,10 @@
 # OCI image
 
 Covers the `Dockerfile` at the repository root, the `.dockerignore` next to it, the
-`DockerfileTest` that validates their structure, and the proposed CI workflow in
-`DOT-GITHUB-UPDATED/.github/workflows/build-and-push-image.yml`. The document records why the
-image is built the way it is; how to run the edge itself is in `README.md`, and the Kubernetes
-deployment that consumes the image is the Helm chart of TODO.md item 3.
+`DockerfileTest` that validates their structure, and the
+[image publishing workflow](../../.github/workflows/build-and-push-image.yml). The document records
+why the image is built the way it is. `README.md` explains how to run the edge. The Helm chart of
+TODO.md item 3 deploys the image on Kubernetes.
 
 ## Purpose and scope
 
@@ -67,7 +67,7 @@ overrides it per container.
 The registry and repository name match the Helm chart's `image.repository` default, so the chart
 works once an image is published without overriding values. GitHub Container Registry keeps the
 image next to the code, is free for public repositories, and authenticates with the workflow's
-`GITHUB_TOKEN`. The proposed workflow tags `main` as `0.2-SNAPSHOT` (the chart's `appVersion`)
+`GITHUB_TOKEN`. The workflow tags `main` as `0.2-SNAPSHOT` (the chart's `appVersion`)
 and `latest`, and tags `v*` releases with their semver.
 
 ### `.git` stays in the build context
@@ -83,11 +83,9 @@ image. Excluding it would make the image build silently produce a JAR without th
 join continued lines, then checks the two stages, the Maven command and renamed shaded JAR, the
 copy into the runtime stage, the non-root user, the exec-form entry point and default command, and
 the exposed ports. It also checks that `.dockerignore` keeps `.git` while dropping build output,
-IDE files, tests and documentation, and that the proposed workflow stays under
-`DOT-GITHUB-UPDATED/`. This catches a packaging regression before an image is built, without
-requiring Docker or a network connection in the unit test. The test is structural: it does not
-prove that the base image and downloaded dependencies exist, so the proposed workflow still runs
-the real `docker build`.
+IDE files, tests and documentation, and that the workflow publishes the chart's image. These
+checks run without Docker or a network connection. The GitHub Actions runner builds the image
+and pushes it to the registry.
 
 ## Alternatives considered
 
@@ -116,8 +114,8 @@ cache backend of the CI runner (the workflow configures the `gha` cache backend)
 - `eclipse-temurin:25-jre` and `eclipse-temurin:25-jdk` are floating tags: they track the newest
   25.x patch. Strict reproducibility needs a digest pin; the digest cannot be determined without
   network access and is left as a planned improvement.
-- The structural `DockerfileTest` in the Maven gate checks the image files but does not build or
-  run the image. A real `docker build` and a smoke run happen only in the proposed CI workflow.
+- The structural `DockerfileTest` in the Maven gate checks the image files. The publishing
+  workflow builds the image. The container smoke test runs separately.
 - The image is built for the runner architecture (`linux/amd64`). A multi-architecture manifest
   is left for when an arm64 fleet is needed.
 - The image build downloads all Maven dependencies inside the container; the first build in a

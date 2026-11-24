@@ -97,15 +97,11 @@ class DockerfileTest {
     assertThat(patterns).noneMatch(line -> line.equals(".git") || line.startsWith(".git/"));
   }
 
-  /// The CI workflow stays proposed until reviewed, and would publish the chart's image.
+  /// The CI workflow publishes the image used by the chart.
   @Test
-  void proposedWorkflowIsInactiveAndPushesTheChartImage() throws IOException {
-    assertThat(repoRoot().resolve(".github/workflows/build-and-push-image.yml"))
-        .as("active workflow")
-        .doesNotExist();
-    Path workflow =
-        repoRoot().resolve("DOT-GITHUB-UPDATED/.github/workflows/build-and-push-image.yml");
-    assertThat(workflow).as("proposed workflow").isRegularFile();
+  void workflowPushesTheChartImage() throws IOException {
+    Path workflow = repoRoot().resolve(".github/workflows/build-and-push-image.yml");
+    assertThat(workflow).as("active workflow").isRegularFile();
 
     List<String> lines = Files.readAllLines(workflow);
     assertThat(lines).anyMatch(line -> line.contains("docker/build-push-action@"));

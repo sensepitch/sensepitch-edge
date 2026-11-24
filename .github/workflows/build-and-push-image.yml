@@ -1,9 +1,7 @@
 name: Build and push image
 
-# Proposed workflow, not active: it lives under DOT-GITHUB-UPDATED/ so a human can review it,
-# then move it to .github/workflows/. It builds the shaded JAR and publishes the container image
-# to the GitHub Container Registry at ghcr.io/sensepitch/sensepitch-edge, the repository the Helm
-# chart defaults to (charts/sensepitch-edge/values.yaml).
+# Builds the shaded JAR and publishes the container image to the GitHub Container Registry at
+# ghcr.io/sensepitch/sensepitch-edge, the repository used by the Helm chart.
 #
 # main is tagged 0.2-SNAPSHOT (the chart's appVersion; keep it in sync with pom.xml <version>
 # and the chart) and latest. A v* release tag is tagged with its semver.
@@ -24,6 +22,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Set up JDK 25
       uses: actions/setup-java@v6

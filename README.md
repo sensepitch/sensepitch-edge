@@ -1031,8 +1031,9 @@ docker run --rm -p 17443:17443 \
 The image runs the shaded JAR on a Temurin 25 JRE as a non-root user, with `java` as PID 1 so
 `SIGTERM` reaches the graceful shutdown. Files the configuration references (TLS keys and
 certificate, the IPinfo database) must be mounted as well. The base-image and registry choices
-are in [doc/design/oci-image.md](doc/design/oci-image.md); the proposed CI build-and-push
-workflow is `DOT-GITHUB-UPDATED/.github/workflows/build-and-push-image.yml`.
+are in [doc/design/oci-image.md](doc/design/oci-image.md). The
+[image publishing workflow](.github/workflows/build-and-push-image.yml) runs on pushes to `main`
+and `v*` tags.
 
 To smoke-test a local image through Docker:
 

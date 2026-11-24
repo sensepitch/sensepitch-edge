@@ -92,7 +92,8 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     `ghcr.io/sensepitch/sensepitch-edge`, shaded jar kept; see
     [doc/design/oci-image.md](doc/design/oci-image.md).
   - `DockerfileTest` validates the stages, Maven command, shaded JAR copy, non-root user, PID 1
-    entry point, exposed ports, build context and the proposed workflow's location.
+    entry point, exposed ports, build context and image publishing workflow. Confirm a GitHub
+    Actions run publishes the chart's image to GHCR.
 - [ ] 3. manifests or a minimal Helm chart for a standalone edge: Deployment with probes and
   `terminationGracePeriodSeconds` above `shutdownTimeoutMillis`, Service, PodDisruptionBudget,
   config from a ConfigMap, secrets from Secrets, scrape annotations or ServiceMonitor
@@ -125,7 +126,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     (`maxSurge: 0`), and the node refuses connections in between. Tick one:
     - [x] accept it: browsers try the next address of the name; check the clients that matter,
       e.g. payment provider webhooks, which may not retry
-    - [ ] Move to NOT-YET: `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one,
+    - [x] Add as new task to NOT-YET.md: `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one,
       which stops accepting once the new one is ready (`shutdownAcceptGraceMillis`). Needs
       `hostNetwork` and the Netty epoll or io_uring transport (today NIO, `Proxy`).
   - The node firewall must let 80 and 443 through to the chosen path.
