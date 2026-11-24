@@ -61,6 +61,14 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported in their recent runs; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
+- [ ] A reload that replaces the IP lookup never closes the old database readers
+  - P1: `EdgeState.closeReplacedBy` closes the replaced lookup only if it is `AutoCloseable`, but
+    `CombinedIpTraitsLookup` is not, so each reload that changes `ipLookup` leaves the MaxMind
+    (`GeoIp2AsnLookup`, `GeoIp2CountryLookup`) and IPinfo (`IpInfoCountryAndAsnLookup`) readers
+    open; the close branch in `EdgeState` is unreachable.
+  - Note: requests in flight may still use the old lookup after the swap, decide whether closing
+    waits for them or a lookup on a closed reader is counted as a lookup error. Test the close
+    and the failed close in the unit tests of the reload.
 
 ## Kubernetes, direct node ingress
 

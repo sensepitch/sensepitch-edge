@@ -76,6 +76,7 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
 
   /// `::ffff:a.b.c.d`
   private static boolean isIpv4Mapped(byte[] bytes) {
+    // FIXME: unreachable, only called for an Inet6Address, which always has 16 bytes; remove
     if (bytes.length != 16) {
       return false;
     }

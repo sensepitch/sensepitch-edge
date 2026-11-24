@@ -88,6 +88,20 @@ public class CookieGateTest {
             });
   }
 
+  /// Other cookies do not open the gate, only the configured name counts
+  @Test
+  public void otherCookiesAreRejectedWith404() throws Exception {
+    init(List.of(CookieGateConfig.builder().name(COOKIE_NAME).build()));
+    DefaultHttpRequest req =
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/private");
+    req.headers().set(HttpHeaderNames.COOKIE, "session=1; " + COOKIE_NAME + "x=1");
+    request(req);
+    assertThat(passed).isFalse();
+    assertThat(messageWritten)
+        .isInstanceOfSatisfying(
+            HttpResponse.class, response -> assertThat(response.status().code()).isEqualTo(404));
+  }
+
   @Test
   public void testAccessUriRedirectsWhenConfigured() throws Exception {
     init(

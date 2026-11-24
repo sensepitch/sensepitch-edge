@@ -96,6 +96,8 @@ public class SiteSelector {
               if (host == null) {
                 host = site.key();
               }
+              // FIXME: unreachable through Proxy, KeyInjector always sets the key from the map key;
+              // remove or validate where the key is injected
               if (host == null) {
                 throw new IllegalArgumentException("Site requires host or key");
               }

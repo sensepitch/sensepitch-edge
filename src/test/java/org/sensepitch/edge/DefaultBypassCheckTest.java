@@ -8,13 +8,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.netty.channel.Channel;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.io.TempDir;
 
 /// @author Jens Wilke
 public class DefaultBypassCheckTest {
@@ -42,6 +46,30 @@ public class DefaultBypassCheckTest {
 
   static HttpRequest get(String uri) {
     return new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, uri);
+  }
+
+  /// The configured crawler detection replaces the default one, see [DetectCrawlerTest] for its
+  /// rules
+  @Test
+  public void configuredCrawlerList(@TempDir Path dir) throws Exception {
+    Path tsv = dir.resolve("crawlers.tsv");
+    Files.writeString(tsv, DetectCrawlerTest.TSV_HEADER + "Me\tcrawler\t\t\t\tMyBot/1.0\n");
+    BypassCheck check =
+        new DefaultBypassCheck(
+            BypassConfig.builder()
+                .detectCrawler(
+                    DetectCrawlerConfig.builder()
+                        .disableBuiltinDatabase(true)
+                        .crawlerTsv(tsv.toString())
+                        .build())
+                .build());
+    Channel channel = new EmbeddedChannel();
+    HttpRequest own = get("/");
+    own.headers().set(HttpHeaderNames.USER_AGENT, "MyBot/1.0");
+    assertTrue(check.allowBypass(channel, own));
+    HttpRequest builtin = get("/");
+    builtin.headers().set(HttpHeaderNames.USER_AGENT, "Twitterbot/1.0");
+    assertFalse(check.allowBypass(channel, builtin));
   }
 
   @Test

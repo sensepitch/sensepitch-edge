@@ -18,6 +18,8 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.codec.http.cookie.DefaultCookie;
+import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.function.Supplier;
@@ -60,6 +62,28 @@ public class ProtectionOrderTest {
               assertThat(response.headers().get(HttpHeaderNames.SET_COOKIE)).isNotBlank();
               assertThat(response.content().toString(StandardCharsets.UTF_8)).isEqualTo("welcome");
             });
+  }
+
+  /// A request every plugin of the chain lets through reaches the next handler: the gate cookie
+  /// is present and the deflector bypasses the URI.
+  @Test
+  public void requestPassesWhenNoPluginIntercepts() throws Exception {
+    ProtectionConfig protection =
+        ProtectionConfig.builder()
+            .deflector(deflectorConfig())
+            .cookieGates(List.of(CookieGateConfig.builder().name(COOKIE_NAME).build()))
+            .build();
+    init(Protection.handlerSupplier(protection, new ProxyMetrics(), new ConfigFiles()).get());
+    DefaultHttpRequest req =
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/bypass");
+    req.headers().set(HttpHeaderNames.HOST, "example.com");
+    req.headers()
+        .set(
+            HttpHeaderNames.COOKIE,
+            ServerCookieEncoder.STRICT.encode(new DefaultCookie(COOKIE_NAME, "1")));
+    request(req);
+    assertThat(passed).isTrue();
+    assertThat(messageWritten).isNull();
   }
 
   private static DeflectorConfig deflectorConfig() {

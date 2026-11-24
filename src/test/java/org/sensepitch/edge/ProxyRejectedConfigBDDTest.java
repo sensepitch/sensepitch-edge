@@ -154,6 +154,13 @@ class ProxyRejectedConfigBDDTest {
                     .build()),
             "Upstream ref must not be combined"),
         rejected(
+            "upstream target with more than one colon",
+            routingConfig(
+                SiteConfig.builder()
+                    .upstream(UpstreamConfig.builder().target("localhost:80:81").build())
+                    .build()),
+            "Target: localhost:80:81"),
+        rejected(
             "upstream without target or ref",
             routingConfig(SiteConfig.builder().upstream(UpstreamConfig.builder().build()).build()),
             "Upstream requires target or ref"),

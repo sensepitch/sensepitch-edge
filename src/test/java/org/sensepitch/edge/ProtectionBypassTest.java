@@ -16,6 +16,7 @@ import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import java.net.InetSocketAddress;
@@ -76,6 +77,27 @@ public class ProtectionBypassTest {
     assertThat(messageWritten).isNull();
     assertThat(req.headers().get(BypassCheck.HEADER)).isEqualTo("config-ip-match");
     assertThat(req.headers().get(Deflector.TRAFFIC_TYPE_HEADER)).isEqualTo("unknown");
+  }
+
+  /// A configured bypass does not switch off the protection for other requests: the cookie gate
+  /// still answers its access URI.
+  @Test
+  public void requestOutsideTheBypassIsProtected() throws Exception {
+    ProtectionConfig protection =
+        ProtectionConfig.builder()
+            .bypass(new ProtectionBypassConfig(List.of("/public*"), null))
+            .cookieGates(List.of(CookieGateConfig.builder().name(COOKIE_NAME).build()))
+            .build();
+    init(Protection.handlerSupplier(protection, new ProxyMetrics(), new ConfigFiles()).get());
+    DefaultHttpRequest req =
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/private");
+    req.headers().set(HttpHeaderNames.HOST, "example.com");
+    request(req);
+    assertThat(passed).isFalse();
+    assertThat(messageWritten)
+        .isInstanceOfSatisfying(
+            HttpResponse.class, response -> assertThat(response.status().code()).isEqualTo(404));
+    assertThat(req.headers().get(BypassCheck.HEADER)).isNull();
   }
 
   /// Every configured prefix counts, also when a longer prefix sorts in between.

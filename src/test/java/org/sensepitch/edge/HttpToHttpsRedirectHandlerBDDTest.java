@@ -17,6 +17,8 @@ import net.serenitybdd.annotations.Step;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /// Behaviour of the [HttpToHttpsRedirectHandler]: every plain HTTP request is answered with a
 /// permanent redirect (308) to the same resource on HTTPS, using the normalized `Host` header and
@@ -85,11 +87,15 @@ class HttpToHttpsRedirectHandlerBDDTest {
         .then_location_header_is_absent();
   }
 
-  @Test
-  void hostWithAPath_isBadRequest() {
+  /// Hosts that pass the normalization but are no valid URI host: a path, characters the URI
+  /// rejects (a client could try to inject them into the `Location`), a malformed escape or IPv6
+  /// literal
+  @ParameterizedTest
+  @ValueSource(strings = {"example.com/path", "a<b", "a\"b", "a%zz", "[zz]"})
+  void hostThatIsNoUriHost_isBadRequest(String host) {
     steps
         .given_a_redirect_handler_to_https_port(443)
-        .when_request_to("example.com/path", "/")
+        .when_request_to(host, "/")
         .then_response_status_is(BAD_REQUEST)
         .then_location_header_is_absent();
   }
