@@ -94,15 +94,9 @@ public class SiteSelector {
                 throw new IllegalArgumentException(
                     "Site requires protection scheme or explicit disable");
               }
-              String host = site.host();
-              if (host == null) {
-                host = site.key();
-              }
-              // FIXME: unreachable through Proxy, KeyInjector always sets the key from the map key;
-              // remove or validate where the key is injected
-              if (host == null) {
-                throw new IllegalArgumentException("Site requires host or key");
-              }
+              // the key is the map key, set by KeyInjector, or rejected if missing from the
+              // environment, see EnvInjector
+              String host = site.host() != null ? site.host() : site.key();
               SanitizeHostHandler.requireValidWildcard(host);
               String uriPrefix = uriPrefix(site.uri());
               var tree = sitesByHost.computeIfAbsent(host, k -> new PrefixTree<>());

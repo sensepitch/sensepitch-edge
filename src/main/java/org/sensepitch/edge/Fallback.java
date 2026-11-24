@@ -22,7 +22,6 @@ public class Fallback {
   private final byte[] errorContent;
 
   /// @param files reads the page files
-  /// @throws IllegalArgumentException if a page response has neither `file` nor `text`
   /// @throws UncheckedIOException if a configured page resource cannot be read
   public Fallback(FallbackConfig config, ConfigFiles files) {
     this.config = config;
@@ -37,10 +36,7 @@ public class Fallback {
   /// Build the body of the page `cfg` describes: the resource named by [ResponseConfig#file()] (see
   /// [ResponseFiles] for how the location is resolved), or else the inline [ResponseConfig#text()]
   /// as UTF-8. Returns `null` for a redirect, which has no body. [ResponseConfig] already rejects
-  /// setting both `file` and `text`.
-  ///
-  /// @throws IllegalArgumentException if a page `cfg` has neither `file` nor `text` (an empty page
-  ///   config)
+  /// a page with both or neither of `file` and `text`.
   private static byte[] pageBody(ResponseConfig cfg, ConfigFiles files) {
     if (resolvedRedirect(cfg.location(), cfg.status()) != null) {
       return null;
@@ -48,10 +44,7 @@ public class Fallback {
     if (cfg.file() != null) {
       return ResponseFiles.read(cfg.file(), files);
     }
-    if (cfg.text() != null) {
-      return cfg.text().getBytes(StandardCharsets.UTF_8);
-    }
-    throw new IllegalArgumentException("page config has neither file nor text");
+    return cfg.text().getBytes(StandardCharsets.UTF_8);
   }
 
   public static Redirect resolvedRedirect(String location, int status) {

@@ -42,7 +42,7 @@ public class PlainTextRequestLogger implements RequestLogger {
     String referer = sanitize(request.headers().get(HttpHeaderNames.REFERER));
     String ua = sanitize(request.headers().get(HttpHeaderNames.USER_AGENT));
     String bypass = sanitize(request.headers().get(BypassCheck.HEADER));
-    String host = sanitize(request.headers().get(HttpHeaderNames.HOST));
+    String host = sanitize(info.requestHeaderHost());
     int status = response.status().code();
     String timing =
         formatDeltaTime(info.receiveDurationNanos())

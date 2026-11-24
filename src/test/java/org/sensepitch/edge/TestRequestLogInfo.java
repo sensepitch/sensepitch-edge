@@ -1,10 +1,8 @@
 package org.sensepitch.edge;
 
-import io.netty.handler.codec.http.DefaultHttpHeaders;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
@@ -109,6 +107,11 @@ final class TestRequestLogInfo implements RequestLogInfo {
   @Override
   public HttpRequest request() {
     return request;
+  }
+
+  @Override
+  public String requestHeaderHost() {
+    return request.headers().get(HttpHeaderNames.HOST);
   }
 
   @Override
@@ -217,11 +220,6 @@ final class TestRequestLogInfo implements RequestLogInfo {
   }
 
   @Override
-  public String requestHeaderHost() {
-    return request.headers().get(HttpHeaderNames.HOST);
-  }
-
-  @Override
   public long contentBytes() {
     return 3;
   }
@@ -244,11 +242,6 @@ final class TestRequestLogInfo implements RequestLogInfo {
   @Override
   public long requestStartTimeMillis() {
     return 0;
-  }
-
-  @Override
-  public HttpHeaders trailingHeaders() {
-    return new DefaultHttpHeaders();
   }
 
   @Override

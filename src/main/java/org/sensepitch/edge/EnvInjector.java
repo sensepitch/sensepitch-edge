@@ -135,6 +135,10 @@ public class EnvInjector {
         Object nestedTargetBuilder = RecordConstructor.builder(targetType, environment);
         Object obj = injectFromEnv(indexPrefix, env, environment, nestedTargetBuilder);
         if (obj instanceof HasKey objWithKey) {
+          if (objWithKey.key() == null) {
+            // a null key would fail later without naming the variable
+            throw new IllegalArgumentException("Missing env var " + indexPrefix + "KEY");
+          }
           map.put(objWithKey.key(), obj);
         } else {
           throw new IllegalArgumentException("Map value needs to have key, :" + obj.getClass());

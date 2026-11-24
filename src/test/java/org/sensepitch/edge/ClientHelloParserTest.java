@@ -110,6 +110,13 @@ public class ClientHelloParserTest {
     }
   }
 
+  /// A complete record whose handshake is shorter than its own four byte header
+  @Test
+  public void handshakeShorterThanItsHeader() {
+    assertThat(ClientHelloParser.parse(ClientHelloBuilder.toRecords(new byte[] {1, 0, 0}, 1000)))
+        .isNull();
+  }
+
   @Test
   public void notAHandshakeRecord() {
     ByteBuf buf = typical().build();

@@ -465,6 +465,13 @@ class OtlpLogDestinationTest {
         .containsExactly("en");
   }
 
+  /// `HOSTNAME`, the pod name in Kubernetes, wins over the local host name; a blank value is unset
+  @Test
+  void instanceIdPrefersTheHostnameVariable() {
+    assertThat(OtlpLogDestination.instanceId("edge-7d9f")).isEqualTo("edge-7d9f");
+    assertThat(OtlpLogDestination.instanceId(" ")).isEqualTo(OtlpLogDestination.instanceId(null));
+  }
+
   /// The resource identifies the instance by default, configured attributes override defaults
   @Test
   void resourceDefaultsAndOverrides() throws Exception {

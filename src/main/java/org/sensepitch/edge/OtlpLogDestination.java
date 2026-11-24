@@ -189,7 +189,11 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
   ///
   /// @return the id, or `null` if none can be determined
   static String instanceId() {
-    String hostname = System.getenv("HOSTNAME");
+    return instanceId(System.getenv("HOSTNAME"));
+  }
+
+  /// [#instanceId()] with the value of the `HOSTNAME` variable, `null` if not set
+  static String instanceId(String hostname) {
     if (hostname != null && !hostname.isBlank()) {
       return hostname;
     }

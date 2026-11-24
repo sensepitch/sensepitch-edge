@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -17,12 +16,8 @@ public class IpTrie implements AnyVersionIpLookup {
   @Override
   public void insert(String cidrStr, String label) {
     String[] parts = cidrStr.split("/");
-    InetAddress base;
-    try {
-      base = InetAddress.getByName(parts[0]);
-    } catch (UnknownHostException e) {
-      throw new RuntimeException(e);
-    }
+    // a literal only, a host name would be looked up in the DNS
+    InetAddress base = InetAddress.ofLiteral(parts[0]);
     int prefixLen = Integer.parseInt(parts[1]);
 
     byte[] bytes = base.getAddress();

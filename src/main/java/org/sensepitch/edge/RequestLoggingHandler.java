@@ -8,7 +8,6 @@ import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -62,7 +61,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private final RequestLogger logger;
   private Channel channel;
   private Throwable error;
-  private HttpHeaders trailingHeaders;
   private int requestCount;
   private Ticker ticker;
   private long connectionEstablishedNanos;
@@ -214,7 +212,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     }
     if (msg instanceof LastHttpContent lastHttpContent) {
       consolidateTimes();
-      trailingHeaders = lastHttpContent.trailingHeaders();
       // in case of a timeout we send a timeout response. make sure we have
       // a mock request to not confuse loggers
       if (request == null) {
@@ -523,11 +520,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public HttpResponse response() {
     return response;
-  }
-
-  @Override
-  public HttpHeaders trailingHeaders() {
-    return trailingHeaders;
   }
 
   @Override

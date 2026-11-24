@@ -279,6 +279,15 @@ public class ConfigTest {
     assertThat(ex).hasStackTraceContaining("Unsupported type double");
   }
 
+  /// A numbered map entry of records needs its `KEY` variable, like a string map
+  @Test
+  public void environmentMapEntryWithoutKeyIsRejected() {
+    Map<String, String> env = Map.of("XX_MAP_0_NUMBER", "234");
+    assertThatThrownBy(() -> EnvInjector.injectFromEnv("XX_", env, NestedTestConfig.builder()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Missing env var XX_MAP_0_KEY");
+  }
+
   @Test
   public void environmentMapValueNeedsKey() {
     Map<String, String> env = Map.of("XX_NO_KEYS_0_NUMBER", "1");

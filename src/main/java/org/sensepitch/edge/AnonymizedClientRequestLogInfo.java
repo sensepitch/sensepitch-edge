@@ -1,6 +1,5 @@
 package org.sensepitch.edge;
 
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import java.net.Inet6Address;
@@ -83,10 +82,6 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
 
   /// `::ffff:a.b.c.d`
   private static boolean isIpv4Mapped(byte[] bytes) {
-    // FIXME: unreachable, only called for an Inet6Address, which always has 16 bytes; remove
-    if (bytes.length != 16) {
-      return false;
-    }
     for (int i = 0; i < 10; i++) {
       if (bytes[i] != 0) {
         return false;
@@ -238,11 +233,6 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   @Override
   public Throwable error() {
     return info.error();
-  }
-
-  @Override
-  public HttpHeaders trailingHeaders() {
-    return info.trailingHeaders();
   }
 
   @Override

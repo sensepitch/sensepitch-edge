@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 /// @see <a href="https://github.com/FoxIO-LLC/ja4">JA4 specification</a>
 public class ClientHelloParser {
 
+  private ClientHelloParser() {}
+
   static final int RECORD_TYPE_HANDSHAKE = 0x16;
   static final int HANDSHAKE_TYPE_CLIENT_HELLO = 0x01;
   static final int RECORD_HEADER_LENGTH = 5;

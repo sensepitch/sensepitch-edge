@@ -68,9 +68,6 @@ public class UpstreamRegistry {
 
   /// Closes the upstreams of the previous registry that this registry did not take over.
   public void closeUnusedFrom(UpstreamRegistry previous) {
-    if (previous == null) {
-      return;
-    }
     previous.entries.forEach(
         (name, entry) -> {
           Entry current = entries.get(name);

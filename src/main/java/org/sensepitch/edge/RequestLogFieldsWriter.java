@@ -146,7 +146,7 @@ public final class RequestLogFieldsWriter {
         info.spanId(),
         info.traceFlags());
     sink.body(request.method().name(), request.uri(), status);
-    writeRequestLine(request, headers, sink);
+    writeRequestLine(info, request, sink);
     sink.number(OtelLogFields.HTTP_RESPONSE_STATUS_CODE, status);
     sink.string(SensepitchLogFields.REQUEST_OUTCOME, info.outcome().value());
     writeError(info, status, sink);
@@ -218,7 +218,7 @@ public final class RequestLogFieldsWriter {
 
   /// Method, host, path and query, like the request line of an access log
   private static <E extends Exception> void writeRequestLine(
-      HttpRequest request, HttpHeaders headers, RequestLogSink<E> sink) throws E {
+      RequestLogInfo info, HttpRequest request, RequestLogSink<E> sink) throws E {
     String method = request.method().name();
     if (KNOWN_METHODS.contains(method)) {
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD, method);
@@ -226,7 +226,7 @@ public final class RequestLogFieldsWriter {
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD, OTHER_METHOD);
       sink.string(OtelLogFields.HTTP_REQUEST_METHOD_ORIGINAL, method);
     }
-    sink.optionalString(OtelLogFields.SERVER_ADDRESS, headers.get(HttpHeaderNames.HOST));
+    sink.optionalString(OtelLogFields.SERVER_ADDRESS, info.requestHeaderHost());
     String uri = request.uri();
     int query = uri.indexOf('?');
     if (query < 0) {

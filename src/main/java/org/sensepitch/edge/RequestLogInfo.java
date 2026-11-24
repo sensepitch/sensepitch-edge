@@ -1,6 +1,5 @@
 package org.sensepitch.edge;
 
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
@@ -113,6 +112,8 @@ public interface RequestLogInfo {
   /// matching with any host that is serviced [SanitizeHostHandler#UNKNOWN_HOST] is returned. If the
   /// client request was not received [SanitizeHostHandler#NIL_HOST] is returned.
   ///
+  /// Loggers take the host from here, not from the request headers.
+  ///
   /// @see SanitizeHostHandler
   /// @return the requested host or a replacement token, never `null`.
   String requestHeaderHost();
@@ -137,9 +138,6 @@ public interface RequestLogInfo {
 
   /// Non-null if an error happened and the request did not complete successfully.
   Throwable error();
-
-  /// Trailing headers from LastHttpContent
-  HttpHeaders trailingHeaders();
 
   /// Time from the connection establishment until request was received completely. For a second
   /// request in a keep alive connection this includes waiting time. If the request was never
