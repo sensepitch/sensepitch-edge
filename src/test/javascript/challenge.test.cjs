@@ -7,6 +7,10 @@ const vm = require('node:vm');
 
 const source = readFileSync(resolve(__dirname, '../../main/resources/challenge/files/script.js'), 'utf8');
 const hash = text => createHash('sha256').update(text).digest('hex');
+// Bounds the work `drain` lets one challenge do (fake timers run plus real digests awaited), a
+// guard against a script that never stops. It counts work, not event loop turns: a real digest
+// completes on the libuv thread pool after any number of turns on a loaded machine.
+const MAX_DRAIN_STEPS = 30000;
 
 // Execute the shipped IIFE without exporting its internals or needing a browser dependency.
 // Timers and clocks are controlled so failures cannot leave a PoW loop running in the background.
@@ -15,6 +19,7 @@ function browser(options = {}) {
     const requests = [];
     const images = [];
     const inputs = [];
+    const pendingDigests = new Set();
     const status = { textContent: '', firstChild: { textContent: '' } };
     let click;
     let gate = false;
@@ -65,7 +70,15 @@ function browser(options = {}) {
             timers.push({ callback, delay });
         }
     };
-    if (options.mode === 'native') context.crypto = webcrypto;
+    if (options.mode === 'native') {
+        // The real WebCrypto; tracks the digests in flight, so `drain` can wait for them.
+        context.crypto = { subtle: { digest(algorithm, bytes) {
+            const digest = webcrypto.subtle.digest(algorithm, bytes);
+            pendingDigests.add(digest);
+            digest.finally(() => pendingDigests.delete(digest)).catch(() => {});
+            return digest;
+        } } };
+    }
     if (options.mode === 'throw') context.crypto = { subtle: { digest() { throw new Error('unavailable'); } } };
     if (options.mode === 'reject') context.crypto = { subtle: { digest() { return Promise.reject(new Error('failed')); } } };
     if (options.mode === 'legacy' || options.mode === 'legacy-error') {
@@ -105,17 +118,23 @@ function browser(options = {}) {
             request.readyState = 4;
             request.onreadystatechange();
         },
+        // Runs the challenge until it submits or fails. Each step runs one fake timer or waits for
+        // one real digest; with neither left the challenge is stuck and fails at once.
         async drain() {
-            for (let steps = 0; steps < 30000; steps++) {
+            for (let steps = 0; steps < MAX_DRAIN_STEPS; steps++) {
                 await new Promise(resolve => setImmediate(resolve));
+                if (requests.some(request => request.url.includes('challenge=')) ||
+                    status.textContent.startsWith('Verification failed.')) return;
                 const timer = timers.shift();
                 if (timer) {
                     monotonic += options.timerMs || 0;
                     wall += options.timerMs || 0;
                     timer.callback();
+                } else if (pendingDigests.size > 0) {
+                    await Promise.race(pendingDigests).catch(() => {});
+                } else {
+                    break;
                 }
-                if (requests.some(request => request.url.includes('challenge=')) ||
-                    status.textContent.startsWith('Verification failed.')) return;
             }
             assert.fail('challenge did not terminate');
         }

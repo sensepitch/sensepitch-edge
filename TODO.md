@@ -59,8 +59,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported in their recent runs; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
-  - BLOCKED: "Flaky tests" runs #1 to #8 on `main` fail in step "Report" (latest 2026-11-24);
-    the failed test names need GitHub sign-in or the run artifact, not readable by the agent
 
 ## Kubernetes, direct node ingress
 
