@@ -61,10 +61,7 @@ public class PlainTextRequestLogger implements RequestLogger {
     if (error == null) {
       error = "-";
     }
-    String signatureAgent = request.headers().get("Signature-Agent");
-    if (signatureAgent == null) {
-      signatureAgent = "-";
-    }
+    String signatureAgent = sanitize(request.headers().get("Signature-Agent"));
     StringBuilder sb = new StringBuilder();
     request
         .headers()

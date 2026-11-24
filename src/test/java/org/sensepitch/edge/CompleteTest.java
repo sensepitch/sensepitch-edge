@@ -143,6 +143,29 @@ class CompleteTest {
         .then_channel_closed();
   }
 
+  /// With `traceContext.trustTraceparent` the proxy continues the trace the client sent, see
+  /// [RequestLoggingHandlerTraceTest] for the handler; by default it starts a new one
+  @Test
+  void trustedTraceparentIsContinued() {
+    String traceId = "0af7651916cd43dd8448eb211c80319c";
+    Map<String, String> headers =
+        Map.of(TraceContext.TRACEPARENT, "00-" + traceId + "-b7ad6b7169203331-01");
+    steps
+        .when_requesting_with_headers("example.com", "/", headers)
+        .then_the_response_status_is(HttpResponseStatus.OK)
+        .then_the_request_log_has_trace_id(traceId, false);
+    steps =
+        new Steps()
+            .given_initialized_proxy_with(
+                COMMON_CONFIG.toBuilder()
+                    .traceContext(TraceContextConfig.builder().trustTraceparent(true).build())
+                    .build());
+    steps
+        .when_requesting_with_headers("example.com", "/", headers)
+        .then_the_response_status_is(HttpResponseStatus.OK)
+        .then_the_request_log_has_trace_id(traceId, true);
+  }
+
   @Test
   void responding() {
     steps
@@ -437,6 +460,14 @@ class CompleteTest {
       assertThat(msg).isNotNull();
       assertThat(msg).isInstanceOf(FullHttpResponse.class);
       response = (HttpResponse) msg;
+      return this;
+    }
+
+    @Step
+    Steps then_the_request_log_has_trace_id(String traceId, boolean expected) {
+      assertThat(requestLog.lines()).isNotEmpty();
+      assertThat(requestLog.lines().getLast().contains("\"trace_id\":\"" + traceId + "\""))
+          .isEqualTo(expected);
       return this;
     }
 

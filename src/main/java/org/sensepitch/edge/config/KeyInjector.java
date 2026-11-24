@@ -40,7 +40,10 @@ public class KeyInjector {
         for (Map.Entry<Object, Object> e : rawMap.entrySet()) {
           Object key = e.getKey();
           Object val = e.getValue();
-          if (val.getClass().isRecord() && HasKey.class.isAssignableFrom(val.getClass())) {
+          // an entry without settings, e.g. `api:` in YAML, is reported by the component
+          if (val != null
+              && val.getClass().isRecord()
+              && HasKey.class.isAssignableFrom(val.getClass())) {
             Method valueToBuilder = val.getClass().getMethod("toBuilder");
             Object valueBuilder = valueToBuilder.invoke(val);
             try {

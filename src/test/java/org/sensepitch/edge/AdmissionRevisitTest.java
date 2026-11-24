@@ -169,7 +169,7 @@ class AdmissionRevisitTest {
   /// A history whose signature does not verify is neither logged nor continued, while the
   /// admission itself still passes.
   @ParameterizedTest
-  @ValueSource(strings = {"tampered", "wrongSecret", "retiredKey", "malformed"})
+  @ValueSource(strings = {"tampered", "wrongSecret", "retiredKey", "malformed", "noTokenSeparator"})
   void unverifiedHistoryIsNotLogged(String kind) throws Exception {
     request("/", 403);
     String first = answer();
@@ -183,6 +183,10 @@ class AdmissionRevisitTest {
               signedHistory(new DefaultAdmissionTokenGenerator(new byte[4], 'A', "other"));
           case "retiredKey" ->
               signedHistory(new DefaultAdmissionTokenGenerator(new byte[4], 'B', SECRET));
+          case "noTokenSeparator" ->
+              history.substring(0, DefaultAdmissionTokenGenerator.TOKEN_CHARS)
+                  + "x"
+                  + history.substring(DefaultAdmissionTokenGenerator.TOKEN_CHARS + 1);
           default -> "malformed";
         };
     cookies.put(HISTORY, new DefaultCookie(HISTORY, unverified));

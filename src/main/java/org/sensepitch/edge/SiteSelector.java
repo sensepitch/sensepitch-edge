@@ -75,9 +75,11 @@ public class SiteSelector {
     }
     config
         .sites()
-        .values()
         .forEach(
-            site -> {
+            (siteKey, site) -> {
+              if (site == null) {
+                throw new IllegalArgumentException("Site without settings: " + siteKey);
+              }
               Supplier<ChannelHandler> fallbackSupplier =
                   constructFallbackSupplier(config.fallback(), site.fallback());
               ProtectionConfig protection = site.protection();
@@ -291,7 +293,7 @@ public class SiteSelector {
   /// @param name name of the upstream, see [UpstreamRegistry], not used for a reference
   private Upstream resolveUpstream(String name, UpstreamConfig cfg) {
     if (cfg == null) {
-      throw new IllegalArgumentException("upstream missing");
+      throw new IllegalArgumentException("upstream missing: " + name);
     }
     if (cfg.ref() != null) {
       if (cfg.target() != null) {

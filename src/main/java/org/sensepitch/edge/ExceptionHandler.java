@@ -20,7 +20,6 @@ import io.netty.handler.ssl.NotSslRecordException;
 import io.netty.handler.ssl.SslClosedEngineException;
 import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import java.io.IOException;
-import java.net.SocketException;
 import java.nio.channels.ClosedChannelException;
 import javax.net.ssl.SSLHandshakeException;
 import lombok.extern.slf4j.Slf4j;
@@ -103,10 +102,7 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
         || (cause instanceof IOException
             && cause.getMessage() != null
             && (cause.getMessage().startsWith("Connection reset")
-                || cause.getMessage().startsWith("Broken pipe")))
-        || (cause instanceof SocketException
-            && cause.getMessage() != null
-            && cause.getMessage().startsWith("Connection reset"));
+                || cause.getMessage().startsWith("Broken pipe")));
   }
 
   /// Handle an exception, this might be a connection reset a timeout etc.

@@ -131,6 +131,25 @@ class UnservicedHostHandlerBDDTest {
         .then_location_header_is("https://www.foo.com");
   }
 
+  /// No redirect to `www` when the bare domain is serviced itself
+  @Test
+  void bareDomainServicedNextToWww_passesThrough() {
+    steps
+        .given_serviced_domains("www.foo.com", "foo.com")
+        .when_request_to("foo.com", "/")
+        .then_request_is_passed_to_next_handler();
+  }
+
+  /// A method the sanitizer replaced, e.g. `TRACE`, is rejected, also for a serviced host
+  @Test
+  void unknownMethod_resultsInBadRequestStatus() {
+    steps
+        .given_a_common_example_configuration()
+        .when_request_with_method_to(SanitizeHostHandler.UNKNOWN_METHOD, "bar.com", "/")
+        .then_response_status_is(STATUS_400_BAD_REQUEST)
+        .then_location_header_is_absent();
+  }
+
   /// A serviced domain is compared with the normalized host, see [SanitizeHostHandler]
   @Test
   void servicedDomainNotNormalized_isRejected() {
@@ -169,6 +188,14 @@ class UnservicedHostHandlerBDDTest {
       return this;
     }
 
+    @Step("Given the serviced domains {0}, without default location")
+    public UnservicedSteps given_serviced_domains(String... domains) {
+      UnservicedHostConfig cfg =
+          UnservicedHostConfig.builder().servicedDomains(Set.of(domains)).build();
+      channel = new EmbeddedChannel(new UnservicedHost(cfg).newHandler());
+      return this;
+    }
+
     @Step
     public UnservicedSteps when_configuring_serviced_domain(String domain) {
       UnservicedHostConfig cfg =
@@ -191,7 +218,12 @@ class UnservicedHostHandlerBDDTest {
 
     @Step
     public UnservicedSteps when_request_to(String host, String uri) {
-      request = new DefaultHttpRequest(HTTP_1_1, GET, uri);
+      return when_request_with_method_to(GET, host, uri);
+    }
+
+    @Step
+    public UnservicedSteps when_request_with_method_to(HttpMethod method, String host, String uri) {
+      request = new DefaultHttpRequest(HTTP_1_1, method, uri);
       request.headers().set(HttpHeaderNames.HOST, host);
       passed = channel.writeInbound(request);
       if (passed) {

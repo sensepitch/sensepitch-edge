@@ -236,6 +236,7 @@ class AdminServerTest {
     start(() -> ReloadResult.APPLIED, withOneBreaker());
     assertThat(send("POST", "/circuit-breakers/requestLog/otlp").statusCode()).isEqualTo(404);
     assertThat(send("POST", "/circuit-breakers//otlp/open").statusCode()).isEqualTo(404);
+    assertThat(send("POST", "/circuit-breakers/requestLog//open").statusCode()).isEqualTo(404);
   }
 
   @Test

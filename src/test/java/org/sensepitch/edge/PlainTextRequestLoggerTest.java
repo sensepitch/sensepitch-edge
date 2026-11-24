@@ -49,6 +49,16 @@ class PlainTextRequestLoggerTest {
     assertThat(log(info)).contains(" \"agent\\\\\" ");
   }
 
+  /// The `Signature-Agent` header of the client is escaped like the other quoted values, so it
+  /// cannot inject fields; the admission token the edge set is written as is
+  @Test
+  void signatureAgentIsEscapedAndAdmissionTokenWritten() {
+    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    info.request().headers().set("Signature-Agent", "agent\" \"injected");
+    info.request().headers().set(Deflector.ADMISSION_TOKEN_HEADER, "Xtoken");
+    assertThat(log(info)).contains(" \"agent\\\" \\\"injected\" ").contains(" Xtoken [");
+  }
+
   @Test
   void serverErrorAndHeaderNames() {
     TestRequestLogInfo info =

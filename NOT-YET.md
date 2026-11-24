@@ -149,6 +149,15 @@ moved to [TODO.md](TODO.md#fast-tests-without-flakiness) as top priority on 2026
     `readRoutingFromYaml`, `readRoutingFromEnvironment`).
   - Remove a case if `./mvnw clean test jacoco:report` shows no coverage loss; a case that
     covers a loader path moves to `ConfigTest` with a generic record.
+- [ ] JaCoCo coverage varies between runs: lines that passing tests execute are sometimes
+  reported as missed, e.g. `AdminServer` lines 48 and 73–74 and `IpTraits` lines 31, 81 and 85
+  (seen 2026-11-24 in `./mvnw verify`, while `AdminServerTest` and `CombinedIpTraitsLookupTest`
+  passed). Cause not investigated; suspected the parallel unit test execution in one JVM, or
+  probes of a class lost on a JVM or thread end. Known before: one branch of
+  `AsyncRequestLogWriter` (see "Evergreen / Cleanups").
+  - P3, no operator visible effect: the floor in `pom.xml` keeps a margin; a new gap seen once
+    may be noise, rerun before writing a test or a TODO for it. Compare two `jacoco.xml` of the
+    same commit to find the affected classes.
 - [ ] Investigate cache2k pinpoint for the test patterns
   - P3: `cache2k-pinpoint` (module of cache2k, 2.6.1) has `PinpointParameters.TIMEOUT`,
     `Await` with a `TimeoutError` naming the condition, `TimeBox` (timing assertions only count when

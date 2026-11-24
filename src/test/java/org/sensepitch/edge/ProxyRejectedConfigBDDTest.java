@@ -8,6 +8,7 @@ import static org.sensepitch.edge.ProxyConstructBDDTest.ref;
 import static org.sensepitch.edge.ProxyConstructBDDTest.routingConfig;
 import static org.sensepitch.edge.ProxyConstructBDDTest.siteConfig;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -164,6 +165,22 @@ class ProxyRejectedConfigBDDTest {
             "upstream without target or ref",
             routingConfig(SiteConfig.builder().upstream(UpstreamConfig.builder().build()).build()),
             "Upstream requires target or ref"),
+        rejected(
+            "named upstream without settings",
+            upstreamSite.toBuilder().upstreams(Collections.singletonMap("api", null)).build(),
+            "upstream missing: upstreams.api"),
+        rejected(
+            "site without settings",
+            upstreamSite.toBuilder().sites(Collections.singletonMap("example.com", null)).build(),
+            "Site without settings: example.com"),
+        rejected(
+            "path without settings",
+            routingConfig(
+                SiteConfig.builder()
+                    .upstream(LOCAL)
+                    .paths(Collections.singletonMap("/api/*", null))
+                    .build()),
+            "Path requires upstream or response: /api/*"),
         rejected(
             "named upstream with ref",
             upstreamSite.toBuilder().upstreams(Map.of("api", LOCAL, "alias", ref("api"))).build(),

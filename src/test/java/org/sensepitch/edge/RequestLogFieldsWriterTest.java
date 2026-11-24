@@ -458,4 +458,13 @@ class RequestLogFieldsWriterTest {
                 "X-Custom: 1"));
     assertThat(fields(info).fields).doesNotContainKey("sensepitch.request.sample_headers");
   }
+
+  /// The name and the version of the negotiated protocol, either may be absent
+  @Test
+  void tlsProtocolNameAndVersion() {
+    assertThat(RequestLogFieldsWriter.parseTlsProtocol("TLSv1.3")).containsExactly("tls", "1.3");
+    assertThat(RequestLogFieldsWriter.parseTlsProtocol("SSLv3")).containsExactly("ssl", "3");
+    assertThat(RequestLogFieldsWriter.parseTlsProtocol("1.3")).containsExactly(null, "1.3");
+    assertThat(RequestLogFieldsWriter.parseTlsProtocol("TLS")).containsExactly("tls", null);
+  }
 }
