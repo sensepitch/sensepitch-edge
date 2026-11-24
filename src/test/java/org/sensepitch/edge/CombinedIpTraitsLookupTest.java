@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -122,5 +123,40 @@ public class CombinedIpTraitsLookupTest {
 
   private static IpTraits lookup(CombinedIpTraitsLookup lookup, String address) throws IOException {
     return lookup.lookup(InetAddress.getByName(address));
+  }
+
+  /// The MaxMind test databases, see `src/test/resources/maxmind/README.md`
+  static Path maxmindDatabase(String name) throws Exception {
+    return Path.of(CombinedIpTraitsLookupTest.class.getResource("/maxmind/" + name).toURI());
+  }
+
+  /// The configured GeoIP2 databases are read and recorded, so the configuration file watcher
+  /// reloads when one is replaced. An address the databases do not know, or a network without a
+  /// country, leaves the trait unset.
+  @Test
+  public void geoIp2Databases() throws Exception {
+    Path country = maxmindDatabase("GeoIP2-Country-Test.mmdb");
+    Path asn = maxmindDatabase("GeoLite2-ASN-Test.mmdb");
+    ConfigFiles files = new ConfigFiles();
+    var lookup =
+        new CombinedIpTraitsLookup(
+            IpLookupConfig.builder()
+                .geoIp2(
+                    GeoIp2Config.builder()
+                        .countryDbPath(country.toString())
+                        .asnDbPath(asn.toString())
+                        .build())
+                .build(),
+            metrics,
+            files);
+    assertThat(files.snapshot().files()).containsKeys(country, asn);
+    assertThat(lookup(lookup, "81.2.69.142").isoCountry()).isEqualTo("GB");
+    assertThat(lookup(lookup, "1.128.0.1").asn()).isEqualTo(1221);
+    IpTraits unknown = lookup(lookup, "10.0.0.1");
+    assertThat(unknown.isoCountry()).isNull();
+    assertThat(unknown.isAsnKnown()).isFalse();
+    // only registered_country and traits in the database
+    assertThat(lookup(lookup, "214.1.1.1").isoCountry()).isNull();
+    assertThat(logs.messages()).noneMatch(m -> m.contains("lookup failed"));
   }
 }

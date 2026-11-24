@@ -17,16 +17,8 @@ public class GeoIp2CountryLookup implements CountryLookup {
 
   @Override
   public String lookupCountry(InetAddress addr) throws Exception {
-    var optional = reader.tryCountry(addr);
-    if (optional.isEmpty()) {
-      return null;
-    }
-    var response = optional.get();
-    var country = response.getCountry();
-    if (country == null) {
-      return null;
-    }
-    var isoCode = country.getIsoCode();
-    return isoCode;
+    // a network without a country has an empty country record, GeoIP2 (4.4.0) puts one in place
+    // of a missing one, so its ISO code is null
+    return reader.tryCountry(addr).map(response -> response.getCountry().getIsoCode()).orElse(null);
   }
 }
