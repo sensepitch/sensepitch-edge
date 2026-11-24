@@ -11,7 +11,7 @@ import java.net.InetAddress;
 ///
 /// @author Jens Wilke
 /// @see <a href="https://ipinfo.io/lite">IP info lite</a>
-public class IpInfoCountryAndAsnLookup implements IpTraitsCollector {
+public class IpInfoCountryAndAsnLookup implements IpTraitsCollector, AutoCloseable {
 
   private static final ProxyLogger LOG = ProxyLogger.get(IpInfoCountryAndAsnLookup.class);
 
@@ -41,6 +41,12 @@ public class IpInfoCountryAndAsnLookup implements IpTraitsCollector {
         builder.asn(Long.parseLong(tuple.asn.substring(2)));
       }
     }
+  }
+
+  /// Closes the underlying database reader
+  @Override
+  public void close() throws IOException {
+    reader.close();
   }
 
   public static class CountryCodeAndAsnTuple {

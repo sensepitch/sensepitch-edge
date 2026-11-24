@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 
 /// @author Jens Wilke
-public class GeoIp2CountryLookup implements CountryLookup {
+public class GeoIp2CountryLookup implements CountryLookup, AutoCloseable {
 
   private final DatabaseReader reader;
 
@@ -20,5 +20,11 @@ public class GeoIp2CountryLookup implements CountryLookup {
     // a network without a country has an empty country record, GeoIP2 (4.4.0) puts one in place
     // of a missing one, so its ISO code is null
     return reader.tryCountry(addr).map(response -> response.getCountry().getIsoCode()).orElse(null);
+  }
+
+  /// Closes the underlying database reader
+  @Override
+  public void close() throws IOException {
+    reader.close();
   }
 }

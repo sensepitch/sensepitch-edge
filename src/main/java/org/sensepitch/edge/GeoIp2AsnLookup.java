@@ -8,7 +8,7 @@ import java.net.InetAddress;
 
 /// @author Jens Wilke
 /// @see <a href="https://github.com/maxmind/GeoIP2-java">GeoIP2-java</a>
-public class GeoIp2AsnLookup implements AsnLookup {
+public class GeoIp2AsnLookup implements AsnLookup, AutoCloseable {
 
   private final DatabaseReader reader;
 
@@ -24,5 +24,11 @@ public class GeoIp2AsnLookup implements AsnLookup {
     } catch (AddressNotFoundException ex) {
       return -1;
     }
+  }
+
+  /// Closes the underlying database reader
+  @Override
+  public void close() throws IOException {
+    reader.close();
   }
 }

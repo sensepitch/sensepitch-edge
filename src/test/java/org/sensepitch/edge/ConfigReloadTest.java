@@ -276,12 +276,81 @@ class ConfigReloadTest {
     assertThat(steps.proxy.referencedFiles()).containsKey(database.toAbsolutePath());
     assertThat(reload(withDatabase)).isTrue();
     assertThat(steps.proxy.state().ipTraitsLookup()).isSameAs(first);
+    assertThat(first.lookup(address).isoCountry())
+        .as("an unchanged lookup is kept open")
+        .isEqualTo("DE");
     Path tmp = dir.resolve("tmp.mmdb");
     TinyMmdb.writeCountry(tmp, "FR");
     Files.move(tmp, database, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     assertThat(reload(withDatabase)).isTrue();
     assertThat(steps.proxy.state().ipTraitsLookup()).isNotSameAs(first);
     assertThat(steps.proxy.state().ipTraitsLookup().lookup(address).isoCountry()).isEqualTo("FR");
+  }
+
+  /// A reload that replaces the IP lookup keeps the old one open for now, so a connection
+  /// accepted just before the swap still gets its traits. The delayed close is tested in
+  /// [#replacedIpLookupIsClosedAfterDelay(Path)].
+  @Test
+  void replacedIpLookupStaysOpenAfterReload(@TempDir Path dir) throws Exception {
+    Path database = dir.resolve("ipinfo.mmdb");
+    TinyMmdb.writeCountry(database, "DE");
+    ProxyConfig withDatabase =
+        CONFIG.toBuilder()
+            .ipLookup(IpLookupConfig.builder().ipInfoPath(database.toString()).build())
+            .build();
+    InetAddress address = InetAddress.getByName("192.0.2.1");
+    assertThat(reload(withDatabase)).isTrue();
+    IpTraitsLookup first = steps.proxy.state().ipTraitsLookup();
+    assertThat(first.lookup(address).isoCountry()).isEqualTo("DE");
+    assertThat(reload(CONFIG)).isTrue();
+    assertThat(steps.proxy.state().ipTraitsLookup()).isNotSameAs(first);
+    assertThat(first.lookup(address).isoCountry())
+        .as("the replaced lookup is not closed yet")
+        .isEqualTo("DE");
+  }
+
+  /// A replaced IP lookup is closed after [EdgeState#REPLACED_IP_LOOKUP_CLOSE_DELAY_MILLIS], so its
+  /// database readers are released. A lookup after the close finds its reader closed and is
+  /// counted as an IP lookup error, so the trait stays unset.
+  @Test
+  void replacedIpLookupIsClosedAfterDelay(@TempDir Path dir) throws Exception {
+    Path database = dir.resolve("ipinfo.mmdb");
+    TinyMmdb.writeCountry(database, "DE");
+    ProxyMetrics metrics = new ProxyMetrics();
+    var lookup =
+        new CombinedIpTraitsLookup(
+            IpLookupConfig.builder().ipInfoPath(database.toString()).build(),
+            metrics,
+            new ConfigFiles());
+    InetAddress address = InetAddress.getByName("192.0.2.1");
+    FakeTime time = new FakeTime();
+    stateWithIpTraitsLookup(lookup)
+        .closeReplacedBy(stateWithIpTraitsLookup(IpTraitsLookup.NONE), time.scheduler());
+    time.advanceMillis(EdgeState.REPLACED_IP_LOOKUP_CLOSE_DELAY_MILLIS - 1);
+    assertThat(lookup.lookup(address).isoCountry()).as("open until the delay").isEqualTo("DE");
+    time.advanceMillis(1);
+    assertThat(lookup.lookup(address).isoCountry()).as("closed after the delay").isNull();
+    assertThat(metrics.ipLookupErrorCounter.collect().getDataPoints().getFirst().getValue())
+        .isEqualTo(1);
+  }
+
+  /// A reload whose IP lookup cannot be closed logs it, so a reader left open is visible
+  @Test
+  void failedIpLookupCloseIsLogged() {
+    EdgeState current = stateWithIpTraitsLookup(new FailingCloseLookup());
+    EdgeState next = stateWithIpTraitsLookup(IpTraitsLookup.NONE);
+    FakeTime time = new FakeTime();
+    current.closeReplacedBy(next, time.scheduler());
+    assertThat(logs.errors()).isEmpty();
+    time.advanceMillis(EdgeState.REPLACED_IP_LOOKUP_CLOSE_DELAY_MILLIS);
+    assertThat(logs.errors())
+        .singleElement()
+        .satisfies(
+            e -> {
+              assertThat(e.source()).isEqualTo(EdgeState.class.getName());
+              assertThat(e.message()).isEqualTo("Closing IP lookup failed");
+              assertThat(e.error()).hasMessage("close failed");
+            });
   }
 
   @Test
@@ -447,6 +516,35 @@ class ConfigReloadTest {
     Files.move(tmp, token, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     assertThat(reload(withSecrets)).isTrue();
     assertThat(steps.proxy.state().configId()).isNotEqualTo(first);
+  }
+
+  /// Two states that differ only in their IP lookup, for the close-replaced tests. The other
+  /// fields are irrelevant to [EdgeState#closeReplacedBy].
+  private static EdgeState stateWithIpTraitsLookup(IpTraitsLookup lookup) {
+    return new EdgeState(
+        CONFIG,
+        null,
+        null,
+        null,
+        null,
+        null,
+        lookup,
+        null,
+        new UpstreamRegistry((name, config) -> null, null),
+        null);
+  }
+
+  /// An IP lookup whose close fails, for the close-replaced error path
+  private static final class FailingCloseLookup implements IpTraitsLookup, AutoCloseable {
+    @Override
+    public IpTraits lookup(InetAddress address) {
+      return IpTraits.builder().build();
+    }
+
+    @Override
+    public void close() throws Exception {
+      throw new IOException("close failed");
+    }
   }
 
   static Path copyResource(String resource, Path dir) throws IOException {

@@ -1,10 +1,12 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -121,6 +123,43 @@ public class CombinedIpTraitsLookupTest {
             });
   }
 
+  /// A lookup built without databases has nothing to close
+  @Test
+  public void closeWithoutDatabasesDoesNothing() throws Exception {
+    var lookup = new CombinedIpTraitsLookup(List.of(), metrics);
+    lookup.close();
+  }
+
+  /// A failing reader does not keep the others open: all are closed, the first failure is thrown
+  /// with the later ones suppressed
+  @Test
+  public void closeClosesAllReadersAndThrowsFirstFailure() throws Exception {
+    List<String> closed = new ArrayList<>();
+    var lookup =
+        new CombinedIpTraitsLookup(
+            List.of(),
+            List.of(
+                () -> {
+                  closed.add("a");
+                  throw new IOException("a failed");
+                },
+                () -> closed.add("b"),
+                () -> {
+                  closed.add("c");
+                  throw new IOException("c failed");
+                }),
+            metrics);
+    assertThatThrownBy(lookup::close)
+        .hasMessage("a failed")
+        .satisfies(
+            e ->
+                assertThat(e.getSuppressed())
+                    .singleElement()
+                    .extracting(Throwable::getMessage)
+                    .isEqualTo("c failed"));
+    assertThat(closed).containsExactly("a", "b", "c");
+  }
+
   private static IpTraits lookup(CombinedIpTraitsLookup lookup, String address) throws IOException {
     return lookup.lookup(InetAddress.getByName(address));
   }
@@ -158,5 +197,22 @@ public class CombinedIpTraitsLookupTest {
     // only registered_country and traits in the database
     assertThat(lookup(lookup, "214.1.1.1").isoCountry()).isNull();
     assertThat(logs.messages()).noneMatch(m -> m.contains("lookup failed"));
+  }
+
+  /// An ASN-only GeoIP2 configuration opens only the ASN database, the country database is not
+  /// opened because it is not configured.
+  @Test
+  public void asnOnlyGeoIp2Database() throws Exception {
+    Path asn = maxmindDatabase("GeoLite2-ASN-Test.mmdb");
+    ConfigFiles files = new ConfigFiles();
+    var lookup =
+        new CombinedIpTraitsLookup(
+            IpLookupConfig.builder()
+                .geoIp2(GeoIp2Config.builder().asnDbPath(asn.toString()).build())
+                .build(),
+            metrics,
+            files);
+    assertThat(files.snapshot().files()).containsKey(asn);
+    assertThat(lookup(lookup, "1.128.0.1").asn()).isEqualTo(1221);
   }
 }

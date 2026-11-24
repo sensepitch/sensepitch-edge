@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /// Everything built from the configuration that a reload replaces: routing, known hosts,
 /// certificates and the IP lookup. Immutable, [Proxy] swaps the complete state, and the handlers
@@ -147,15 +149,35 @@ record EdgeState(
     }
   }
 
-  /// Releases what the next state did not take over. Called after the swap.
-  void closeReplacedBy(EdgeState next) {
+  /// How long a replaced IP lookup stays open after the swap. A connection whose pipeline was
+  /// built from the old state holds the old lookup and queries it in `channelActive`, see
+  /// [IpTraitsHandler]. That happens right after the pipeline is built, so a few seconds cover
+  /// it with a wide margin; the delay only postpones releasing the database readers, which is why
+  /// it is a constant and no configuration key.
+  static final long REPLACED_IP_LOOKUP_CLOSE_DELAY_MILLIS = 5_000;
+
+  /// Releases what the next state did not take over. Called after the swap. A replaced IP lookup
+  /// is closed after [#REPLACED_IP_LOOKUP_CLOSE_DELAY_MILLIS], so connections accepted just before
+  /// the swap still get their traits. A close still pending when the proxy shuts down is dropped
+  /// with the scheduler's tasks; the readers are then released when the process ends.
+  ///
+  /// @param scheduler runs the delayed close, the event loop group in production
+  void closeReplacedBy(EdgeState next, ScheduledExecutorService scheduler) {
     next.upstreams.closeUnusedFrom(upstreams);
     if (next.ipTraitsLookup != ipTraitsLookup && ipTraitsLookup instanceof AutoCloseable c) {
-      try {
-        c.close();
-      } catch (Exception e) {
-        ProxyLogger.get(EdgeState.class).error("Closing IP lookup failed", e);
-      }
+      scheduler.schedule(
+          () -> closeReplacedIpLookup(c),
+          REPLACED_IP_LOOKUP_CLOSE_DELAY_MILLIS,
+          TimeUnit.MILLISECONDS);
+    }
+  }
+
+  /// The delayed close of [#closeReplacedBy], logs a failure so a reader left open is visible
+  private static void closeReplacedIpLookup(AutoCloseable lookup) {
+    try {
+      lookup.close();
+    } catch (Exception e) {
+      ProxyLogger.get(EdgeState.class).error("Closing IP lookup failed", e);
     }
   }
 }

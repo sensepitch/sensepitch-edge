@@ -61,14 +61,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     flakiness" above.
   - BLOCKED: "Flaky tests" runs #1 to #8 on `main` fail in step "Report" (latest 2026-11-24);
     the failed test names need GitHub sign-in or the run artifact, not readable by the agent
-- [ ] A reload that replaces the IP lookup never closes the old database readers
-  - P1: `EdgeState.closeReplacedBy` closes the replaced lookup only if it is `AutoCloseable`, but
-    `CombinedIpTraitsLookup` is not, so each reload that changes `ipLookup` leaves the MaxMind
-    (`GeoIp2AsnLookup`, `GeoIp2CountryLookup`) and IPinfo (`IpInfoCountryAndAsnLookup`) readers
-    open; the close branch in `EdgeState` is unreachable.
-  - Note: requests in flight may still use the old lookup after the swap, decide whether closing
-    waits for them or a lookup on a closed reader is counted as a lookup error. Test the close
-    and the failed close in the unit tests of the reload.
 
 ## Kubernetes, direct node ingress
 

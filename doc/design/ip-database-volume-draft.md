@@ -100,8 +100,10 @@ choice between IPinfo and other providers.
   `Proxy.reload` catches `RuntimeException`, keeps the active configuration and keeps watching
   the file, so a write that completes later retries. Not checked with a real 24 MB file cut at
   other points.
-- The old `Reader` is never closed. Its mapping, and the disk space of a replaced file, are
-  freed only when the buffer is garbage collected (inferred from the code, not measured).
+- The old `Reader` is closed `EdgeState.REPLACED_IP_LOOKUP_CLOSE_DELAY_MILLIS` (5 s) after the
+  reload that replaced it, so connections accepted just before the swap still get their traits
+  (`EdgeState#closeReplacedBy`). Whether the close frees the mapping, and the disk space of a
+  replaced file, before the buffer is garbage collected is not checked.
 
 ### Projected Secret and ConfigMap volumes (evidence, relevant only below 1 MiB)
 

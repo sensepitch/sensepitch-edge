@@ -11,10 +11,11 @@ import java.util.List;
 /// Combines the IP databases and the crawler IP lists. A database that throws on a lookup is a
 /// request level event: it is counted in [ProxyMetrics#ipLookupErrorCounter] and logged at debug,
 /// the first one at warning, see [ProxyLogger] for the levels, and the other databases are still
-/// queried.
+/// queried. The database readers it opened are released with [#close()]; a reload replaces the
+/// lookup and closes the old one a few seconds later, see [EdgeState#closeReplacedBy].
 ///
 /// @author Jens Wilke
-public class CombinedIpTraitsLookup implements IpTraitsLookup {
+public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
 
   static final String CRAWLER_IPS_DIRECTORY = "crawler-ips/";
   static final String CRAWLER_LABEL_PREFIX = "crawler:";
@@ -23,6 +24,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   private static final ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
 
   private final List<IpTraitsCollector> ipAttributesLookups;
+  private final List<AutoCloseable> closeables;
   private final IpLabelLookup ipLabelLookup;
   private final ProxyMetrics metrics;
 
@@ -33,34 +35,59 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
   }
 
   /// @param ipAttributesLookups queried in order for each address, a later one overwrites what an
-  ///   earlier one found. Tests pass fakes here instead of databases.
+  ///   earlier one found. Tests pass fakes here instead of databases, so there is nothing to close.
   CombinedIpTraitsLookup(List<IpTraitsCollector> ipAttributesLookups, ProxyMetrics metrics)
       throws IOException {
+    this(ipAttributesLookups, List.of(), metrics);
+  }
+
+  private CombinedIpTraitsLookup(DatabaseLookups lookups, ProxyMetrics metrics) throws IOException {
+    this(lookups.collectors(), lookups.closeables(), metrics);
+  }
+
+  /// @param closeables closed by [#close()], tests pass fakes to check the close
+  CombinedIpTraitsLookup(
+      List<IpTraitsCollector> ipAttributesLookups,
+      List<AutoCloseable> closeables,
+      ProxyMetrics metrics)
+      throws IOException {
     this.ipAttributesLookups = List.copyOf(ipAttributesLookups);
+    this.closeables = List.copyOf(closeables);
     this.metrics = metrics;
     ipLabelLookup = readCrawlerIpLists();
     LOG.info("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
   }
 
+  /// The database readers opened for a configuration, and the collectors that query them
+  private record DatabaseLookups(
+      List<IpTraitsCollector> collectors, List<AutoCloseable> closeables) {}
+
   /// Opens the databases configured
-  private static List<IpTraitsCollector> databaseLookups(IpLookupConfig cfg, ConfigFiles files)
+  private static DatabaseLookups databaseLookups(IpLookupConfig cfg, ConfigFiles files)
       throws IOException {
     List<IpTraitsCollector> lookups = new ArrayList<>();
+    List<AutoCloseable> closeables = new ArrayList<>();
     if (cfg.geoIp2() != null) {
       if (cfg.geoIp2().asnDbPath() != null) {
         files.record(Path.of(cfg.geoIp2().asnDbPath()));
-        lookups.add(asnTraits(new GeoIp2AsnLookup(cfg.geoIp2().asnDbPath())));
+        GeoIp2AsnLookup asn = new GeoIp2AsnLookup(cfg.geoIp2().asnDbPath());
+        lookups.add(asnTraits(asn));
+        closeables.add(asn);
       }
       if (cfg.geoIp2().countryDbPath() != null) {
         files.record(Path.of(cfg.geoIp2().countryDbPath()));
-        lookups.add(countryTraits(new GeoIp2CountryLookup(cfg.geoIp2().countryDbPath())));
+        GeoIp2CountryLookup country = new GeoIp2CountryLookup(cfg.geoIp2().countryDbPath());
+        lookups.add(countryTraits(country));
+        closeables.add(country);
       }
     }
     if (cfg.ipInfoPath() != null) {
       files.record(Path.of(cfg.ipInfoPath()));
-      lookups.add(new IpInfoCountryAndAsnLookup(cfg.ipInfoPath()));
+      IpInfoCountryAndAsnLookup ipInfo = new IpInfoCountryAndAsnLookup(cfg.ipInfoPath());
+      lookups.add(ipInfo);
+      closeables.add(ipInfo);
     }
-    return lookups;
+    return new DatabaseLookups(lookups, closeables);
   }
 
   /// Reads the published crawler IP lists named in `crawler-ips/index.txt`. Each address is labeled
@@ -147,5 +174,28 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup {
       }
     }
     return builder.build();
+  }
+
+  /// Closes the database readers this lookup owns, so a reload that replaces the lookup releases
+  /// them. Called delayed by [EdgeState#closeReplacedBy]. A lookup after the close finds its
+  /// reader closed, which [#lookup(InetAddress)] counts as an IP lookup error. Every reader is
+  /// closed even if one fails; the first failure is thrown, later ones are suppressed in it.
+  @Override
+  public void close() throws Exception {
+    Exception failure = null;
+    for (AutoCloseable closeable : closeables) {
+      try {
+        closeable.close();
+      } catch (Exception e) {
+        if (failure == null) {
+          failure = e;
+        } else {
+          failure.addSuppressed(e);
+        }
+      }
+    }
+    if (failure != null) {
+      throw failure;
+    }
   }
 }

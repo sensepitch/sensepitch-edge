@@ -262,7 +262,7 @@ public class Proxy implements ProxyContext {
       ConfigFiles.Snapshot snapshot = files.snapshot();
       next = next.withSecrets(snapshot.secretDigests());
       state = next;
-      current.closeReplacedBy(next);
+      current.closeReplacedBy(next, eventLoopGroup);
       requestLog.apply();
       referencedFiles = snapshot.files();
       candidateFiles = Map.of();
