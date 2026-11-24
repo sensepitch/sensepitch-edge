@@ -11,3 +11,12 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   latch wait has timed out too, and that `AssertionError` replaces the original failure. Test
   diagnostics, low importance, it only hides the cause of a failure. From the
   `accept-grace-second-caller-wait` turn, 2026-11-23.
+- Close the replaced MaxMind `Reader`s (`IpInfoCountryAndAsnLookup`, GeoIP2) when a reload
+  replaces the IP lookup; today the memory mapping and the disk space of a replaced 24 MB
+  database stay until the buffer is garbage collected. Operators, low importance, daily updates
+  pile up only between collections. From the `ip-database-volume-research` turn, 2026-11-23.
+- A `ConfigReloadTest` case for a truncated IP database: maxmind-db 3.2.0 throws
+  `IllegalArgumentException`, not `InvalidDatabaseException`, for a cut file, and only the
+  `RuntimeException` catch in `Proxy.reload` keeps the active configuration. Developers, medium
+  importance, guards the half-written download case. From the `ip-database-volume-research`
+  turn, 2026-11-23.

@@ -148,11 +148,29 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   - Also: the chart mounts one TLS Secret (`tls.existingSecret`); many hosts need a list of
     Secrets or the `letsEncrypt` directory layout from one volume.
 - [ ] 13. IP database on the pods: production reads the IPinfo database (`ipLookup.ipInfoPath`).
-  A Secret or ConfigMap holds at most 1 MiB (`extraSecretMounts` in the chart), the database is
-  larger (inferred, check the file size). Decide the volume: init container download, image
-  layer, or hostPath; and the update without a restart (check whether `ConfigFileWatcher`
-  watches it).
+  Research with sources and the evidence for each point:
+  [ip-database-volume-draft.md](doc/design/ip-database-volume-draft.md).
   - P1.
+  - Facts: IPinfo Lite `ipinfo_lite.mmdb` is 23.71 MB, updated daily, CC BY-SA 4.0, downloaded
+    with an account token. A Secret or ConfigMap holds at most 1 MiB, so neither can carry it.
+    `ConfigFileWatcher` already reloads by itself when the file is renamed into place.
+    The reader memory-maps the file, so an updater must write a temporary file in the same
+    directory and rename it, never write in place.
+  - Volume, tick one:
+    - [ ] A. init container download plus a native sidecar that refreshes into an `emptyDir`;
+      token from a small Secret; every pod downloads and needs egress to IPinfo
+    - [ ] B. read-only `hostPath` directory (not the file) on the ingress nodes, filled by a
+      host timer; node setup outside the chart
+    - [ ] C. image volume with the database as an OCI artifact (stable since Kubernetes 1.36);
+      every update is a pod restart
+    - [ ] D. baked into the edge image; every update is an image build and rollout, and the
+      public image redistributes CC BY-SA data
+  - Update interval, tick one; A and B reach the running edge through the watcher, C and D
+    through a rollout restart:
+    - [ ] daily, IPinfo's cadence
+    - [ ] less often, e.g. weekly, to save transfer
+  - Then: a chart values block for the chosen volume, its operator documentation (item 15), and
+    a test that the running watcher picks up a renamed database without a `reload` call.
 - [ ] 14. draining with DNS spreading: a node's address stays in client caches for the DNS TTL
   after it is removed from DNS. Decide who maintains the records without the controller (by hand
   or external-dns with a node source), the TTL, and the order for

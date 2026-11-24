@@ -55,12 +55,13 @@ tls:
   certKey: tls.crt
   keyKey: tls.key
 
-# Additional Secrets mounted as read-only files, for example the IPinfo
-# database. They complement, but do not replace, the TLS Secret above.
+# Additional Secrets mounted as read-only files, for example admission or log
+# server secrets. They complement, but do not replace, the TLS Secret above. A
+# Secret holds at most 1 MiB, too little for the IPinfo database.
 # extraSecretMounts:
-#   - name: ipinfo
-#     secretName: sensepitch-edge-ipinfo
-#     mountPath: /etc/sensepitch/ipinfo
+#   - name: log-credentials
+#     secretName: sensepitch-edge-log-credentials
+#     mountPath: /etc/sensepitch/log
 extraSecretMounts: []
 
 # Prometheus Operator support. The chart always creates a separate ClusterIP

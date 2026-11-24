@@ -147,21 +147,21 @@ through `serviceMonitor.labels` if your Prometheus instance selects ServiceMonit
 
 ## Extra Secret files
 
-Mount additional Secrets read-only for files the edge reads by path, for example the IPinfo
-database:
+Mount additional Secrets read-only for files the edge reads by path, for example log server
+credentials:
 
 ````yaml
 extraSecretMounts:
-  - name: ipinfo
-    secretName: sensepitch-edge-ipinfo
-    mountPath: /etc/sensepitch/ipinfo
-
-config:
-  ipLookup:
-    ipInfoPath: /etc/sensepitch/ipinfo/ipinfo.mmdb
+  - name: log-credentials
+    secretName: sensepitch-edge-log-credentials
+    mountPath: /etc/sensepitch/log
 ````
 
 The volume name is prefixed with `extra-`, so `name` only needs to be unique among these mounts.
+
+A Secret holds at most 1 MiB. The IPinfo database (`ipLookup.ipInfoPath`, about 24 MB) does not
+fit, and the chart has no volume for it yet; see item 13 of "Kubernetes, direct node ingress"
+in [TODO.md](../../TODO.md).
 
 ## PodDisruptionBudget
 
