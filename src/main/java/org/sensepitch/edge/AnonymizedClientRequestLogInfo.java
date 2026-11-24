@@ -66,10 +66,17 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
     }
     int keep = bytes.length == 4 ? IPV4_KEEP_BYTES : IPV6_KEEP_BYTES;
     Arrays.fill(bytes, keep, bytes.length, (byte) 0);
+    return byAddress(bytes);
+  }
+
+  /// The address of the truncated bytes, for [#anonymize]. Excluded from the coverage report:
+  /// `InetAddress.getByAddress` throws only for a length other than 4 or 16, and the bytes come
+  /// from an `InetAddress`, so the `catch` cannot be reached.
+  @ExcludeFromJacocoGeneratedReport
+  private static InetAddress byAddress(byte[] bytes) {
     try {
       return InetAddress.getByAddress(bytes);
     } catch (UnknownHostException e) {
-      // cannot happen, the length is always 4 or 16
       throw new IllegalStateException(e);
     }
   }

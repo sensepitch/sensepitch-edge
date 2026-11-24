@@ -352,8 +352,7 @@ public class DeflectorHandlerTest {
   }
 
   private String sha256Hex(String value) {
-    byte[] hash =
-        ChallengeGenerationAndVerification.sha256(value.getBytes(StandardCharsets.ISO_8859_1));
+    byte[] hash = Digests.sha256(value.getBytes(StandardCharsets.ISO_8859_1));
     return HexFormat.of().formatHex(hash);
   }
 

@@ -48,6 +48,9 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
   coverage by a class rule in `pom.xml`. A gap is a design question: remove error handling for a
   case that cannot happen, validate earlier, or test the case; do not lower the rule, and never
   delete a necessary check (validation, cleanup) to satisfy coverage.
+  Only a `catch` the compiler demands for a checked exception the JDK guarantees never to throw
+  (e.g. SHA-256 unavailable) goes into a small helper marked `@ExcludeFromJacocoGeneratedReport`,
+  whose doc says why it cannot be reached; reuse `Digests` for hashes and MACs.
 - `./mvnw verify -Dfast` (profile `fast` in `pom.xml`) is the quick loop: it compiles, runs all unit
   and integration tests and builds the fat JAR, but skips coverage (agent, report, floor), the
   Javadoc build with delombok, and the format check. Each part can be skipped on its own:

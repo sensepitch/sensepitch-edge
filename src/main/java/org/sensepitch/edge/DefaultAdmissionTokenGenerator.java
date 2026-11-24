@@ -2,13 +2,10 @@ package org.sensepitch.edge;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 /// @author Jens Wilke
 public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
@@ -64,16 +61,9 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
 
   /// Authenticates the original token and revisit count with a key specific to history cookies.
   String signHistory(String payload) {
-    byte[] key =
-        ChallengeGenerationAndVerification.sha256(
-            ("admission0\0" + secret).getBytes(StandardCharsets.UTF_8));
-    try {
-      Mac mac = Mac.getInstance("HmacSHA256");
-      mac.init(new SecretKeySpec(key, "HmacSHA256"));
-      return HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
-    } catch (GeneralSecurityException ex) {
-      throw new IllegalStateException(ex);
-    }
+    byte[] key = Digests.sha256(("admission0\0" + secret).getBytes(StandardCharsets.UTF_8));
+    return HexFormat.of()
+        .formatHex(Digests.hmacSha256(key, payload.getBytes(StandardCharsets.UTF_8)));
   }
 
   /// Verifies a history signature before its token or count is used.
@@ -89,9 +79,7 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     }
     int offset = TIME_CHARS + MIXED_CHARS + 1;
     String uniqueId = token.substring(1, offset);
-    byte[] sha256 =
-        ChallengeGenerationAndVerification.sha256(
-            (uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
+    byte[] sha256 = Digests.sha256((uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
     if (!checksumMatches(token, offset, sha256)) {
       return 0;
     }
@@ -155,9 +143,7 @@ public class DefaultAdmissionTokenGenerator implements AdmissionTokenGenerator {
     String variationsChars = encodeUniqueId(bytes);
     String timeChars = calculateTimeChars(calculateCurrentSecondsTime32bits());
     String uniqueId = timeChars + variationsChars;
-    byte[] sha256 =
-        ChallengeGenerationAndVerification.sha256(
-            (uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
+    byte[] sha256 = Digests.sha256((uniqueId + secret).getBytes(StandardCharsets.ISO_8859_1));
     String checkSum = encodeChecksum(sha256);
     return prefixChar + uniqueId + checkSum;
   }

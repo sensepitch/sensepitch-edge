@@ -10,8 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -85,7 +83,7 @@ public class ConfigFileWatcher {
   public ConfigFileWatcher(Path file) {
     this.file = file.toAbsolutePath();
     byte[] content = readOrNull();
-    lastHash = content != null ? hash(content) : null;
+    lastHash = content != null ? Digests.sha256(content) : null;
   }
 
   /// Starts watching in a daemon thread and checks for a change since construction.
@@ -155,7 +153,7 @@ public class ConfigFileWatcher {
     if (content == null) {
       return ReloadResult.rejected("Cannot read configuration file: " + file);
     }
-    byte[] hash = hash(content);
+    byte[] hash = Digests.sha256(content);
     boolean configChanged = !Arrays.equals(hash, lastHash) && !Arrays.equals(hash, incompleteHash);
     Map<Path, ConfigFiles.Fingerprint> current = currentFingerprints();
     if (!force && !configChanged && current.equals(referencedFiles)) {
@@ -269,14 +267,6 @@ public class ConfigFileWatcher {
     } catch (IOException e) {
       LOG.info("Cannot read configuration file: " + e);
       return null;
-    }
-  }
-
-  private static byte[] hash(byte[] content) {
-    try {
-      return MessageDigest.getInstance("SHA-256").digest(content);
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException(e);
     }
   }
 }

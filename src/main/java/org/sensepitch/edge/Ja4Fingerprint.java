@@ -1,8 +1,6 @@
 package org.sensepitch.edge;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
 
@@ -120,12 +118,7 @@ public record Ja4Fingerprint(String value, String raw) {
     if (input.isEmpty()) {
       return NO_HASH;
     }
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-      return HexFormat.of().formatHex(hash).substring(0, HASH_LENGTH);
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 not available", e);
-    }
+    byte[] hash = Digests.sha256(input.getBytes(StandardCharsets.UTF_8));
+    return HexFormat.of().formatHex(hash).substring(0, HASH_LENGTH);
   }
 }

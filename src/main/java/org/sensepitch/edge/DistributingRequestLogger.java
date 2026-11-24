@@ -18,6 +18,8 @@ public class DistributingRequestLogger implements RequestLogger {
     }
   }
 
+  // FIXME: never called, Proxy closes the request log destinations directly; remove or close the
+  // DistributingRequestLogger in Proxy#shutdown() instead
   @Override
   public void close() {
     for (RequestLogger requestLogger : requestLogger) {

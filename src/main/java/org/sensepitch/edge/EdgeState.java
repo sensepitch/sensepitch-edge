@@ -4,8 +4,6 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.util.Mapping;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -60,14 +58,7 @@ record EdgeState(
 
   /// SHA-256 of the UTF-8 text in hex, for the config id and the digests of the secrets
   static String sha256Hex(String text) {
-    try {
-      byte[] hash =
-          MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));
-      return HexFormat.of().formatHex(hash);
-    } catch (NoSuchAlgorithmException e) {
-      // every JDK has SHA-256
-      throw new IllegalStateException(e);
-    }
+    return HexFormat.of().formatHex(Digests.sha256(text.getBytes(StandardCharsets.UTF_8)));
   }
 
   /// Builds and validates a complete state. Nothing of the previous state is modified or closed,

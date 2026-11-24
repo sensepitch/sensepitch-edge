@@ -154,9 +154,7 @@ class DeflectorAdmissionExpiryTest {
   private static String createToken(long seconds) {
     byte[] mixed = ByteBuffer.allocate(MIXED_BYTES).putInt(0).array();
     String uniqueId = calculateTimeChars(seconds) + encodeUniqueId(mixed);
-    byte[] hash =
-        ChallengeGenerationAndVerification.sha256(
-            (uniqueId + SECRET).getBytes(StandardCharsets.ISO_8859_1));
+    byte[] hash = Digests.sha256((uniqueId + SECRET).getBytes(StandardCharsets.ISO_8859_1));
     return 'X' + uniqueId + encodeChecksum(hash);
   }
 }

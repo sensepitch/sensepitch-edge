@@ -82,9 +82,7 @@ class AdmissionChecksumBDDTest {
     private void createToken(int seed, long seconds) {
       byte[] mixed = ByteBuffer.allocate(MIXED_BYTES).putInt(seed).array();
       String uniqueId = calculateTimeChars(seconds) + encodeUniqueId(mixed);
-      hash =
-          ChallengeGenerationAndVerification.sha256(
-              (uniqueId + "secret").getBytes(StandardCharsets.ISO_8859_1));
+      hash = Digests.sha256((uniqueId + "secret").getBytes(StandardCharsets.ISO_8859_1));
       token = 'X' + uniqueId + encodeChecksum(hash);
     }
 
