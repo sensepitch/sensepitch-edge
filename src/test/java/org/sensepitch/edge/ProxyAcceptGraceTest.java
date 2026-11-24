@@ -155,6 +155,13 @@ class ProxyAcceptGraceTest {
       proxy.shutdown();
       assertThat(Thread.currentThread().isInterrupted()).isTrue();
       assertThat(calls.get()).isEqualTo(3);
+      assertThat(logs.messages(Proxy.class))
+          .containsSubsequence(
+              Proxy.SHUTDOWN_STARTED
+                  + ", accept grace 2000 ms, timeout "
+                  + ProxyConfig.DEFAULT_SHUTDOWN_TIMEOUT_MILLIS
+                  + " ms, connections 0, requests in flight 0, buffered request log records {}",
+              Proxy.SHUTDOWN_COMPLETE + " after 2000 ms");
     } finally {
       Thread.interrupted();
       proxy.shutdown();

@@ -111,6 +111,10 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 - Make a field `volatile` only when it is read without the lock (e.g. a lock free fast path).
   Fields only touched under the lock are plain and grouped under a `// guarded by lock` comment;
   a rarely called getter takes the lock instead of making the field volatile.
+- A field written only under the lock and read without it is `volatile`, not an
+  `AtomicReference`/`AtomicInteger`: the lock already makes check-then-set atomic, the atomic
+  type would suggest a lock-free protocol that does not exist (see `Proxy.state`). Use an atomic
+  type only for updates made without the lock (CAS, increment).
 - Order methods so a class reads top down: entry points first, a factored-out helper that is not
   called from outside right after the method(s) calling it. Group the methods of larger classes by
   role (e.g. the API for callers, the end/lifecycle, timers, sending) with a short `//` section

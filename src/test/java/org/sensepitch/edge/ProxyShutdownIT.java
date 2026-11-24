@@ -13,6 +13,9 @@ import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
@@ -33,6 +36,7 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
@@ -241,7 +245,15 @@ class ProxyShutdownIT {
         .asString()
         .contains("\"http.response.status_code\":200");
     assertThat(otlpRecords.get()).as("sent before the shutdown returned").isOne();
-    assertThat(logs.messages(Proxy.class)).noneMatch(m -> m.startsWith("Shutdown:"));
+    assertThat(logs.messages(Proxy.class))
+        .noneMatch(m -> m.startsWith("Shutdown:"))
+        .anySatisfy(
+            m ->
+                assertThat(m)
+                    .startsWith(Proxy.SHUTDOWN_STARTED)
+                    .endsWith(
+                        "connections 1, requests in flight 1,"
+                            + " buffered request log records {otlp=0}"));
   }
 
   /// An idle keep-alive connection is closed at once, the shutdown does not wait for its timeout
@@ -324,18 +336,20 @@ class ProxyShutdownIT {
   }
 
   /// A shutdown waits for an actual reload paused while reading its configuration. The test
-  /// awaits the shutdown call entering [Proxy#shutdown()] via the `shutdownCallers()` seam instead
-  /// of polling the thread state; while it waits, the listener is still open. Releasing the
-  /// reload lets both end.
+  /// awaits the shutdown thread blocked on the monitor the paused reload thread owns, a state
+  /// frozen while the reload is held, unlike a counter or signal before the lock. While it waits,
+  /// the listener is still open. Releasing the reload lets both end.
   @Test
   void shutdownWaitsForReload() throws Exception {
     startProxy(10_000, null);
     CountDownLatch readingConfig = new CountDownLatch(1);
+    AtomicReference<Thread> reloadThread = new AtomicReference<>();
     CountDownLatch continueReload = new CountDownLatch(1);
     Map<String, SiteConfig> pausedSites =
         new AbstractMap<>() {
           @Override
           public Set<Entry<String, SiteConfig>> entrySet() {
+            reloadThread.set(Thread.currentThread());
             readingConfig.countDown();
             try {
               assertThat(continueReload.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
@@ -356,10 +370,17 @@ class ProxyShutdownIT {
       assertThat(readingConfig.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("reload reading configuration")
           .isTrue();
-      Thread.ofPlatform().name("shutdown-during-reload").start(shutdown);
+      Thread shutdownThread = Thread.ofPlatform().name("shutdown-during-reload").start(shutdown);
+      ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+      long reloadThreadId = reloadThread.get().threadId();
       TestingParameters.await(
-          "shutdown entered and waits for reload", () -> proxy.shutdownCallers() >= 1);
-      assertThat(proxy.shutdownCallers()).as("shutdown call entered").isGreaterThanOrEqualTo(1);
+          "shutdown blocked on the lock the reload holds",
+          () -> {
+            ThreadInfo info = threads.getThreadInfo(shutdownThread.threadId());
+            return info != null
+                && info.getThreadState() == Thread.State.BLOCKED
+                && info.getLockOwnerId() == reloadThreadId;
+          });
       assertThat(shutdown.isDone()).isFalse();
       assertThat(proxy.isShuttingDown()).isFalse();
       try (Socket probe = new Socket()) {

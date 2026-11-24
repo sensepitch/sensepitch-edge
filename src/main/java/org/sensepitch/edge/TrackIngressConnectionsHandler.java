@@ -75,10 +75,16 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
                 .help("Number of currently active connections (opened - closed)")
                 .dataPoint(
                     GaugeSnapshot.GaugeDataPointSnapshot.builder()
-                        .value(connectionOpened.sum() - connectionClosed.sum())
+                        .value(activeConnections())
                         .labels(Labels.EMPTY)
                         .build())
                 .build());
+  }
+
+  /// Connections opened and not closed yet, for the gauge and the shutdown report, see
+  /// [Proxy#shutdown()]
+  public long activeConnections() {
+    return connectionOpened.sum() - connectionClosed.sum();
   }
 
   @Override

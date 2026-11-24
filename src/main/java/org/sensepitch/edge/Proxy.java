@@ -26,8 +26,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
@@ -58,6 +56,15 @@ public class Proxy implements ProxyContext {
 
   private static final Consumer<Channel> NO_INGRESS_SHUTDOWN_SIGNAL = channel -> {};
 
+  /// Start of the diagnostic log lines that mark the phases of [#shutdown()], so an operator sees
+  /// that the shutdown arrived and how long it took. Without the colon of the lines for a phase
+  /// that ran out of time (`Shutdown: ...`), so the two kinds are told apart.
+  static final String SHUTDOWN_STARTED = "Shutdown started";
+
+  static final String SHUTDOWN_STOPPED_ACCEPTING = "Shutdown stopped accepting connections";
+
+  static final String SHUTDOWN_COMPLETE = "Shutdown complete";
+
   private final Object lock = new Object();
 
   /// Monotonic shutdown time and a possibly spurious wait, injected for deterministic delay tests.
@@ -79,15 +86,16 @@ public class Proxy implements ProxyContext {
   /// `null` if the metrics export is disabled
   private final MetricsServer metricsServer;
 
-  // replacements guarded by lock after construction; readers use the atomic reference
-  private final AtomicReference<EdgeState> state = new AtomicReference<>();
+  // replaced under the lock after construction; volatile for the lock-free readers on the
+  // request path
+  private volatile EdgeState state;
 
   /// Reads the known hosts of the current state at every scrape, the state is set before the
   /// metrics server starts
-  private final ProxyMetrics metrics = new ProxyMetrics(() -> state.get().knownHosts());
+  private final ProxyMetrics metrics = new ProxyMetrics(() -> state.knownHosts());
 
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
-  private final Mapping<String, SslContext> sniMapping = host -> state.get().sniMapping().map(host);
+  private final Mapping<String, SslContext> sniMapping = host -> state.sniMapping().map(host);
 
   /// Read once, the event loops are sized by it, see [#environment()]
   private final ProxyEnvironment environment = ProxyEnvironment.current();
@@ -105,12 +113,8 @@ public class Proxy implements ProxyContext {
   private volatile Channel httpServerChannel;
 
   /// Completed when the shutdown is done, set under `lock` by the first [#shutdown()] call.
-  /// Read without the lock by [#isShuttingDown()].
-  private final AtomicReference<CompletableFuture<Void>> shutdown = new AtomicReference<>();
-
-  /// Counts the calls that entered [#shutdown()], incremented before the call contends for the
-  /// reload lock; a test seam that shows the shutdown call actually started.
-  private final AtomicInteger shutdownCallers = new AtomicInteger();
+  /// Volatile for the lock-free readers [#isShuttingDown()] and [#shutdownWaiters()].
+  private volatile CompletableFuture<Void> shutdown;
 
   /// Request log destinations plus the metrics per status code, closed on shutdown
   private final RequestLogger requestLogger;
@@ -123,14 +127,14 @@ public class Proxy implements ProxyContext {
   private final RequestLogMetrics requestLogMetrics;
 
   private final SanitizeHostHandler sanitizeHostHandler =
-      new SanitizeHostHandler(() -> state.get().knownHosts());
+      new SanitizeHostHandler(() -> state.knownHosts());
   private final Ja4Config ja4Config;
   private final Ja4HeaderHandler ja4HeaderHandler;
   private final RequestLogOutput requestLogOutput;
   private final boolean trustTraceparent;
 
   /// Id of the active configuration, read by the request logging handler per request
-  private final Supplier<String> configIds = () -> state.get().configId();
+  private final Supplier<String> configIds = () -> state.configId();
 
   // guarded by lock
   /// The files the active configuration read, see [#referencedFiles()]
@@ -211,7 +215,7 @@ public class Proxy implements ProxyContext {
             config.requestLog(), requestLogOutput, requestLogMetrics, eventLoopGroup, files);
     // after the request log, its secret headers count for the config id
     ConfigFiles.Snapshot snapshot = files.snapshot();
-    state.set(initial.withSecrets(snapshot.secretDigests()));
+    state = initial.withSecrets(snapshot.secretDigests());
     referencedFiles = snapshot.files();
     expose(requestLogMetrics);
     requestLogger =
@@ -234,11 +238,11 @@ public class Proxy implements ProxyContext {
   ///   shuts down. The error is logged and the current configuration stays active.
   public ReloadResult reload(ProxyConfig newConfig) {
     synchronized (lock) {
-      if (shutdown.get() != null) {
+      if (shutdown != null) {
         LOG.info("Configuration reload skipped, shutting down");
         return ReloadResult.rejected("Shutting down");
       }
-      EdgeState current = state.get();
+      EdgeState current = state;
       EdgeState next;
       ReloadableRequestLogger.Prepared requestLog;
       ConfigFiles files = new ConfigFiles();
@@ -257,7 +261,7 @@ public class Proxy implements ProxyContext {
       }
       ConfigFiles.Snapshot snapshot = files.snapshot();
       next = next.withSecrets(snapshot.secretDigests());
-      state.set(next);
+      state = next;
       current.closeReplacedBy(next);
       requestLog.apply();
       referencedFiles = snapshot.files();
@@ -301,13 +305,13 @@ public class Proxy implements ProxyContext {
 
   /// The currently active state, for tests
   EdgeState state() {
-    return state.get();
+    return state;
   }
 
   /// The distinct network targets of the active state's upstreams, for the readiness probe. Read
   /// per call, so a reload applies to the next probe.
   public Set<String> upstreamTargets() {
-    return state.get().upstreams().networkTargets();
+    return state.upstreams().networkTargets();
   }
 
   /// The files the active configuration read: TLS keys and certificates, secrets, response pages
@@ -548,20 +552,14 @@ public class Proxy implements ProxyContext {
 
   /// Reports shutdown as soon as it starts, before the listener closes, for admin readiness probes.
   public boolean isShuttingDown() {
-    return shutdown.get() != null;
+    return shutdown != null;
   }
 
   /// Callers blocked in [#shutdown()] waiting for the first call, for tests. The wait in
   /// `CompletableFuture.join` registers a dependent on the first call's future.
   int shutdownWaiters() {
-    CompletableFuture<Void> running = shutdown.get();
+    CompletableFuture<Void> running = shutdown;
     return running == null ? 0 : running.getNumberOfDependents();
-  }
-
-  /// The number of calls that entered [#shutdown()], for the shutdown-waits-for-reload test to
-  /// await the call deterministically instead of polling its thread state.
-  int shutdownCallers() {
-    return shutdownCallers.get();
   }
 
   /// Shuts down gracefully within [ProxyConfig#shutdownTimeoutMillis()], and faster
@@ -580,17 +578,20 @@ public class Proxy implements ProxyContext {
   ///    over.
   ///
   /// A reload in progress completes first, later reloads are rejected, see [#reload(ProxyConfig)].
-  /// A phase that runs out of time is logged with what was left. Can be called more than once,
+  /// The start, the end of accepting and the end are logged at `INFO`, a phase that runs out of
+  /// time is logged with what was left. Can be called more than once,
   /// e.g. by the shutdown hook and by [#start()], the later calls wait for the first.
   /// Does not stop process-wide Log4j2: other proxy instances or the embedding application may
   /// still need it. The command-line application [Main] owns logging shutdown.
   public void shutdown() {
-    shutdownCallers.incrementAndGet();
     CompletableFuture<Void> done = new CompletableFuture<>();
     CompletableFuture<Void> running;
     // waits for a running reload, see reload()
     synchronized (lock) {
-      running = shutdown.compareAndExchange(null, done);
+      running = shutdown;
+      if (running == null) {
+        shutdown = done;
+      }
     }
     if (running != null) {
       running.join();
@@ -604,12 +605,24 @@ public class Proxy implements ProxyContext {
   }
 
   private void shutdownOnce() {
-    ProxyConfig active = state.get().config();
+    ProxyConfig active = state.config();
     long totalMillis = active.shutdownTimeoutMillis();
     long drainMillis = active.requestLog().drainTimeoutMillis();
     long start = shutdownNanoTime.getAsLong();
     long connectionsDeadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis - drainMillis);
     long deadline = start + TimeUnit.MILLISECONDS.toNanos(totalMillis);
+    LOG.info(
+        SHUTDOWN_STARTED
+            + ", accept grace "
+            + active.shutdownAcceptGraceMillis()
+            + " ms, timeout "
+            + totalMillis
+            + " ms, connections "
+            + trackIngressConnectionsHandler.activeConnections()
+            + ", requests in flight "
+            + metrics.ingressRequestsInFlight()
+            + ", buffered request log records "
+            + requestLogDestinations.unsent());
     awaitAcceptGrace(start + TimeUnit.MILLISECONDS.toNanos(active.shutdownAcceptGraceMillis()));
     if (serverChannel != null || httpServerChannel != null) {
       if (serverChannel != null) {
@@ -619,6 +632,7 @@ public class Proxy implements ProxyContext {
         httpServerChannel.close().syncUninterruptibly();
       }
       bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
+      LOG.info(SHUTDOWN_STOPPED_ACCEPTING);
     }
     if (!trackIngressConnectionsHandler
         .drain()
@@ -661,6 +675,11 @@ public class Proxy implements ProxyContext {
     if (metricsServer != null) {
       metricsServer.close();
     }
+    LOG.info(
+        SHUTDOWN_COMPLETE
+            + " after "
+            + TimeUnit.NANOSECONDS.toMillis(shutdownNanoTime.getAsLong() - start)
+            + " ms");
   }
 
   /// Keeps the listener open through propagation, tolerating spurious wakeups and interruption.
@@ -698,11 +717,11 @@ public class Proxy implements ProxyContext {
         new RequestLoggingHandler(metrics, requestLogger, trustTraceparent, configIds));
     pipeline.addLast(
         new IngressTimeoutHandler(connectionConfig, metrics, ingressShutdownDelivered));
-    pipeline.addLast(new IpTraitsHandler(state.get().ipTraitsLookup()));
+    pipeline.addLast(new IpTraitsHandler(state.ipTraitsLookup()));
     pipeline.addLast(ja4HeaderHandler);
     // Resolve these per request so reloads apply to existing keep-alive connections.
-    pipeline.addLast(new UnservicedHost.Handler(() -> state.get().unservicedHost()));
-    pipeline.addLast("siteSelector", new SiteSelectorHandler(() -> state.get().siteSelector()));
+    pipeline.addLast(new UnservicedHost.Handler(() -> state.unservicedHost()));
+    pipeline.addLast("siteSelector", new SiteSelectorHandler(() -> state.siteSelector()));
     pipeline.addLast("fallback", dummy404Handler);
     pipeline.addLast("protection", dummy404Handler);
     pipeline.addLast("proxy", dummy404Handler);
