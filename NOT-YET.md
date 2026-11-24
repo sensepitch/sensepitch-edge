@@ -68,6 +68,25 @@ Decisions, alternatives and limitations are in
   hits the shutdown deadline
   - P3: only if deployments ask for it; needs a volume, a disk budget, fsync policy and replay
     order.
+- [ ] Allocation free stdout request log without Jackson
+  - P3, no operator visible effect: today each JSON record becomes a `String` (Jackson into a
+    `StringWriter`), `AsyncRequestLogWriter` turns it into UTF-8 bytes and queues one `byte[]` per
+    record for its writer thread.
+  - Write the JSON line with the `RequestLogSink` primitives directly into the per-event-loop
+    batch, as the OTLP payload does with `ProtobufWriter`; hand whole batches to the stdout writer
+    thread instead of one `byte[]` per record.
+  - Make the OTLP batching generic and reuse it: `ThreadBatcher`, `Batch`, `BatchPayload` and the
+    end markers are tied to `HttpBatchSender`; split the batching from the HTTP sending so a
+    stream sender (standard out) plugs in.
+  - Removes Jackson from the request log, the `String` and `getBytes` per record, the exception
+    type parameter of `RequestLogSink` and the last `catch` in `JsonRequestLogger`.
+  - Decide before: the escaping stays byte identical to Jackson's (short escapes, `\u00XX` for
+    other control characters, raw UTF-8, a lone surrogate as `?`), pinned by tests against
+    Jackson; an idle record appears only after the flush interval unless the writer flushes partly
+    filled batches when idle; the stdout queue size (planned improvement 3) becomes a batch
+    budget.
+  - See [doc/design/request-log.md](doc/design/request-log.md), planned improvement 6 and
+    "Batching the stdout path the same way".
 
 ## Upstream
 

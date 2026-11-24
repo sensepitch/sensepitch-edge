@@ -404,8 +404,8 @@ Known limits of the current implementation, checked against the code on 2026-11-
 
 ## Planned improvements
 
-In rough order of priority. Items 1, 2, 4, 5 and 7 are tracked in [TODO.md](../../TODO.md) and [NOT-YET.md](../../NOT-YET.md),
-section "Request log", item 3 (the backoff part) under "Circuit breaker"; item 6 is a proposal.
+In rough order of priority. Items 1, 2, 4, 5, 6 and 7 are tracked in [TODO.md](../../TODO.md) and [NOT-YET.md](../../NOT-YET.md),
+section "Request log", item 3 (the backoff part) under "Circuit breaker".
 
 1. **Shutdown report wording.** Done: report elapsed phase times and a still-running event loop
    group; naming the loops was dropped, see "Alternatives considered".
@@ -418,7 +418,8 @@ section "Request log", item 3 (the backoff part) under "Circuit breaker"; item 6
 5. **Failover endpoints.** Several endpoints per destination, each with its own breaker, see the
    `Endpoint` record in `HttpBatchSender`.
 6. **Allocation free stdout.** Encode JSON lines into per-thread buffers as the OTLP path does, and
-   write them from the writer thread, removing the per-record `String`.
+   write them from the writer thread, removing the per-record `String`. Without Jackson, reusing
+   the OTLP batching made generic.
 7. **Disk spool.** Optionally persist waiting batches when the memory limit is reached or at the
    shutdown deadline, replayed on start. Needs a volume and a budget; only if deployments ask for
    it.
