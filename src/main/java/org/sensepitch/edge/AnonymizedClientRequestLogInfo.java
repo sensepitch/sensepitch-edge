@@ -2,7 +2,7 @@ package org.sensepitch.edge;
 
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -268,8 +268,13 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   }
 
   @Override
-  public HttpResponse response() {
-    return info.response();
+  public HttpResponseStatus responseStatus() {
+    return info.responseStatus();
+  }
+
+  @Override
+  public String responseContentType() {
+    return info.responseContentType();
   }
 
   @Override

@@ -1,7 +1,6 @@
 package org.sensepitch.edge;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpResponse;
 import java.net.InetAddress;
 import java.text.DecimalFormat;
 import java.time.ZonedDateTime;
@@ -28,7 +27,6 @@ public class PlainTextRequestLogger implements RequestLogger {
 
   @Override
   public void logRequest(RequestLogInfo info) {
-    HttpResponse response = info.response();
     InetAddress clientAddress = info.clientAddress();
     String remoteHost = clientAddress != null ? clientAddress.getHostAddress() : "-";
     String admissionToken = info.admissionToken();
@@ -41,7 +39,7 @@ public class PlainTextRequestLogger implements RequestLogger {
     String ua = sanitize(info.clientHeaders().get(HttpHeaderNames.USER_AGENT));
     String bypass = sanitize(info.bypassReason());
     String host = sanitize(info.requestHeaderHost());
-    int status = response.status().code();
+    int status = info.responseStatus().code();
     String timing =
         formatDeltaTime(info.receiveDurationNanos())
             + "<"
@@ -54,7 +52,7 @@ public class PlainTextRequestLogger implements RequestLogger {
       error = sanitize(info.error().getMessage());
     }
     if (error == null && status >= 500) {
-      error = sanitize(response.status().reasonPhrase());
+      error = sanitize(info.responseStatus().reasonPhrase());
     }
     if (error == null) {
       error = "-";

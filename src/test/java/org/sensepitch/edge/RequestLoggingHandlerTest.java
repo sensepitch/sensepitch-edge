@@ -59,7 +59,7 @@ class RequestLoggingHandlerTest {
         info ->
             logged.add(
                 new Logged(
-                    info.response().status().code(),
+                    info.responseStatus().code(),
                     info.contentBytes(),
                     info.upstreamStatus(),
                     info.outcome())));

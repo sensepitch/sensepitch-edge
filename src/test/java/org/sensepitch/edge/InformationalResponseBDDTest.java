@@ -76,8 +76,7 @@ class InformationalResponseBDDTest {
     Steps() {
       ingress =
           new EmbeddedChannel(
-              new RequestLoggingHandler(
-                  metrics, log -> loggedStatuses.add(log.response().status())),
+              new RequestLoggingHandler(metrics, log -> loggedStatuses.add(log.responseStatus())),
               new IngressTimeoutHandler(ConnectionConfig.DEFAULT, metrics),
               new DownstreamHandler(ctx -> ctx.executor().newSucceededFuture(upstream), metrics),
               new ExceptionHandler(metrics));

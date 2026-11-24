@@ -2,7 +2,6 @@ package org.sensepitch.edge;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpVersion;
 import java.util.Iterator;
 import java.util.List;
@@ -133,9 +132,8 @@ public final class RequestLogFieldsWriter {
   ///   [RequestLogDestinationConfig#sampleHeadersInterval()]
   public static <E extends Exception> void write(
       RequestLogInfo info, RequestLogSink<E> sink, int sampleHeadersInterval) throws E {
-    HttpResponse response = info.response();
     HttpHeaders headers = info.clientHeaders();
-    int status = response.status().code();
+    int status = info.responseStatus().code();
     sink.record(
         info.requestStartTimeMillis(),
         System.currentTimeMillis(),
@@ -157,7 +155,7 @@ public final class RequestLogFieldsWriter {
     writeTls(info, sink);
     writeProtocol(info.protocolVersion(), sink);
     // single valued by its definition, get does not allocate an iterator
-    String contentType = response.headers().get(HttpHeaderNames.CONTENT_TYPE);
+    String contentType = info.responseContentType();
     if (contentType != null) {
       sink.startArray(CONTENT_TYPE_KEY);
       sink.arrayValue(contentType);

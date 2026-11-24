@@ -2,7 +2,7 @@ package org.sensepitch.edge;
 
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import java.net.InetAddress;
 
@@ -159,7 +159,11 @@ public interface RequestLogInfo {
   /// @return the requested host or a replacement token, never `null`.
   String requestHeaderHost();
 
-  HttpResponse response();
+  /// The final status sent to the client, code and reason phrase
+  HttpResponseStatus responseStatus();
+
+  /// The `Content-Type` of the response, `null` if none
+  String responseContentType();
 
   /// Size, in bytes, of the message body sent. Total bytes sent, including header bytes and framing
   /// is [#bytesSent()]

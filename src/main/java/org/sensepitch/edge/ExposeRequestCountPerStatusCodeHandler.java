@@ -68,7 +68,7 @@ public class ExposeRequestCountPerStatusCodeHandler implements HasMultipleMetric
   @Override
   public void logRequest(RequestLogInfo info) {
     String ingress = info.ingress();
-    int statusCode = info.response().status().code();
+    int statusCode = info.responseStatus().code();
     // timeout before request was received, ignore
     if (statusCode == 408 && info.method().equals(RequestLogInfo.NIL_METHOD)) {
       return;

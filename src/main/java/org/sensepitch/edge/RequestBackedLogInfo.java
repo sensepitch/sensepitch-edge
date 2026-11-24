@@ -4,6 +4,8 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 
 /// A [RequestLogInfo] that derives the values of the request from the `HttpRequest` as it was sent
@@ -19,6 +21,19 @@ interface RequestBackedLogInfo extends RequestLogInfo {
   ///
   /// @return the request or the mock, never `null`
   HttpRequest request();
+
+  /// The final response sent to the client, never `null` when the request is logged
+  HttpResponse response();
+
+  @Override
+  default HttpResponseStatus responseStatus() {
+    return response().status();
+  }
+
+  @Override
+  default String responseContentType() {
+    return response().headers().get(HttpHeaderNames.CONTENT_TYPE);
+  }
 
   @Override
   default HttpMethod method() {
