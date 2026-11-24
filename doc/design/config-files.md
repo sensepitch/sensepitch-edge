@@ -24,6 +24,13 @@ Constraints:
 
 ## Design decisions
 
+### Close the watcher before stopping the proxy
+
+File events and admin reloads share the reload lock. Closing under that lock lets the current
+callback finish and prevents a queued event or admin request from calling into the proxy during
+shutdown. Closing the watch service wakes the worker. The application waits for the worker
+outside the lock because a worker processing an event may still need to acquire it.
+
 ### Record what was read, not what is configured
 
 The first version had a class listing every file-valued key of `ProxyConfig`. It repeated the

@@ -727,7 +727,8 @@ flight per upstream, or the request log records not sent per destination. Record
 then are lost.
 
 A configuration reload and the shutdown run one at a time: `SIGTERM` during a reload waits until
-it is applied, a reload after the shutdown started is rejected. The settings are read when the
+it is applied. File-backed applications close the file watcher and wait for its worker to exit
+before stopping the proxy. Further reloads are rejected. The settings are read when the
 shutdown starts, so a reload changes them.
 
 Kubernetes removes the pod from the service endpoints at the same time as it sends `SIGTERM`, so

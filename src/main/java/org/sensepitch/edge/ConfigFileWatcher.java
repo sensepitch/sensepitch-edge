@@ -6,6 +6,7 @@ import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.ClosedWatchServiceException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.WatchKey;
@@ -52,12 +53,14 @@ import java.util.function.Supplier;
 /// lock.
 ///
 /// @author Jens Wilke
-public class ConfigFileWatcher {
+public class ConfigFileWatcher implements AutoCloseable {
 
   private static final ProxyLogger LOG = ProxyLogger.get(ConfigFileWatcher.class);
 
   /// Last non-empty line of a complete configuration file, a YAML comment
   public static final String END_MARKER = "#END";
+
+  static final String WORKER_NAME = "config-file-watcher";
 
   private final Object lock = new Object();
 
@@ -67,6 +70,8 @@ public class ConfigFileWatcher {
   private Function<String, ReloadResult> reloadAction;
   private Supplier<Map<Path, ConfigFiles.Fingerprint>> referencedFilesSource;
   private WatchService watchService;
+  private Thread worker;
+  private boolean closed;
   private byte[] lastHash;
 
   /// Hash of the last content rejected as incomplete, to log it only once
@@ -98,6 +103,9 @@ public class ConfigFileWatcher {
       Supplier<Map<Path, ConfigFiles.Fingerprint>> referencedFiles)
       throws IOException {
     synchronized (lock) {
+      if (closed || watchService != null) {
+        throw new IllegalStateException("Configuration watcher can only be started once");
+      }
       this.reloadAction = reloadAction;
       this.referencedFilesSource = referencedFiles;
       watchService = file.getFileSystem().newWatchService();
@@ -106,7 +114,7 @@ public class ConfigFileWatcher {
           file.getParent().register(watchService, ENTRY_CREATE, ENTRY_MODIFY, ENTRY_DELETE));
       takeReferencedFiles(true);
       WatchService service = watchService;
-      Thread.ofPlatform().name("config-file-watcher").daemon().start(() -> watch(service));
+      worker = Thread.ofPlatform().name(WORKER_NAME).daemon().start(() -> watch(service));
       LOG.info(
           "Watching configuration file for changes, reload requires "
               + END_MARKER
@@ -128,9 +136,52 @@ public class ConfigFileWatcher {
         }
         checkForChange();
       }
+    } catch (ClosedWatchServiceException e) {
+      // Closing the service wakes take() during application shutdown.
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+  }
+
+  /// Finishes any current reload, releases the registrations and waits for the worker to exit.
+  /// Call from the owning thread, outside a reload callback, before stopping the proxy.
+  @Override
+  public void close() {
+    Thread thread;
+    synchronized (lock) {
+      closed = true;
+      thread = worker;
+      if (watchService != null) {
+        try {
+          closeWatchService();
+        } catch (IOException e) {
+          LOG.warn("Cannot close configuration watch service: " + e);
+          if (thread != null) {
+            thread.interrupt();
+          }
+        }
+        watchKeys.clear();
+      }
+    }
+    // A worker with a pending event may need the reload lock before it reaches take() again.
+    if (thread != null) {
+      boolean interrupted = false;
+      while (thread.isAlive()) {
+        try {
+          thread.join();
+        } catch (InterruptedException e) {
+          interrupted = true;
+        }
+      }
+      if (interrupted) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  /// Releases the provider's registrations. Overridden in tests to exercise a close I/O failure.
+  void closeWatchService() throws IOException {
+    watchService.close();
   }
 
   /// Reloads if the configuration file or a referenced file changed since the last reload and
@@ -150,6 +201,9 @@ public class ConfigFileWatcher {
   }
 
   private ReloadResult reload(boolean force) {
+    if (closed) {
+      return ReloadResult.rejected("Configuration watcher closed");
+    }
     byte[] content = readOrNull();
     if (content == null) {
       return ReloadResult.rejected("Cannot read configuration file: " + file);

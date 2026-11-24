@@ -7,7 +7,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.sensepitch.edge.config.RecordConstructor;
 import org.yaml.snakeyaml.Yaml;
@@ -50,7 +49,7 @@ public class Main {
   /// The proxy with its admin server and their ordered shutdown, everything of [#main] except the
   /// process wide setup (JUL, the shutdown hook), so a test can start and stop it in the JVM.
   ///
-  /// @param shutdown stops the proxy, the admin server and then the logging, once
+  /// @param shutdown stops the configuration watcher, proxy, admin server and logging in order
   record Application(Proxy proxy, AdminServer admin, Shutdown shutdown) {
 
     /// Builds the proxy from the configuration file named by the first argument, or from the
@@ -65,46 +64,57 @@ public class Main {
         Runnable stopLogging)
         throws Exception {
       ProxyConfig config;
-      Proxy proxy;
-      Supplier<ReloadResult> reload = null;
+      ConfigFileWatcher watcher;
       if (args.length > 0) {
         Path file = Path.of(args[0]);
         // before loading, so a change during startup is not missed
-        ConfigFileWatcher watcher = new ConfigFileWatcher(file);
+        watcher = new ConfigFileWatcher(file);
         config = loadConfig(file);
-        proxy = new Proxy(config, requestLogOutput);
-        watcher.start(content -> proxy.reload(parseConfig(content)), proxy::referencedFiles);
-        reload = watcher::forceReload;
       } else {
+        watcher = null;
         config =
             (ProxyConfig)
                 EnvInjector.injectFromEnv(
                     ENV_PREFIX, env, ProxyEnvironment.current(), ProxyConfig.builder());
-        proxy = new Proxy(config, requestLogOutput);
       }
-      AdminServer admin =
-          config.admin() != null
-              ? AdminServer.start(
-                  config.admin(),
-                  reload,
-                  proxy::isShuttingDown,
-                  new UpstreamReadinessProbe(proxy::upstreamTargets)::isReady,
-                  proxy.circuitBreakers())
-              : null;
-      Shutdown shutdown =
-          new Shutdown(
-              () -> {
-                try {
-                  proxy.shutdown();
-                } finally {
-                  // its threads are not daemon threads and would keep the JVM running
-                  if (admin != null) {
-                    admin.stop();
-                  }
-                }
-              },
-              stopLogging);
+      Proxy proxy = new Proxy(config, requestLogOutput);
+      AdminServer admin;
+      try {
+        if (watcher != null) {
+          watcher.start(content -> proxy.reload(parseConfig(content)), proxy::referencedFiles);
+        }
+        admin =
+            config.admin() != null
+                ? AdminServer.start(
+                    config.admin(),
+                    watcher != null ? watcher::forceReload : null,
+                    proxy::isShuttingDown,
+                    new UpstreamReadinessProbe(proxy::upstreamTargets)::isReady,
+                    proxy.circuitBreakers())
+                : null;
+      } catch (Exception e) {
+        stopServices(watcher, proxy, null);
+        throw e;
+      }
+      Shutdown shutdown = new Shutdown(() -> stopServices(watcher, proxy, admin), stopLogging);
       return new Application(proxy, admin, shutdown);
+    }
+
+    /// Drains both sources of reloads before the proxy stops, including on partial startup.
+    private static void stopServices(ConfigFileWatcher watcher, Proxy proxy, AdminServer admin) {
+      try {
+        if (watcher != null) {
+          watcher.close();
+        }
+      } finally {
+        try {
+          proxy.shutdown();
+        } finally {
+          if (admin != null) {
+            admin.stop();
+          }
+        }
+      }
     }
 
     /// Serves until the proxy is shut down, e.g. by [#shutdown()] from the shutdown hook, then

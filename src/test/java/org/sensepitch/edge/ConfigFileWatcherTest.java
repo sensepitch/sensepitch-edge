@@ -2,10 +2,14 @@ package org.sensepitch.edge;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.BindException;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -13,14 +17,21 @@ import java.nio.file.attribute.FileTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /// @author Jens Wilke
 // alone: captures the log of all threads, the watcher logs from its own
@@ -34,15 +45,19 @@ class ConfigFileWatcherTest {
   /// Keeps check notifications until the test can recheck its reload condition.
   private final Semaphore checkedEvents = new Semaphore(0);
 
+  @AutoClose ConfigFileWatcher activeWatcher;
+
   /// Signals after a check has finished, including any reload it caused.
   ConfigFileWatcher watcher(Path file) {
-    return new ConfigFileWatcher(file) {
-      @Override
-      void checkForChange() {
-        super.checkForChange();
-        checkedEvents.release();
-      }
-    };
+    activeWatcher =
+        new ConfigFileWatcher(file) {
+          @Override
+          void checkForChange() {
+            super.checkForChange();
+            checkedEvents.release();
+          }
+        };
+    return activeWatcher;
   }
 
   /// Waits for the watched change instead of polling the reload count, then checks that the
@@ -97,6 +112,152 @@ class ConfigFileWatcherTest {
   }
 
   @Test
+  void applicationShutdownTerminatesItsWatcher() throws Exception {
+    Path file =
+        Files.writeString(
+            dir.resolve("edge.yaml"),
+            MainTest.SITE_YAML.formatted(Loopback.freePort(), Loopback.freePort()));
+    Set<Thread> before = Thread.getAllStackTraces().keySet();
+    Main.Application app =
+        Main.Application.create(
+            new String[] {file.toString()}, Map.of(), new RequestLogCapture(), () -> {});
+    Thread worker;
+    try {
+      worker = newWorkers(before).getFirst();
+    } finally {
+      app.shutdown().run();
+    }
+    app.shutdown().run();
+    assertThat(worker.isAlive()).as("configuration watcher after shutdown").isFalse();
+  }
+
+  @Test
+  void failedAdminStartupStopsTheWatcher() throws Exception {
+    try (ServerSocket occupied = new ServerSocket(0)) {
+      Path file =
+          Files.writeString(
+              dir.resolve("edge.yaml"),
+              MainTest.SITE_YAML.formatted(Loopback.freePort(), occupied.getLocalPort()));
+      Set<Thread> before = Thread.getAllStackTraces().keySet();
+      assertThatThrownBy(
+              () ->
+                  Main.Application.create(
+                      new String[] {file.toString()}, Map.of(), new RequestLogCapture(), () -> {}))
+          .isInstanceOf(BindException.class);
+      assertThat(newWorkers(before)).isEmpty();
+    }
+  }
+
+  /// Identifies workers started by this isolated test, including during a failed startup.
+  private static List<Thread> newWorkers(Set<Thread> before) {
+    return Thread.getAllStackTraces().keySet().stream()
+        .filter(
+            thread ->
+                !before.contains(thread) && thread.getName().equals(ConfigFileWatcher.WORKER_NAME))
+        .toList();
+  }
+
+  @Test
+  void interruptedCloseWaitsForPendingEvent() throws Exception {
+    Path file = Files.writeString(dir.resolve("edge.yaml"), complete("a: 1\n"));
+    Thread owner = Thread.currentThread();
+    CountDownLatch event = new CountDownLatch(1);
+    CompletableFuture<Void> release = new CompletableFuture<>();
+    activeWatcher =
+        new ConfigFileWatcher(file) {
+          @Override
+          void checkForChange() {
+            if (Thread.currentThread() != owner) {
+              event.countDown();
+              release.join();
+            }
+            super.checkForChange();
+          }
+        };
+    activeWatcher.start(this::load, Map::of);
+    Files.writeString(file, complete("a: 2\n"));
+    AtomicBoolean interruptPreserved = new AtomicBoolean();
+    Thread closer =
+        Thread.ofPlatform()
+            .unstarted(
+                () -> {
+                  Thread.currentThread().interrupt();
+                  activeWatcher.close();
+                  interruptPreserved.set(Thread.currentThread().isInterrupted());
+                });
+    try {
+      assertThat(event.await(EVENT_TIMEOUT.toNanos(), NANOSECONDS)).isTrue();
+      closer.start();
+      TestingParameters.await(
+          "closer waiting for pending event",
+          () ->
+              closer.getState() == Thread.State.WAITING
+                  && activeWatcher.watchedDirectories().isEmpty());
+      assertThat(activeWatcher.forceReload().applied()).isFalse();
+    } finally {
+      release.complete(null);
+    }
+    assertThat(closer.join(EVENT_TIMEOUT)).isTrue();
+    assertThat(interruptPreserved).isTrue();
+    assertThat(reloads).hasValue(0);
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void providerCloseFailureDuringFullOrPartialStartup(boolean registered) throws IOException {
+    Path file = registered ? dir.resolve("edge.yaml") : dir.resolve("absent/edge.yaml");
+    activeWatcher =
+        new ConfigFileWatcher(file) {
+          boolean failClose = true;
+
+          @Override
+          void closeWatchService() throws IOException {
+            if (failClose) {
+              failClose = false;
+              throw new IOException("simulated close failure");
+            }
+            super.closeWatchService();
+          }
+        };
+    Set<Thread> before = Thread.getAllStackTraces().keySet();
+    if (registered) {
+      activeWatcher.start(this::load, Map::of);
+      assertThat(newWorkers(before)).hasSize(1);
+    } else {
+      assertThatThrownBy(() -> activeWatcher.start(this::load, Map::of))
+          .isInstanceOf(java.nio.file.NoSuchFileException.class);
+    }
+    activeWatcher.close();
+    assertThat(newWorkers(before)).isEmpty();
+    assertThat(logs.messages(ConfigFileWatcher.class))
+        .anyMatch(line -> line.contains("simulated close failure"));
+  }
+
+  @Test
+  void closedBeforeStartCannotRegister() {
+    ConfigFileWatcher watcher = watcher(dir.resolve("edge.yaml"));
+    watcher.close();
+    assertThatIllegalStateException().isThrownBy(() -> watcher.start(this::load, Map::of));
+    assertThat(watcher.watchedDirectories()).isEmpty();
+  }
+
+  @Test
+  void closedWatcherRejectsPendingAndForcedReloads() throws IOException {
+    Path file = dir.resolve("edge.yaml");
+    Files.writeString(file, complete("a: 1\n"));
+    ConfigFileWatcher watcher = watcher(file);
+    watcher.start(this::load, Map::of);
+    assertThatIllegalStateException().isThrownBy(() -> watcher.start(this::load, Map::of));
+    watcher.close();
+    Files.writeString(file, complete("a: 2\n"));
+    watcher.checkForChange();
+    assertThat(watcher.forceReload().applied()).isFalse();
+    assertThat(reloads).hasValue(0);
+    assertThat(watcher.watchedDirectories()).isEmpty();
+    assertThatIllegalStateException().isThrownBy(() -> watcher.start(this::load, Map::of));
+  }
+
+  @Test
   void waitingForAWatchEventReturnsAfterTheEvent() throws Exception {
     Path file = dir.resolve("config.yaml");
     Files.writeString(file, complete("a: 1\n"));
@@ -106,7 +267,9 @@ class ConfigFileWatcherTest {
 
     awaitReload("changed configuration loaded", 1);
     assertThat(loaded).containsExactly(complete("a: 2\n"));
-    assertThat(loadingThreads).as("reloaded by the watcher").containsExactly("config-file-watcher");
+    assertThat(loadingThreads)
+        .as("reloaded by the watcher")
+        .containsExactly(ConfigFileWatcher.WORKER_NAME);
   }
 
   @Test
