@@ -267,12 +267,19 @@ None of these is decided. The choices are ticked in `TODO.md`.
 
 - [x] A total time to receive the request, e.g. `listen.connection.requestTimeoutSeconds`,
   answered with 408, next to the idle `readTimeoutSeconds`.
+  Implemented on 2026-11-24 in `IngressTimeoutHandler`: a fixed deadline from the complete head of
+  a request with a body, ended by the complete body or by the start of a response. It is counted
+  with phase `request_total` in `sensepitch_ingress_receive_timeout`, the outcome is
+  `request_timeout`. `0` is off and is the default for now; the default is an open choice in
+  `TODO.md`. The head stays bounded by the read timeout alone, because the decoder emits it only
+  when complete.
   Also add TODO: Additionally. slow upload needs a separate investigation. Normal requests without body 
   should have a more tight timeout. Would an upstream usually give us an error when a body is sent but
   not expected, or, would the body always received?
 - [ ] A minimum upload rate after a grace period. More complex; how other servers do it was not
   verified here.
 - [ ] Only correct the `ConnectionConfig` doc: a body byte does reset the read timeout.
+  The doc was corrected together with the total timeout above.
 
 ## Alternatives considered
 

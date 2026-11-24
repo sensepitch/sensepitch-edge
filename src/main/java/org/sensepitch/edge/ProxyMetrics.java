@@ -127,8 +127,8 @@ public class ProxyMetrics implements HasMultipleMetrics {
   public final Counter ipLookupErrorCounter =
       metricSet.add(Counter.builder().name("sensepitch_ip_lookup_errors").build());
 
-  /// Read timeouts by ingress and phase, `first_request`, `keep_alive` or `after_response`, see
-  /// [IngressTimeoutHandler]
+  /// Read timeouts by ingress and phase, `first_request`, `keep_alive`, `after_response` or
+  /// `request_total` (the total time to receive a request body), see [IngressTimeoutHandler]
   public final Counter ingressReceiveTimeoutCounter =
       metricSet.add(
           Counter.builder()

@@ -218,7 +218,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     default limit, Caddy and Envoy offer an opt-in 413.
   - Found: a slow upload is not bounded. Every body byte resets the read timeout, so one byte per
     29 s keeps the client and upstream connections open (inferred from the code and a decoder
-    experiment).
+    experiment). Bounded now when `listen.connection.requestTimeoutSeconds` is set, see below.
   - Body limit, tick one:
     - [x] no limit, as today; document it in the README
     - [ ] optional `maxRequestBodyBytes`, off by default
@@ -233,7 +233,13 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     - [ ] raise the defaults (other proxies refused at 9000 to 70000 bytes)
     - [ ] configurable in `listen.connection` via `HttpDecoderConfig`
   - Slow uploads:
-    - [x] total request receive timeout in `listen.connection`, answered with 408
+    - [x] total request receive timeout in `listen.connection`, answered with 408. Done:
+      `requestTimeoutSeconds` in `ConnectionConfig`, counted with phase `request_total` in
+      `sensepitch_ingress_receive_timeout`, outcome `request_timeout`; `0` is off
+    - Default of `requestTimeoutSeconds`, tick one (today `0`, off, so existing setups are
+      unchanged):
+      - [ ] off by default, operators opt in
+      - [ ] on by default, e.g. 300 s
     - [ ] minimum upload rate
     - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
 - [ ] Protection for slow requests. Have a better protection than a per request timeout, which allows more time for legit uploads and stricter timerouts for simple GET requests which should arrive in one go. Do a research design draft first
@@ -257,3 +263,4 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 
 - [ ] add LICENSE
   - P2 before an image is published (Kubernetes item 2): a public image needs a license.
+  - BLOCKED: stale, an Apache-2.0 `LICENSE` exists since the initial commit; entry can go

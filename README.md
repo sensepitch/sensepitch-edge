@@ -155,6 +155,12 @@ response starts before the client has sent the complete request body, e.g. an ea
 upstream, it carries `Connection: close`, and the connection is closed once the rest of the body
 arrived or after the read timeout. The rules are in the doc of `IngressTimeoutHandler`.
 
+The timeouts are set in `listen.connection` (`ConnectionConfig`). `readTimeoutSeconds` is an idle
+timeout: every part of a request body moves it, so it does not bound a slow upload.
+`requestTimeoutSeconds` is the total time to receive a request body, counted from the complete
+request head; a client that has not sent the whole body by then, and has no response yet, gets a
+`408` and the connection is closed. It is `0`, off, by default.
+
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/408
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Keep-Alive
 - https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Connection_management_in_HTTP_1.x

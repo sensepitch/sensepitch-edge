@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import static io.netty.util.concurrent.Ticker.newMockTicker;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -49,6 +50,7 @@ class TimeoutsTest {
           .readTimeoutSeconds(10)
           .writeTimeoutSeconds(20)
           .responseTimeoutSeconds(30)
+          .requestTimeoutSeconds(25)
           .build();
 
   ProxyMetrics proxyMetrics = new ProxyMetrics();
@@ -67,16 +69,26 @@ class TimeoutsTest {
 
   EmbeddedChannel upstreamChannel;
 
-  EmbeddedChannel ingressChannel =
-      EmbeddedChannel.builder()
-          .ticker(ticker)
-          .handlers(
-              new FakeSslHandler(),
-              new RequestLoggingHandler(proxyMetrics, requestLog),
-              new IngressTimeoutHandler(cfg, proxyMetrics),
-              new DownstreamHandler(new MockUpstream(), proxyMetrics),
-              new ExceptionHandler(proxyMetrics))
-          .build();
+  EmbeddedChannel ingressChannel = ingressChannel(cfg);
+
+  /// The ingress pipeline under test with the connection configuration
+  private EmbeddedChannel ingressChannel(ConnectionConfig config) {
+    return EmbeddedChannel.builder()
+        .ticker(ticker)
+        .handlers(
+            new FakeSslHandler(),
+            new RequestLoggingHandler(proxyMetrics, requestLog),
+            new IngressTimeoutHandler(config, proxyMetrics),
+            new DownstreamHandler(new MockUpstream(), proxyMetrics),
+            new ExceptionHandler(proxyMetrics))
+        .build();
+  }
+
+  /// Replaces the pipeline of the test with one of another connection configuration
+  private void useConfig(ConnectionConfig config) {
+    ingressChannel.close();
+    ingressChannel = ingressChannel(config);
+  }
 
   @Test
   public void test408ResponseWhenTimeoutBeforeRequestReceived() {
@@ -534,17 +546,144 @@ class TimeoutsTest {
     assertThat(ingressChannel.isActive()).isFalse();
   }
 
+  /// A client that sends the body one byte at a time, each before the read timeout, gets a 408 when
+  /// the total request timeout passes: the bytes move the read timeout but not that deadline.
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  public void trickledBodyGetsRequestTimeout(boolean chunked) {
+    ingressChannel.writeInbound(requestWithBody("/no-response", chunked, 3));
+    trickle(2);
+    ticker.advance(6, SECONDS);
+    rattle();
+    // at 24 s, one second before the deadline
+    ingressChannel.writeInbound(new DefaultHttpContent(Unpooled.wrappedBuffer(BODY)));
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    ticker.advance(1, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isFalse();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status()).isEqualTo(HttpResponseStatus.REQUEST_TIMEOUT);
+    assertThat(response.headers().get(HttpHeaderNames.CONNECTION)).isEqualTo("close");
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "request_total")).isEqualTo(1);
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "first_request")).isEqualTo(0);
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.REQUEST_TIMEOUT);
+    assertOutcomeCount(RequestOutcome.REQUEST_TIMEOUT, 1);
+  }
+
+  /// A body completed before the total request timeout ends it, the response timeout follows
+  @Test
+  public void completeBodyBeforeRequestTimeoutThenResponseTimeout() {
+    ingressChannel.writeInbound(requestWithBody("/no-response", false, 2));
+    trickle(2);
+    // at 18 s the body is complete, the response timeout of 30 s runs until 48 s
+    ingressChannel.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT);
+    ticker.advance(29, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    ticker.advance(1, SECONDS);
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status()).isEqualTo(HttpResponseStatus.GATEWAY_TIMEOUT);
+    assertThat(ingressChannel.isActive()).isFalse();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "request_total")).isEqualTo(0);
+  }
+
+  /// `requestTimeoutSeconds` 0 switches the total request timeout off, a body may take any time
+  /// as long as each part arrives within the read timeout
+  @Test
+  public void requestTimeoutZeroIsOff() {
+    useConfig(cfg.toBuilder().requestTimeoutSeconds(0).build());
+    ingressChannel.writeInbound(requestWithBody("/empty-length", true, 12));
+    trickle(12);
+    assertThat(ingressChannel.isActive()).isTrue();
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    ingressChannel.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT);
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status()).isEqualTo(HttpResponseStatus.OK);
+    assertThat(response.headers().get(HttpHeaderNames.CONNECTION)).isEqualTo("keep-alive");
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "request_total")).isEqualTo(0);
+  }
+
+  /// A request without a body gets no total request timeout, its incomplete head is bounded by
+  /// the read timeout alone. The total timeout here is shorter than the read timeout, so it would
+  /// fire first.
+  @Test
+  public void requestWithoutBodyHasNoRequestTimeout() {
+    useConfig(cfg.toBuilder().requestTimeoutSeconds(5).build());
+    ingressChannel.writeInbound(
+        new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/no-response"));
+    ticker.advance(9, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isTrue();
+    ticker.advance(1, SECONDS);
+    rattle();
+    assertThat(ingressChannel.isActive()).isFalse();
+    assertThat(((HttpResponse) ingressChannel.readOutbound()).status())
+        .isEqualTo(HttpResponseStatus.REQUEST_TIMEOUT);
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "first_request")).isEqualTo(1);
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "request_total")).isEqualTo(0);
+  }
+
+  /// A response that starts before the body is complete ends the total request timeout: the
+  /// request is answered, the rest of the body is read under the read timeout, see
+  /// [#earlyResponseClosesConnectionAfterTheBody]
+  @Test
+  public void earlyResponseEndsRequestTimeout() {
+    ingressChannel.writeInbound(requestWithBody("/early-response", false, 4));
+    rattle();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status()).isEqualTo(HttpResponseStatus.OK);
+    // until 27 s, past the deadline of 25 s
+    trickle(3);
+    assertThat(ingressChannel.isActive()).isTrue();
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    ingressChannel.writeInbound(new DefaultLastHttpContent(Unpooled.wrappedBuffer(BODY)));
+    assertThat(ingressChannel.isActive()).isFalse();
+    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    assertThat(receiveTimeouts(SanitizeHostHandler.MISSING_HOST, "request_total")).isEqualTo(0);
+    assertThat(requestLogCapture.outcomes()).doesNotContain(RequestOutcome.REQUEST_TIMEOUT);
+  }
+
+  /// The total request timeout is off by default, and a negative value is rejected
+  @Test
+  public void requestTimeoutDefaultOffAndNegativeRejected() {
+    assertThat(ConnectionConfig.DEFAULT.requestTimeoutSeconds()).isZero();
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> cfg.toBuilder().requestTimeoutSeconds(-1).build())
+        .withMessageContaining("requestTimeoutSeconds");
+  }
+
+  /// Sends the given number of body bytes, one every 9 s, within the read timeout of 10 s
+  private void trickle(int bytes) {
+    for (int i = 0; i < bytes; i++) {
+      ticker.advance(9, SECONDS);
+      rattle();
+      ingressChannel.writeInbound(new DefaultHttpContent(Unpooled.wrappedBuffer(BODY)));
+      rattle();
+    }
+  }
+
   private static final byte[] BODY = {1};
 
-  /// A request whose body of [#BODY] the test sends separately
-  private static HttpRequest requestWithBody(String uri, boolean chunked) {
+  /// A request announcing a body of the given length, which the test sends separately
+  private static HttpRequest requestWithBody(String uri, boolean chunked, int length) {
     HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, uri);
     if (chunked) {
       HttpUtil.setTransferEncodingChunked(request, true);
     } else {
-      HttpUtil.setContentLength(request, BODY.length);
+      HttpUtil.setContentLength(request, length);
     }
     return request;
+  }
+
+  /// A request whose body of [#BODY] the test sends separately
+  private static HttpRequest requestWithBody(String uri, boolean chunked) {
+    return requestWithBody(uri, chunked, BODY.length);
   }
 
   private static FullHttpResponse emptyLengthResponse() {

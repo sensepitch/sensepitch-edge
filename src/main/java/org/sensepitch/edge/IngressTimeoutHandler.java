@@ -49,6 +49,13 @@ import java.util.function.Consumer;
 /// Closing a socket with unread received data makes the TCP stack send a reset, which may discard
 /// the response at the client before it was read (what NGINX's `lingering_close` avoids).
 ///
+/// The idle read timeout is moved by every part of the request, so it does not bound a body that
+/// is sent slowly. For a request with a body there is a second, fixed deadline next to it,
+/// `requestTimeoutSeconds` from the complete head (see [ConnectionConfig]). When the body is not
+/// complete by then and no final response has started, the client gets a 408 and the connection is
+/// closed, counted with phase `request_total`. A response, including an early one, ends it: from
+/// then on the timeouts of the response apply.
+///
 /// Informational responses (1xx, e.g. `100 Continue`) pass through, the final response follows.
 /// HTTP pipelining is not supported, [DownstreamHandler] rejects a request during an exchange.
 ///
@@ -69,6 +76,10 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   private final Consumer<Channel> shutdownDelivered;
   private boolean responding = false;
   private TimeoutTask task;
+
+  /// The fixed deadline to receive the body of the current request, or `null`, see the class doc
+  private TimeoutTask requestDeadline;
+
   private final ProxyMetrics proxyMetrics;
 
   /// The connection stays open after the current response, decided when the response starts
@@ -135,26 +146,33 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
         new TimeoutTask(ctx, config.readTimeoutSeconds()) {
           @Override
           public void fire() {
-            proxyMetrics.countReceiveTimeout(ctx, "first_request");
-            RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.REQUEST_TIMEOUT);
-            FullHttpResponse response =
-                new DefaultFullHttpResponse(
-                    HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
-            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            answerRequestTimeout(ctx, "first_request");
           }
         };
+  }
+
+  /// Counts a receive timeout of the phase, then answers 408 and closes the connection. Used by
+  /// the timeouts that end a request the client did not send in time.
+  private void answerRequestTimeout(ChannelHandlerContext ctx, String phase) {
+    proxyMetrics.countReceiveTimeout(ctx, phase);
+    RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.REQUEST_TIMEOUT);
+    FullHttpResponse response =
+        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
+    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+    ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
   }
 
   @Override
   public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
     task.cancel();
+    cancelRequestDeadline();
     super.handlerRemoved(ctx);
   }
 
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     task.cancel();
+    cancelRequestDeadline();
     super.channelInactive(ctx);
   }
 
@@ -180,9 +198,11 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
       responding = false;
       receiving = hasBody(request);
       requestKeepAlive = HttpUtil.isKeepAlive(request);
+      startRequestDeadline(ctx);
     }
     if (msg instanceof LastHttpContent) {
       receiving = false;
+      cancelRequestDeadline();
       if (closeAfterRequest) {
         // DownstreamHandler drops the rest of the body of an ended exchange
         super.channelRead(ctx, msg);
@@ -205,6 +225,31 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
       task.touch();
     }
     super.channelRead(ctx, msg);
+  }
+
+  /// Starts the fixed deadline for the body of a request that announces one, if configured, see the
+  /// class doc. A deadline left from an earlier request is cancelled first.
+  private void startRequestDeadline(ChannelHandlerContext ctx) {
+    cancelRequestDeadline();
+    if (!receiving || config.requestTimeoutSeconds() == 0) {
+      return;
+    }
+    requestDeadline =
+        new TimeoutTask(ctx, config.requestTimeoutSeconds()) {
+          @Override
+          public void fire() {
+            answerRequestTimeout(ctx, "request_total");
+          }
+        };
+  }
+
+  /// Ends the deadline of [#startRequestDeadline], when the body is complete, the response starts
+  /// or the connection ends
+  private void cancelRequestDeadline() {
+    if (requestDeadline != null) {
+      requestDeadline.cancel();
+      requestDeadline = null;
+    }
   }
 
   @Override
@@ -242,6 +287,7 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
                 HttpHeaderNames.KEEP_ALIVE, "timeout=" + config.readTimeoutSeconds() + ", max=123");
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
       }
+      cancelRequestDeadline();
       task.cancel();
       task =
           new TimeoutTask(ctx, config.writeTimeoutSeconds()) {
@@ -286,15 +332,7 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
                       new TimeoutTask(ctx, config.readTimeoutSeconds()) {
                         @Override
                         public void fire() {
-                          proxyMetrics.countReceiveTimeout(ctx, "keep_alive");
-                          RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.REQUEST_TIMEOUT);
-                          FullHttpResponse response =
-                              new DefaultFullHttpResponse(
-                                  HttpVersion.HTTP_1_1, HttpResponseStatus.REQUEST_TIMEOUT);
-                          response
-                              .headers()
-                              .set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-                          ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                          answerRequestTimeout(ctx, "keep_alive");
                         }
                       };
                 });
