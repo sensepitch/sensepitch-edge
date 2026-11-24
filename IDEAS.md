@@ -20,3 +20,8 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   `RuntimeException` catch in `Proxy.reload` keeps the active configuration. Developers, medium
   importance, guards the half-written download case. From the `ip-database-volume-research`
   turn, 2026-11-23.
+- Answer a decoder failure in the request body too, e.g. a malformed chunk size: Netty passes it
+  on as a `LastHttpContent` with a failed `decoderResult()` (inferred, not traced), which
+  `DecoderFailureHandler` lets through, so the upstream may see a truncated body as complete.
+  Operators, medium importance, a client error would end as an upstream answer. From the
+  `answer-http-decoder-failures` turn, 2026-11-24.

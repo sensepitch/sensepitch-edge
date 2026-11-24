@@ -36,6 +36,10 @@ public enum RequestOutcome {
   /// The client did not complete the request within the read timeout
   REQUEST_TIMEOUT,
 
+  /// The request line or header was larger than the HTTP decoder accepts, answered with 414 or
+  /// 431, see [DecoderFailureHandler]
+  REQUEST_TOO_LARGE,
+
   /// The client did not take the response within the write timeout
   RESPONSE_WRITE_TIMEOUT,
 

@@ -59,6 +59,8 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported in their recent runs; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
+  - BLOCKED: "Flaky tests" runs #1 to #8 on `main` fail in step "Report" (latest 2026-11-24);
+    the failed test names need GitHub sign-in or the run artifact, not readable by the agent
 - [ ] A reload that replaces the IP lookup never closes the old database readers
   - P1: `EdgeState.closeReplacedBy` closes the replaced lookup only if it is `AutoCloseable`, but
     `CombinedIpTraitsLookup` is not, so each reload that changes `ipLookup` leaves the MaxMind
@@ -86,6 +88,8 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] 2. OCI image: Dockerfile with a Java 25 runtime, non-root, `java` as PID 1 so `SIGTERM`
   arrives (exec form); CI builds and pushes it
   - P1.
+  - BLOCKED: the staged image publishing workflow needs to be applied under
+    `.github/workflows/build-and-push-image.yml` before publishing can be verified.
   - Decided: Temurin JRE (glibc, same vendor as build), registry
     `ghcr.io/sensepitch/sensepitch-edge`, shaded jar kept; see
     [doc/design/oci-image.md](doc/design/oci-image.md).
@@ -150,6 +154,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   Research with sources and the evidence for each point:
   [ip-database-volume-draft.md](doc/design/ip-database-volume-draft.md).
   - P1.
+  - BLOCKED: chart implementation awaits the volume and update interval choices below.
   - Facts: IPinfo Lite `ipinfo_lite.mmdb` is 23.71 MB, updated daily, CC BY-SA 4.0, downloaded
     with an account token. A Secret or ConfigMap holds at most 1 MiB, so neither can carry it.
     `ConfigFileWatcher` already reloads by itself when the file is renamed into place.
@@ -191,6 +196,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
+  - BLOCKED: replay handling, permitted reuse, timing and migration choices remain open.
   - P3: today a challenge is a bare timestamp and an answer can be replayed for five minutes,
     each replay minting another admission. Tick the open choices before implementing:
     - [x] enforcement, decided: Option A of the draft, a stateless idempotent token. The
@@ -216,8 +222,8 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   measurements and sources in the draft
   [request-body-limit-draft.md](doc/design/request-body-limit-draft.md)
   - P2. Today: no body limit; the body streams with backpressure (64 KiB Netty water mark), so
-    memory is bounded. Netty's header (8192 bytes) and request line (4096) limits answer 400,
-    (inferred) as a missing host. Measured on 2026-11-20: NGINX 1.28.3 refuses bodies over 1 MiB
+    memory is bounded. Netty's header (8192 bytes) and request line (4096) limits answer 431 and
+    414 (`DecoderFailureHandler`). Measured on 2026-11-20: NGINX 1.28.3 refuses bodies over 1 MiB
     with 413 because it buffers them; HAProxy 3.2, Caddy 2.11 and Envoy 1.36 stream and have no
     default limit, Caddy and Envoy offer an opt-in 413.
   - Found: a slow upload is not bounded. Every body byte resets the read timeout, so one byte per
@@ -232,7 +238,8 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     - [ ] status 413 in the request log only
   - Header and request line:
     - [x] answer decoder failures explicitly: 431 too large header, 414 too long request line,
-      400 other, with outcome or counter
+      400 other, with outcome or counter. Done: `DecoderFailureHandler`, outcome
+      `request_too_large`
     - [ ] raise the defaults (other proxies refused at 9000 to 70000 bytes)
     - [ ] configurable in `listen.connection` via `HttpDecoderConfig`
   - Slow uploads:

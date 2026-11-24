@@ -63,6 +63,11 @@ What happens at the limits:
   comes from the missing `Host` header of the failed request, so the request is logged and
   counted as a missing host, not as a too-large header. The other proxies answer 431 or 414, see
   "Implementations investigated".
+- Since 2026-11-24
+  [`DecoderFailureHandler`](../../src/main/java/org/sensepitch/edge/DecoderFailureHandler.java)
+  answers 431 and 414 with the outcome `request_too_large`, and 400 for other decoder failures,
+  see
+  [`DecoderFailureHandlerTest`](../../src/test/java/org/sensepitch/edge/DecoderFailureHandlerTest.java).
 
 ### Request body: streamed, no limit
 
@@ -196,7 +201,7 @@ Netty has the constants `REQUEST_ENTITY_TOO_LARGE`, `REQUEST_URI_TOO_LONG` and
 | HAProxy 3.2.27 | none | streamed | 431 (URI: 414) |
 | Caddy 2.11.9 | none, opt-in 413 | streamed | 431 |
 | Envoy 1.36.13 | none, opt-in 413 (buffer filter) | streamed | 431 |
-| sensepitch edge | none | streamed, 64 KiB water mark | 400 (missing host, inferred) |
+| sensepitch edge | none | streamed, 64 KiB water mark | 431 (URI: 414), before 2026-11-24: 400 |
 
 The evidence: the default limit of NGINX goes with buffering the body. The measured streaming
 proxies have no limit by default and make it opt-in, which matches the project's philosophy.
@@ -234,8 +239,9 @@ None of these is decided. The choices are ticked in `TODO.md`.
 
 ### Refusals are visible (with B and the header limits)
 
-- [ ] A new `RequestOutcome`, e.g. `REQUEST_TOO_LARGE` (`request_too_large`), counted in
+- [x] A new `RequestOutcome`, e.g. `REQUEST_TOO_LARGE` (`request_too_large`), counted in
   `sensepitch_ingress_request_outcomes_total`. A new label value for dashboards and alerts.
+  Implemented for the header and request line limits.
 - [ ] Only the status 413 in the request log, with `http.request.body.size`, no new outcome.
 
 ### Header and request line limits
@@ -247,6 +253,10 @@ None of these is decided. The choices are ticked in `TODO.md`.
   (inferred) reported as a missing host.
   Rational for keeping the defaults: Sensepitch is intended for public facing web sites and applications.
   Keep resources tight to detect and avoid unusual use and be more robust.
+  Implemented on 2026-11-24 in `DecoderFailureHandler`. It sits after `RequestLoggingHandler` and
+  `IngressTimeoutHandler` instead of right after the codec, so the refusal is logged and counted
+  and the timeouts see the response; it is before every handler that serves the request. A 400
+  keeps the outcome `edge_response`, like the other requests the edge rejects itself.
 - [ ] Raise the defaults towards the streaming proxies (refused at: NGINX 9000 bytes, HAProxy
   16000, Caddy 32000, Envoy 70000). Large cookies and tokens exceed 8 KiB; the cost is memory per
   connection while the head is parsed.

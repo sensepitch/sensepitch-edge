@@ -706,6 +706,8 @@ public class Proxy implements ProxyContext {
   private static final StripEdgeHeadersHandler STRIP_EDGE_HEADERS_HANDLER =
       new StripEdgeHeadersHandler();
 
+  private static final DecoderFailureHandler DECODER_FAILURE_HANDLER = new DecoderFailureHandler();
+
   /// Adds the HTTP handlers of a connection, without the socket and TLS. Tests drive them on an
   /// `EmbeddedChannel`, see `ProxyConstructBDDTest`.
   void addHttpHandlers(ChannelPipeline pipeline) {
@@ -717,6 +719,8 @@ public class Proxy implements ProxyContext {
         new RequestLoggingHandler(metrics, requestLogger, trustTraceparent, configIds));
     pipeline.addLast(
         new IngressTimeoutHandler(connectionConfig, metrics, ingressShutdownDelivered));
+    // answers an undecodable request before any handler serves it; logged and timed by the above
+    pipeline.addLast(DECODER_FAILURE_HANDLER);
     pipeline.addLast(new IpTraitsHandler(state.ipTraitsLookup()));
     pipeline.addLast(ja4HeaderHandler);
     // Resolve these per request so reloads apply to existing keep-alive connections.

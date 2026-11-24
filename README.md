@@ -255,7 +255,8 @@ ingress.
 
 The share of failed requests is the rate of all outcomes except `completed`, `edge_response` and
 `fallback`, divided by the rate of all outcomes. `upstream_*` points to the upstream,
-`request_timeout`, `response_write_timeout` and `client_aborted` to the client.
+`request_timeout`, `request_too_large`, `response_write_timeout` and `client_aborted` to the
+client.
 
 ### `sensepitch_ingress_request_flavor_count_total{flavor="...",country="..."}`
 
@@ -959,12 +960,13 @@ to see at a glance whether the edge, the upstream or the client is involved. The
 | Value | Meaning |
 |---|---|
 | `completed` | the upstream or a static response route answered, the response was sent |
-| `edge_response` | no upstream was selected, the edge answered itself: challenge, rejected method, unserviced host, no site matched |
+| `edge_response` | no upstream was selected, the edge answered itself: challenge, rejected method, unserviced host, no site matched, a malformed request (400) |
 | `fallback` | the upstream answered 500 or 503 and the fallback page was sent instead, see `sensepitch.upstream.status` |
 | `upstream_connect_failed` | the connection to the upstream failed (502) |
 | `upstream_write_failed` | forwarding the request to the upstream failed (502) |
 | `upstream_timeout` | the upstream did not respond within the response timeout (504) |
 | `request_timeout` | the client did not complete the request in time (408) |
+| `request_too_large` | the request header (431) or request line (414) is larger than the edge accepts, 8192 and 4096 bytes |
 | `response_write_timeout` | the client did not take the response in time |
 | `client_aborted` | the connection closed before the response was complete (499) |
 | `edge_error` | another error, answered with 502 |
