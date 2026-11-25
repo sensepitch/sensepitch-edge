@@ -198,8 +198,9 @@ loops, which closes the remaining connections, logs their requests as aborted (4
 the end markers, then wait for the destinations to send everything until `shutdownTimeoutMillis`.
 The request log gets its own budget, by default a third of the total, because the records of the
 aborted requests only exist after the connections are gone. What is left at a deadline is logged
-at `INFO`: the requests in flight per upstream, the unsent records per destination, and whether
-the event loop group is still running. A reload and the start of the shutdown run one at a time.
+at `INFO`: the requests in flight per upstream, the total of unsent request log records, and
+whether the event loop group is still running. A reload and the start of the shutdown run one at
+a time.
 
 The accept grace is built in rather than left to a `preStop` hook with `sleep`, which needs a
 shell and a `sleep` binary in the image. It is part of the one deadline and cannot eat the

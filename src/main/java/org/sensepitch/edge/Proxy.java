@@ -65,6 +65,9 @@ public class Proxy implements ProxyContext {
 
   static final String SHUTDOWN_COMPLETE = "Shutdown complete";
 
+  /// Label of the request log records not sent yet, in the shutdown start and drain lines
+  static final String UNSENT_REQUEST_LOG_RECORDS = "unsent request log records ";
+
   private final Object lock = new Object();
 
   /// Monotonic shutdown time and a possibly spurious wait, injected for deterministic delay tests.
@@ -621,7 +624,8 @@ public class Proxy implements ProxyContext {
             + trackIngressConnectionsHandler.activeConnections()
             + ", requests in flight "
             + metrics.ingressRequestsInFlight()
-            + ", buffered request log records "
+            + ", "
+            + UNSENT_REQUEST_LOG_RECORDS
             + requestLogDestinations.unsent());
     awaitAcceptGrace(start + TimeUnit.MILLISECONDS.toNanos(active.shutdownAcceptGraceMillis()));
     if (serverChannel != null || httpServerChannel != null) {
@@ -665,7 +669,8 @@ public class Proxy implements ProxyContext {
       LOG.info(
           "Shutdown: request log not drained after "
               + TimeUnit.NANOSECONDS.toMillis(shutdownNanoTime.getAsLong() - drainStart)
-              + " ms, unsent records "
+              + " ms, "
+              + UNSENT_REQUEST_LOG_RECORDS
               + requestLogDestinations.unsent());
       if (!eventLoopGroup.isTerminated()) {
         LOG.info("Shutdown: event loop group still running");

@@ -252,8 +252,7 @@ class ProxyShutdownIT {
                 assertThat(m)
                     .startsWith(Proxy.SHUTDOWN_STARTED)
                     .endsWith(
-                        "connections 1, requests in flight 1,"
-                            + " buffered request log records {otlp=0}"));
+                        "connections 1, requests in flight 1," + " unsent request log records 0"));
   }
 
   /// An idle keep-alive connection is closed at once, the shutdown does not wait for its timeout
@@ -321,7 +320,7 @@ class ProxyShutdownIT {
             m ->
                 assertThat(m)
                     .contains("request log not drained after")
-                    .contains("ms, unsent records {otlp=1}"));
+                    .contains("ms, unsent request log records 1"));
   }
 
   /// A reload after the shutdown started is rejected, it would create destinations that are

@@ -277,7 +277,7 @@ class ShadedJarIT {
           .isTrue();
       assertThat(Files.readString(stderr))
           .contains("Shutdown: request log not drained after")
-          .contains("unsent records");
+          .contains("unsent request log records");
     } finally {
       releaseExport.countDown();
       TestingParameters.stop(collector);

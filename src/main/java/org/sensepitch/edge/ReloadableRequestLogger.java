@@ -1,9 +1,7 @@
 package org.sensepitch.edge;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -190,10 +188,10 @@ public final class ReloadableRequestLogger implements RequestLogger {
     return CompletableFuture.allOf(stopped.toArray(CompletableFuture[]::new));
   }
 
-  /// Records not sent yet, by destination name, of the destinations that did not stop, for the
-  /// shutdown report
-  public Map<String, Integer> unsent() {
-    Map<String, Integer> unsent = new LinkedHashMap<>();
+  /// Records not sent yet, summed over the destinations that did not stop, for the shutdown
+  /// report
+  public int unsent() {
+    int unsent = 0;
     List<BatchingRequestLogger<?>> batching = new ArrayList<>(draining);
     for (Destination destination : destinations) {
       if (destination.batching() != null) {
@@ -203,7 +201,7 @@ public final class ReloadableRequestLogger implements RequestLogger {
     for (BatchingRequestLogger<?> logger : batching) {
       HttpBatchSender<?> sender = logger.sender();
       if (!sender.stopped().isDone()) {
-        unsent.merge(sender.destination(), sender.queueSize(), Integer::sum);
+        unsent += sender.queueSize();
       }
     }
     return unsent;

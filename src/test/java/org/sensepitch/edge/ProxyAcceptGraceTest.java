@@ -160,7 +160,7 @@ class ProxyAcceptGraceTest {
               Proxy.SHUTDOWN_STARTED
                   + ", accept grace 2000 ms, timeout "
                   + ProxyConfig.DEFAULT_SHUTDOWN_TIMEOUT_MILLIS
-                  + " ms, connections 0, requests in flight 0, buffered request log records {}",
+                  + " ms, connections 0, requests in flight 0, unsent request log records 0",
               Proxy.SHUTDOWN_COMPLETE + " after 2000 ms");
     } finally {
       Thread.interrupted();

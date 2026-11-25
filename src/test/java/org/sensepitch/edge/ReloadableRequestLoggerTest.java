@@ -18,7 +18,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -236,10 +235,10 @@ class ReloadableRequestLoggerTest {
     CompletableFuture<Void> finished = logger.finish();
     awaitAttempts(2);
     assertThat(finished).isNotDone();
-    assertThat(logger.unsent()).containsExactlyInAnyOrderEntriesOf(Map.of("old", 1, "new", 1));
+    assertThat(logger.unsent()).isEqualTo(2);
     status = 200;
     int got = receivedAfter(finished);
-    assertThat(logger.unsent()).isEmpty();
+    assertThat(logger.unsent()).isZero();
     assertThat(got).isEqualTo(2);
   }
 
