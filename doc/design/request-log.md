@@ -157,8 +157,9 @@ thread signals its own end:
 - `ThreadBatcher.close()` is the end marker: it refuses further records, reserves the last batch
   and hands it to the sender.
 - An event loop writes it when it terminates: Netty removes its `FastThreadLocal`s after the loop
-  ran its last tasks, and `onRemoval` closes the batcher. That comes after the loop closed its
-  channels and logged their aborted requests, so the order is right by construction.
+  ran its last tasks, and `onRemoval` closes the batcher. At shutdown that comes after the proxy
+  closed the remaining connections and their aborted requests were logged, see "The proxy closes
+  the remaining connections, not the event loops" below.
 - On reload, `BatchingRequestLogger.endThread()` runs as a task on each event loop after the
   destination array was switched, so it runs after the last `logRequest` of that loop into the old
   destination.
@@ -192,8 +193,8 @@ configuration leaves the active ones untouched, then switches (`apply`).
 
 The shutdown in `Proxy` follows the data: keep accepting for `shutdownAcceptGraceMillis` while
 readiness is already false, stop the listener, let the requests in flight complete (up to
-`shutdownTimeoutMillis − requestLog.drainTimeoutMillis` from the start), shut down the event
-loops, which closes the remaining connections, logs their requests as aborted (499) and writes
+`shutdownTimeoutMillis − requestLog.drainTimeoutMillis` from the start), close the remaining
+connections, which logs their requests as aborted (499), shut down the event loops, which writes
 the end markers, then wait for the destinations to send everything until `shutdownTimeoutMillis`.
 The request log gets its own budget, by default a third of the total, because the records of the
 aborted requests only exist after the connections are gone. What is left at a deadline is logged
@@ -209,6 +210,29 @@ external load balancer as well. Traefik has the same option for its entry points
 `lifeCycle.requestAcceptGraceTimeout` (from its documentation, not re-checked for this text); the
 name avoids "drain", which here already means the request log (`drainTimeoutMillis`) and the
 closing of connections.
+
+### The proxy closes the remaining connections, not the event loops
+
+After the connection drain timed out, `Proxy` closes the remaining ingress connections itself,
+through their pipelines (`TrackIngressConnectionsHandler.close()`), waits for that within the
+shutdown deadline, and only then shuts down the event loops. Leaving the close to the loops loses
+records: in Netty 4.2.20 `SingleThreadIoEventLoop.run()` checks `isShuttingDown()` before it
+closes all channels (`IoHandler.prepareToDestroy()`) and calls `confirmShutdown()` at the end of
+the same iteration. A shutdown request that arrives in between, e.g. while the loop runs the
+`SHUTDOWN` event of the drain, ends the loop with its channels open; `cleanup()` closes only the
+selector. The connections of that loop never fire `channelInactive`, their requests are not
+logged, and the client sockets stay open. Found from the source on 2026-11-25, after
+`ProxyShutdownIT.acceptGraceKeepsServingThenClosesWithinTheBudget` lost the 499 record in about
+one of 25 runs of the nightly flaky test hunt; reproduced locally once in 20 runs pinned to two
+CPUs (`taskset -c 0-1`), never with 16. Not reported to Netty yet. Netty 4.1's `NioEventLoop`
+closed the channels and confirmed the shutdown under the same check (from memory, not
+re-checked).
+
+A close through the pipeline sends a TLS `close_notify` and marks the close as ours, so the
+"unexpected close during the exchange" warning of `DownstreamHandler` is no longer logged for
+these connections at shutdown. Upstream connections are still closed by their loops: their
+requests are logged by the ingress side, a missed close only leaves a socket open until the
+process exits.
 
 ### Gzip on one dedicated compression thread
 

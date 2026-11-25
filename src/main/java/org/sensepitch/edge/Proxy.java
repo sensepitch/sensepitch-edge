@@ -572,8 +572,9 @@ public class Proxy implements ProxyContext {
   /// 3. Closes idle connections, the others after their response, see
   ///    [TrackIngressConnectionsHandler#drain()]. Waits for that until only the drain timeout
   ///    of the request log is left, see [RequestLogConfig#drainTimeoutMillis()].
-  /// 4. Shuts down the event loops, which closes the remaining connections, their requests are
-  ///    logged as aborted. Each loop writes its end marker into the request log when it ends.
+  /// 4. Closes the remaining connections, their requests are logged as aborted, see
+  ///    [TrackIngressConnectionsHandler#close()]. Then shuts down the event loops. Each loop
+  ///    writes its end marker into the request log when it ends.
   /// 5. Waits until the request log destinations sent everything, or the shutdown timeout is
   ///    over.
   ///
@@ -645,6 +646,10 @@ public class Proxy implements ProxyContext {
               + ", by upstream "
               + metrics.upstreamRequestsInFlight()
               + ", closing the connections");
+      // Closed here, while the loops run: a Netty 4.2 loop can terminate without closing its
+      // channels when the shutdown request arrives during its last iteration, the requests of
+      // those connections would never be logged. See doc/design/request-log.md.
+      trackIngressConnectionsHandler.close().awaitUninterruptibly(remainingMillis(deadline));
     }
     long drainStart = shutdownNanoTime.getAsLong();
     // the calling thread may have logged as well, e.g. a test driving an EmbeddedChannel

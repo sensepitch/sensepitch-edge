@@ -136,21 +136,18 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 
 ## Testing Guidelines
 
-- Most tests run the handlers on Netty's `EmbeddedChannel`, see `Proxy#addHttpHandlers`; proxy
-  level step classes extend `ProxyConstructBDDTest.ExtendableSteps`.
 - Prefer Serenity BDD (`*BDDTest`) for behaviour tests: the step chains are more compact and
   readable than plain JUnit, compare `UnservicedHostHandlerBDDTest` with `UnservicedHostHandlerIT`,
   or `ProxyRejectedConfigBDDTest` with its former inline form. Group many rejected-input variants
   into one `@ParameterizedTest` over a step chain. Step classes pay off when several scenarios
   share the steps; if the wrapper code serves only one test and makes it longer than plain
   JUnit, write a plain unit test.
+- Most tests run the handlers on Netty's `EmbeddedChannel`, see `Proxy#addHttpHandlers`; proxy
+  level step classes extend `ProxyConstructBDDTest.ExtendableSteps`.
 - No component level tests of the YAML or environment configuration: the generic loading
   (`Main.parseConfig`, `EnvInjector`, the config records) is tested once, a new key of a
   component adds no coverage there. A component tests its configuration through the config
   record and its builder: defaults, built values, rejected values.
-- When a plain JUnit test duplicates a BDD test, keep the BDD test as the unit test and move the
-  JUnit one to `*IT` (runs with `verify` only). Port scenarios the BDD test lacks first, and let both
-  class docs reference each other, naming the BDD test as the place for new scenarios.
 - `./mvnw test` is the full smoke test: the unit tests alone cover everything that is unit
   testable. `./mvnw verify` with the integration tests and the JaCoCo floor is the final check,
   it must not be the only place where code of ours is executed. So do not move a test to `*IT` to
@@ -164,6 +161,9 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
   the class that owns the rule (e.g. the backoff cap in `BackoffTest`); a caller's test adds one
   representative path, for an interaction the lower level cannot see. A long setup to reach a
   boundary is a sign the test belongs lower. A `TODO.md` item names the behaviour, not the level.
+- Refactoring to BDD: When a plain JUnit test duplicates a BDD test, keep the BDD test as the unit test and move the
+  JUnit one to `*IT` (runs with `verify` only). Port scenarios the BDD test lacks first, and let both
+  class docs reference each other, naming the BDD test as the place for new scenarios.
 
 ### Concurrent and asynchronous tests
 

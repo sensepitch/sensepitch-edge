@@ -44,6 +44,15 @@ public class TrackIngressConnectionsHandler extends ChannelInboundHandlerAdapter
     return closed;
   }
 
+  /// Closes the connections the drain left open, on their event loops, so each logs its request
+  /// as aborted. [Proxy#shutdown()] calls this before it shuts down the event loops, which can
+  /// terminate without closing their channels, see `doc/design/request-log.md`.
+  ///
+  /// @return completed when all these connections are closed
+  public ChannelGroupFuture close() {
+    return channels.close();
+  }
+
   @Override
   public void registerCollectors(Consumer<Collector> consumer) {
     consumer.accept(
