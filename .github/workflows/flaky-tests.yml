@@ -4,8 +4,20 @@ name: Flaky tests
 # time to overload the CPU, which makes timing dependent tests fail more often
 # (`.github/scripts/flaky_runs.sh`). A test that fails in some runs and passes in others is flaky;
 # the report in the run summary lists each failed test with the number of runs it failed in, and
-# an overview per run. The job fails if any test
-# failed, so GitHub notifies. The reports and logs of every run are kept as an artifact.
+# an overview per run. The job fails if any test failed, so GitHub notifies. 
+# The reports and logs of every run are kept as an artifact.
+#
+# To check and retrieve the outcomes via GitHub CLI do from upstream:
+#
+# Status of last run:
+# gh run list -R sensepitch/sensepitch-edge --workflow flaky-tests.yml --limit 1
+#
+# Inspect log, the log would already contain the run report with the tests that failed
+# gh run view $runid -R sensepitch/sensepitch-edge --log-failed
+#
+# Download all outcome artifacts including SureFire and FailSafe reports (big): (big, 135MB when last checked):
+# gh run download $runid -R sensepitch/sensepitch-edge
+
 on:
   schedule:
     # 20:27 Singapore time (UTC+8, no daylight saving time) is 12:27 UTC; GitHub cron runs in

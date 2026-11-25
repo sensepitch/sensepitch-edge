@@ -61,13 +61,8 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
   sensitive, run nightly (`.github/workflows/nightly.yml`). Run them when changing performance
   sensitive JVM behaviour, not for ordinary edits.
   Such a test must add no coverage of its own; port a missing scenario to a unit test first.
-- `.github/workflows/flaky-tests.yml` runs `./mvnw clean verify` ten times in a row every evening
-  (20:27 Singapore time, 12:27 UTC, or by hand with the number of runs) and reports
-  in the run summary which tests failed in how many runs (`.github/scripts/flaky_report.py`).
-  A flaky test found there goes under Bugs in `TODO.md`. Read the results with `gh`:
-  `gh run list --workflow flaky-tests.yml`, `gh run view <id> --log-failed` (the report table is
-  in the step "Report"), and `gh run download <id> -n flaky-test-runs -D <dir>` for the JUnit
-  reports with the full failure output.
+- `.github/workflows/flaky-tests.yml` runs `./mvnw clean verify` in parallel multiple times 
+  to detect flaky tests.
 - How the tests are run and why (parallel execution, isolation, log capture, Serenity, what was
   tried and dropped) is in `doc/design/test-speed.md`. Update it when the test setup changes.
 - `./mvnw test` runs the unit test classes concurrently in one JVM (JUnit parallel execution, set

@@ -47,8 +47,7 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 
 ## Bugs
 
-- [ ] Check the nightly workflows, "Flaky tests" (`./mvnw clean verify` ten times in a row) and
-  "Nightly" (full gate plus the `@Tag("excessive")` tests, 21:47 Singapore time):
+- [ ] Check the nightly workflows, "Flaky tests":
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/flaky-tests.yml and
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/nightly.yml
   - P1: a test that failed in any run of the flaky test hunt, or a failed nightly run, is a bug
@@ -56,7 +55,8 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     The flaky test summary lists each failed test with the number of runs it failed in; a failed
     nightly run uploads `nightly-test-reports` (kept 7 days). An excessive test that fails is load
     sensitive or a real regression of allocation or timing.
-  - Act only on what the workflows reported in their recent runs; a failure seen once in a local
+  - See flaky-tests.yml how to get the rest result via GitHub CLI
+  - Act only on what the workflows reported on the recent run; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
 
