@@ -1028,9 +1028,11 @@ the challenge JavaScript suite. See [its test README](src/test/javascript/README
 
 ## Container image
 
-Build and run the image with Docker (or a compatible builder such as Podman):
+Build and run the image with Docker (or a compatible builder such as Podman). The image packages
+the shaded JAR from `target/`, so build that first:
 
 ````
+./mvnw clean package
 docker build -t ghcr.io/sensepitch/sensepitch-edge .
 docker run --rm -p 17443:17443 \
   -v $PWD/config.yml:/etc/sensepitch/config/config.yml:ro \
@@ -1042,11 +1044,14 @@ The image runs the shaded JAR on a Temurin 25 JRE as a non-root user, with `java
 certificate, the IPinfo database) must be mounted as well. The base-image and registry choices
 are in [doc/design/oci-image.md](doc/design/oci-image.md). The
 [image publishing workflow](.github/workflows/build-and-push-image.yml) runs on pushes to `main`
-and `v*` tags.
+and `v*` tags. Images are tagged with the version of the JAR inside, e.g.
+`0.1-20261112.153045-dbe0c1a`; `main` follows the newest build of `main`, `latest` the newest
+release.
 
 To smoke-test a local image through Docker:
 
 ```bash
+./mvnw clean package -DskipTests
 docker build -t sensepitch-edge:oci-smoke .
 ./mvnw verify -Poci-image
 ```

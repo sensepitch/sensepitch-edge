@@ -36,7 +36,7 @@ Prepare a values file with at least the image and the routes, then install:
 cat > edge-values.yaml <<'EOF'
 image:
   repository: registry.example.com/sensepitch-edge
-  tag: "0.2-SNAPSHOT"
+  tag: "1.0"
 
 config:
   sites:
@@ -194,7 +194,7 @@ helm template edge charts/sensepitch-edge \
 |---|---|---|
 | `replicaCount` | `2` | edge pods |
 | `image.repository` | `ghcr.io/sensepitch/sensepitch-edge` | replace until item 2 publishes an image |
-| `image.tag` | `""` | image tag; empty uses `.Chart.AppVersion` |
+| `image.tag` | `""` | image tag; empty uses `.Chart.AppVersion`, `main` (newest build of main) without one |
 | `imagePullSecrets` | `[]` | pull Secrets for a private registry |
 | `service.type` | `ClusterIP` | main HTTPS Service type |
 | `service.port` | `443` | main Service port; target is the `https` container port |

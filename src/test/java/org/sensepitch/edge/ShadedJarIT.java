@@ -305,8 +305,8 @@ class ShadedJarIT {
     assertThat(binaryType(header)).isEqualTo(format + " " + cpu);
   }
 
-  /// A snapshot build gets a unique version, e.g. `0.2-20261112.153045-dbe0c1a`, a release build
-  /// keeps the plain version.
+  /// A snapshot build gets the version of its commit, e.g. `0.1-20261112.153045-dbe0c1a` (commit
+  /// time and id), a release build keeps the plain version.
   @Test
   void manifestHasUniqueVersion() throws IOException {
     String version;

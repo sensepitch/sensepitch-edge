@@ -10,7 +10,7 @@ image:
   # image built from the shaded JAR before installing the chart.
   repository: ghcr.io/sensepitch/sensepitch-edge
   pullPolicy: IfNotPresent
-  # Defaults to .Chart.AppVersion when empty.
+  # Defaults to .Chart.AppVersion when empty, or main (the newest build of main) when the chart has none.
   tag: ""
 
 imagePullSecrets: []

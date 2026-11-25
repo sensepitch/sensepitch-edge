@@ -22,6 +22,15 @@
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/*
+Image reference. The tag defaults to the appVersion, which `helm package --app-version` sets to
+the released version; the chart in the source tree has none and uses main, the moving tag of the
+newest build of main.
+*/}}
+{{- define "sensepitch-edge.image" -}}
+{{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion | default "main") }}
+{{- end }}
+
 {{/* Common labels. */}}
 {{- define "sensepitch-edge.labels" -}}
 helm.sh/chart: {{ include "sensepitch-edge.chart" . }}

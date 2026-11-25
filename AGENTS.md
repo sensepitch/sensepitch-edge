@@ -22,6 +22,10 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 - Keep the semantics and defaults of the existing configuration unless the task changes them,
   and report every change that makes users update their setups (see the plan summary under
   "Agent Workflow Reminders").
+- Build once, ship what was verified: a deliverable (fat JAR, image, chart) packages the artifact
+  that the test gate checked in the same environment, never a second build without the tests
+  (e.g. a Maven stage in the `Dockerfile`). Its version is the one in that JAR's manifest, from
+  `pom.xml` and the commit, see `doc/design/oci-image.md`; no other file names a version.
 - Keep the cardinality of metrics bounded: never use an untrusted value, e.g. a host header, a
   path or a client address, as a label value.
 

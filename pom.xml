@@ -6,7 +6,7 @@
 
   <groupId>org.sensepitch</groupId>
   <artifactId>sensepitch-edge</artifactId>
-  <version>0.2-SNAPSHOT</version>
+  <version>0.1-SNAPSHOT</version>
 
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
@@ -270,7 +270,7 @@
       </plugins>
     </pluginManagement>
     <plugins>
-      <!-- Commit and build time (UTC) for edge.build.version below. -->
+      <!-- Commit time (UTC) and abbreviated commit id for edge.build.version below. -->
       <plugin>
         <groupId>io.github.git-commit-id</groupId>
         <artifactId>git-commit-id-maven-plugin</artifactId>
@@ -290,13 +290,15 @@
           <generateGitPropertiesFile>false</generateGitPropertiesFile>
           <includeOnlyProperties>
             <includeOnlyProperty>^git.commit.id.abbrev$</includeOnlyProperty>
-            <includeOnlyProperty>^git.build.time$</includeOnlyProperty>
+            <includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
           </includeOnlyProperties>
         </configuration>
       </plugin>
-      <!-- The version written to the manifest of the fat JAR: SNAPSHOT replaced by build time and
-           commit, e.g. 0.2-20261112.153045-dbe0c1a, so each built JAR is identifiable.
-           A release version stays as is. Must follow the git plugin, both run in initialize. -->
+      <!-- The version written to the manifest of the fat JAR, the one version of every artifact
+           (JAR, image tag), see doc/design/oci-image.md: SNAPSHOT replaced by commit time and
+           commit, e.g. 0.1-20261112.153045-dbe0c1a. It depends on the commit only, so every
+           build of a commit gets the same version. A release version stays as is. Must follow
+           the git plugin, both run in initialize. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
@@ -312,7 +314,7 @@
               <name>edge.build.version</name>
               <value>${project.version}</value>
               <regex>SNAPSHOT$</regex>
-              <replacement>${git.build.time}-${git.commit.id.abbrev}</replacement>
+              <replacement>${git.commit.time}-${git.commit.id.abbrev}</replacement>
               <failIfNoMatch>false</failIfNoMatch>
             </configuration>
           </execution>

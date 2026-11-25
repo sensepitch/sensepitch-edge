@@ -3,8 +3,11 @@ name: Build and push image
 # Builds the shaded JAR and publishes the container image to the GitHub Container Registry at
 # ghcr.io/sensepitch/sensepitch-edge, the repository used by the Helm chart.
 #
-# main is tagged 0.2-SNAPSHOT (the chart's appVersion; keep it in sync with pom.xml <version>
-# and the chart) and latest. A v* release tag is tagged with its semver.
+# The image packages the JAR that the verify step built and tested, it is never
+# rebuilt. Its tag is the version in that JAR's manifest (pom.xml version, a
+# snapshot made unique by commit time and id), see doc/design/oci-image.md.
+# main also gets the moving tag main. A v* tag marks a release commit: it must
+# equal v<pom.xml version>, and the image also gets latest.
 
 on:
   push:
@@ -38,9 +41,27 @@ jobs:
         node-version: '22'
 
     # The full gate before the image is built: unit and integration tests, Spotless, the Javadoc
-    # build and the JaCoCo coverage floor. The image build itself skips tests on purpose.
+    # build and the JaCoCo coverage floor. The image packages the JAR built here.
     - name: Build, test and check
       run: ./mvnw clean verify
+
+    - name: Version of the built JAR
+      id: version
+      run: |
+        version=$(unzip -p target/sensepitch-edge-*-with-dependencies.jar META-INF/MANIFEST.MF \
+          | sed -n 's/^Implementation-Version: *//p' | tr -d '\r')
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Release tag matches the version
+      if: startsWith(github.ref, 'refs/tags/v')
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+          echo "::error::tag $GITHUB_REF_NAME does not match the pom.xml version $VERSION"
+          exit 1
+        fi
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -58,10 +79,11 @@ jobs:
       with:
         images: ghcr.io/sensepitch/sensepitch-edge
         tags: |
-          type=raw,value=0.2-SNAPSHOT,enable=${{ github.ref == 'refs/heads/main' }}
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=${{ steps.version.outputs.version }}
+          type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+        flavor: |
+          latest=false
 
     - name: Build and push
       uses: docker/build-push-action@v6
@@ -71,6 +93,6 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        # persist layers and the Maven cache mount between runs
+        # persist the image layers between runs
         cache-from: type=gha
         cache-to: type=gha,mode=max

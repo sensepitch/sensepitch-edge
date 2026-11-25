@@ -25,12 +25,11 @@ constraints that bound the design:
 
 ## Overview
 
-Two stages. The `build` stage is `eclipse-temurin:25-jdk`; it copies the repository (including
-`.git`) and runs the Maven wrapper to produce the shaded JAR, then renames it to a stable
-`sensepitch-edge.jar`. Tests, documentation, CI files and the performance setup are excluded from
-the build context: the image build skips tests, and the full gate runs before it. The runtime
-stage is `eclipse-temurin:25-jre`; it copies that one file, switches to the non-root user and sets
-the exec-form entry point. The final image contains only the JRE and the JAR.
+One stage on `eclipse-temurin:25-jre`. The workflow runs the full gate `./mvnw clean verify`,
+reads the version from the manifest of the shaded JAR it built, and builds the image from the same
+checkout. The build context is that JAR alone (`.dockerignore`); the Dockerfile copies it under the
+stable name `/app/sensepitch-edge.jar`, switches to the non-root user and sets the exec-form entry
+point. The image contains only the JRE and the JAR, and is tagged with the JAR's version.
 
 ## Design decisions
 
@@ -43,14 +42,34 @@ so the runtime JRE and the build JDK stay on the same vendor and patch cadence. 
 image is Ubuntu-sized, but no glibc workaround is needed and the native TLS code path is the same
 one the tests exercise.
 
-### Multi-stage build, the shaded JAR is the only artifact
+### The image packages the verified JAR, it builds nothing
 
-The build runs in a JDK image and is discarded; only `target/*-with-dependencies.jar` is copied
-out, under the stable name `/app/sensepitch-edge.jar`. Tests are skipped inside the image build
-(`-Dmaven.test.skip=true`): the full gate `./mvnw clean verify` already ran in CI before the image
-is built, and running it again in the image would only duplicate it. The shade plugin still runs,
-because it is bound to the `package` phase. `-Djacoco.skip` and `-Dspotless.apply.skip` keep the
-package phase from doing work the image does not need.
+The image contains the JAR that `./mvnw clean verify` built and tested in the same workflow run,
+copied from `target/`. A second build inside the image (the former multi-stage Dockerfile, see
+Alternatives considered) would run in another environment without tests, so the shipped JAR
+would not be the tested one. The rule is in `AGENTS.md` ("Build once, ship what was verified").
+Consequence: a local `docker build` needs a prior `./mvnw package`, and `target/` must hold a
+single shaded JAR (`./mvnw clean package`), otherwise the `COPY` fails.
+
+### The version comes from pom.xml and the commit
+
+`pom.xml` is the only place that names the version. A snapshot is made unique by the commit:
+`0.1-SNAPSHOT` at commit `dbe0c1a` committed 2026-11-12 15:30:45 UTC becomes
+`0.1-20261112.153045-dbe0c1a` (git-commit-id and build-helper plugins, `edge.build.version`).
+Commit time instead of build time: every build of the same commit gets the same version. The
+version is written to the JAR manifest (`Implementation-Version`, also the OTLP `service.version`)
+and the workflow reads it from there, so the image tag is the version the running edge reports.
+
+Image tags:
+
+- always the exact version, e.g. `0.1-20261112.153045-dbe0c1a` or `0.1`;
+- `main`, moving, for the newest build of `main`; the chart from the source tree pulls it;
+- `latest`, moving, for the newest release.
+
+A release is a commit whose `pom.xml` version has no `-SNAPSHOT`, tagged `v<version>`. The tag
+only marks the commit: the workflow fails if the tag is not `v` plus the JAR's version. Steps: set
+the pom to `0.1`, commit, tag `v0.1`, push both, set the pom to `0.2-SNAPSHOT`, commit. A packaged
+chart gets the version with `helm package --app-version`.
 
 ### Non-root UID 65532 and exec-form ENTRYPOINT
 
@@ -67,23 +86,15 @@ overrides it per container.
 The registry and repository name match the Helm chart's `image.repository` default, so the chart
 works once an image is published without overriding values. GitHub Container Registry keeps the
 image next to the code, is free for public repositories, and authenticates with the workflow's
-`GITHUB_TOKEN`. The workflow tags `main` as `0.2-SNAPSHOT` (the chart's `appVersion`)
-and `latest`, and tags `v*` releases with their semver.
-
-### `.git` stays in the build context
-
-`.dockerignore` does not exclude `.git`, on purpose: the git-commit-id plugin is bound to the
-`initialize` phase and stamps the unique `Implementation-Version` into the JAR manifest, exactly
-like a local `./mvnw package`. The build stage is discarded, so `.git` never reaches the final
-image. Excluding it would make the image build silently produce a JAR without the commit stamp.
+`GITHUB_TOKEN`.
 
 ### A structural test, because the Maven gate has no container runtime
 
 `DockerfileTest` runs in `./mvnw test`. It parses the Dockerfile instructions as Docker would
-join continued lines, then checks the two stages, the Maven command and renamed shaded JAR, the
-copy into the runtime stage, the non-root user, the exec-form entry point and default command, and
-the exposed ports. It also checks that `.dockerignore` keeps `.git` while dropping build output,
-IDE files, tests and documentation, and that the workflow publishes the chart's image. These
+join continued lines, then checks the single JRE stage without a Maven build, the copy of the
+shaded JAR, the non-root user, the exec-form entry point and default command, and the exposed
+ports. It also checks that `.dockerignore` admits only the shaded JAR, and that the workflow
+publishes the chart's image tagged with the JAR's version and names no version itself. These
 checks run without Docker or a network connection. The GitHub Actions runner builds the image
 and pushes it to the registry.
 
@@ -102,29 +113,36 @@ alternative and was not measured offline (no network access in this environment)
 Rejected: the shaded JAR has no musl build of the tcnative library, so the TLS listener could
 not start. The JAR would need musl natives built and added first, which is out of scope.
 
-### Building with the Maven cache baked into an image layer
+### Multi-stage build, the JAR built inside the image
 
-A cache layer holding `/root/.m2` would avoid re-downloading dependencies, but it would also
-bloat the build stage and go stale. The Dockerfile uses a BuildKit cache mount instead, which
-keeps the downloads out of the layers; whether it survives between runs depends on the builder
-cache backend of the CI runner (the workflow configures the `gha` cache backend).
+Used until 2026-11-25: a `eclipse-temurin:25-jdk` stage ran `./mvnw package` without tests (the
+Maven repository in a BuildKit cache mount, `.git` kept in the build context for the version
+stamp), the JRE stage copied the JAR. It makes `docker build` work on a bare checkout, but the
+shipped JAR was a second build, in another environment than the tested one and with a different
+build time in its version. Dropped for packaging the verified JAR.
+
+### Version from the git tag
+
+The `v*` tag name gave the image's semver tags (`docker/metadata-action` `type=semver`) while the
+JAR reported the pom version, and nothing checked that they agreed. A tag-derived version
+(`${revision}` with the flatten plugin) would make the tag the only source, at the cost of a
+default revision for every local build and a pom that names no version. Dropped for the pom as the
+source and a check of the tag.
 
 ## Limitations
 
-- `eclipse-temurin:25-jre` and `eclipse-temurin:25-jdk` are floating tags: they track the newest
-  25.x patch. Strict reproducibility needs a digest pin; the digest cannot be determined without
+- `eclipse-temurin:25-jre` is a floating tag: it tracks the newest 25.x patch. Strict reproducibility needs a digest pin; the digest cannot be determined without
   network access and is left as a planned improvement.
 - The structural `DockerfileTest` in the Maven gate checks the image files. The publishing
   workflow builds the image. The container smoke test runs separately.
 - The image is built for the runner architecture (`linux/amd64`). A multi-architecture manifest
   is left for when an arm64 fleet is needed.
-- The image build downloads all Maven dependencies inside the container; the first build in a
-  fresh CI cache is slow.
+- A build of a working tree with uncommitted changes reports the version of its last commit.
+- `docker build` needs a prior `./mvnw package`, see above.
 
 ## Planned improvements
 
-- Pin both base images by digest, refreshed by a scheduled job.
+- Pin the base image by digest, refreshed by a scheduled job.
 - Build a multi-architecture manifest (linux/amd64, linux/arm64).
 - Add an image smoke test in CI: run the image with a test config and assert `/healthz` and
   `/readyz` answer 200 and `SIGTERM` exits.
-- Switch the chart and workflow to the release version tag once the project is released.

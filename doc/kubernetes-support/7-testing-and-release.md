@@ -75,7 +75,7 @@ envtest has. This split is inferred from the tools' scope, not measured.
 
 ## Packaging
 
-- `Dockerfile` for the edge: multi-stage Maven build, runs the shaded JAR on
+- `Dockerfile` for the edge: packages the verified shaded JAR, runs it on
   `eclipse-temurin:25-jre`, non-root, `java` as PID 1. The base-image and registry choice is
   recorded in [oci-image.md](../design/oci-image.md); the image is
   `ghcr.io/sensepitch/sensepitch-edge` (matching the Helm chart).

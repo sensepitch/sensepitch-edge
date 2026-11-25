@@ -1,4 +1,4 @@
-Sensepitch Edge {{ .Chart.AppVersion }} is installed as release {{ .Release.Name }}.
+Sensepitch Edge is installed as release {{ .Release.Name }}.
 
 The HTTPS listener is exposed by Service {{ include "sensepitch-edge.fullname" . }}
 on port {{ .Values.service.port }} ({{ .Values.service.type }}). The admin endpoint on
@@ -7,7 +7,7 @@ kubelet reaches it through the pod IP for the /healthz and /readyz probes.
 
 Before the first pod can serve traffic:
 
-  1. Ensure image {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+  1. Ensure image {{ include "sensepitch-edge.image" . }}
      exists (see TODO.md item 2).
   2. Create or provide TLS Secret "{{ .Values.tls.existingSecret }}" with keys
      "{{ .Values.tls.certKey }}" and "{{ .Values.tls.keyKey }}".

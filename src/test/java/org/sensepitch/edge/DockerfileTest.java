@@ -15,25 +15,17 @@ import org.junit.jupiter.api.Test;
 /// executed here, only its structure is checked.
 class DockerfileTest {
 
-  /// The build and runtime stages use the pinned Temurin 25 JDK and JRE, and the shaded JAR is
-  /// built with the Maven wrapper.
+  /// One stage on the pinned Temurin 25 JRE that packages the shaded JAR the build verified,
+  /// nothing is compiled in the image build.
   @Test
-  void buildsTheShadedJarOnTemurin25() throws IOException {
+  void packagesTheVerifiedShadedJarOnTemurin25() throws IOException {
     List<String> instructions = instructions();
 
+    assertThat(instructions.stream().filter(line -> line.startsWith("FROM ")))
+        .containsExactly("FROM eclipse-temurin:25-jre");
     assertThat(instructions)
-        .contains("FROM eclipse-temurin:25-jdk AS build", "FROM eclipse-temurin:25-jre");
-    assertThat(instructions)
-        .anyMatch(line -> line.startsWith("RUN --mount=type=cache,target=/root/.m2 "));
-    assertThat(instructions).anyMatch(line -> line.contains("./mvnw"));
-    assertThat(instructions).anyMatch(line -> line.contains("-Dmaven.test.skip=true"));
-    assertThat(instructions).anyMatch(line -> line.contains("-Djacoco.skip"));
-    assertThat(instructions).anyMatch(line -> line.contains("-Dspotless.apply.skip"));
-    assertThat(instructions).anyMatch(line -> line.contains(" package "));
-    assertThat(instructions)
-        .anyMatch(line -> line.contains("mv target/*-with-dependencies.jar sensepitch-edge.jar"));
-    assertThat(instructions)
-        .contains("COPY --from=build /build/sensepitch-edge.jar /app/sensepitch-edge.jar");
+        .contains("COPY target/sensepitch-edge-*-with-dependencies.jar /app/sensepitch-edge.jar");
+    assertThat(instructions).noneMatch(line -> line.contains("mvn"));
   }
 
   /// `java` is PID 1: exec-form entry point, no shell, with the mounted config as default.
@@ -67,10 +59,9 @@ class DockerfileTest {
     assertThat(instructions).contains("EXPOSE 17443 9400 9401");
   }
 
-  /// The build context excludes build output and IDE files, and keeps `.git` for the version
-  /// stamp, see the `.dockerignore` comment.
+  /// The build context is the shaded JAR only, so no sources or `.git` reach the image build.
   @Test
-  void dockerignoreKeepsGitAndDropsBuildOutput() throws IOException {
+  void dockerignoreAdmitsOnlyTheShadedJar() throws IOException {
     Path dockerignore = repoRoot().resolve(".dockerignore");
     assertThat(dockerignore).as(".dockerignore").isRegularFile();
 
@@ -81,23 +72,11 @@ class DockerfileTest {
         patterns.add(trimmed);
       }
     }
-    assertThat(patterns)
-        .contains(
-            "target/",
-            "target-ide/",
-            "dependency-reduced-pom.xml",
-            ".idea/",
-            ".vscode/",
-            "*.iml",
-            ".github/",
-            "doc/",
-            "performance-test/",
-            "plans/",
-            "src/test/");
-    assertThat(patterns).noneMatch(line -> line.equals(".git") || line.startsWith(".git/"));
+    assertThat(patterns).containsExactly("*", "!target/sensepitch-edge-*-with-dependencies.jar");
   }
 
-  /// The CI workflow publishes the image used by the chart.
+  /// The CI workflow publishes the image used by the chart, tagged with the version of the built
+  /// JAR; no version is written into the workflow, `pom.xml` is the only place.
   @Test
   void workflowPushesTheChartImage() throws IOException {
     Path workflow = repoRoot().resolve(".github/workflows/build-and-push-image.yml");
@@ -107,6 +86,8 @@ class DockerfileTest {
     assertThat(lines).anyMatch(line -> line.contains("docker/build-push-action@"));
     assertThat(lines).anyMatch(line -> line.trim().equals("push: true"));
     assertThat(lines).anyMatch(line -> line.contains("ghcr.io/sensepitch/sensepitch-edge"));
+    assertThat(lines).anyMatch(line -> line.contains("Implementation-Version"));
+    assertThat(lines).noneMatch(line -> line.contains("SNAPSHOT"));
   }
 
   /// The Dockerfile instructions from the repository root.
