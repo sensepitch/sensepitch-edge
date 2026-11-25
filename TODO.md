@@ -22,12 +22,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 - [ ] Real time and races in the remaining tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P1: each one is slow or can fail on a loaded machine although the code is right.
-  - Onto `FakeTime`/`FakeLogServer` with the existing seam (`RequestLoggerFactory.create` with
-    `SenderSeams`, as in
-    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut`):
-    `ReloadableRequestLoggerTest.removedDestinationIsClosed` (polls the queued gauge) and
-    `finishCoversDrainingDestinations` (polls the attempt counter),
-    `RequestLoggerFactoryTest.multipleDestinations` (polls until drained).
   - `ProxyShutdownIT`: the shutdown clock seam is there (`startProxy` with a nano time and wait,
     as in `acceptGraceKeepsServingThenClosesWithinTheBudget`); `slowRequestIsAbortedAndStillLogged`
     (about 1 s) and `unsentRecordsAreReported` (about 0.5 s) still wait real shutdown and drain
@@ -48,9 +42,9 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     polling. Not started yet; the classes held `@Isolated` by it are listed in
     [doc/design/test-speed.md](doc/design/test-speed.md).
   - Polling to replace: `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`,
-    `awaitHandshakeErrors`), `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and
-    gauge `await`s in `ReloadableRequestLoggerTest`. Where no log is involved: a test log server
-    that signals each post with a `Semaphore` or queue, a latch in the reload callback.
+    `awaitHandshakeErrors`) and `ShadedJarIT.awaitOutput` (reads the stderr file). Where no log is
+    involved: a test log server that signals each post with a `Semaphore` or queue, a latch in the
+    reload callback.
     `TestingParameters.await` stays where no hook exists.
 
 ## Bugs

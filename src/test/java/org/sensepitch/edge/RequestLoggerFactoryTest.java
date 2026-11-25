@@ -2,9 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.sensepitch.edge.TestingParameters.await;
 
-import com.sun.net.httpserver.HttpServer;
 import io.netty.handler.codec.http.HttpMethod;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.io.IOException;
@@ -12,8 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -24,31 +20,21 @@ class RequestLoggerFactoryTest {
 
   final RequestLogCapture stdout = new RequestLogCapture();
   final RequestLogMetrics metrics = new RequestLogMetrics();
-
-  /// Accepts the records of OTLP destinations, so closing a destination does not wait for an
-  /// unavailable log server
-  HttpServer logServer;
-
-  @BeforeEach
-  void startLogServer() throws IOException {
-    logServer = Loopback.httpServer();
-    logServer.createContext(
-        "/v1/logs",
-        exchange -> {
-          exchange.getRequestBody().readAllBytes();
-          exchange.sendResponseHeaders(204, -1);
-          exchange.close();
-        });
-    logServer.start();
-  }
-
-  @AfterEach
-  void stopLogServer() {
-    TestingParameters.stop(logServer);
-  }
+  final FakeTime clock = new FakeTime();
+  final FakeLogServer logServer = new FakeLogServer();
 
   RequestLogger build(RequestLogConfig config) {
     return RequestLoggerFactory.create(config, stdout, metrics);
+  }
+
+  /// Builds the logger with OTLP senders on [#clock] and [#logServer] so nothing starts an HTTP
+  /// client or waits real time
+  RequestLogger buildSimulated(RequestLogConfig config) {
+    return RequestLoggerFactory.create(
+        config,
+        stdout,
+        metrics,
+        new RequestLoggerFactory.SenderSeams(clock, clock.scheduler()::schedule, logServer));
   }
 
   /// Destinations with a queue of their own, from the queue length metric
@@ -69,13 +55,14 @@ class RequestLoggerFactoryTest {
         .build();
   }
 
-  RequestLogDestinationConfig otlp(String name) {
+  static RequestLogDestinationConfig otlp(String name) {
     return RequestLogDestinationConfig.builder()
         .type("otlp")
         .name(name)
         .otlp(
             OtlpConfig.builder()
-                .endpoint("http://127.0.0.1:" + logServer.getAddress().getPort() + "/v1/logs")
+                .endpoint(HttpBatchSenderTest.UNREACHABLE)
+                .compression(OtlpConfig.NONE)
                 .build())
         .build();
   }
@@ -121,7 +108,7 @@ class RequestLoggerFactoryTest {
     RequestLogDestinationConfig disabledStdout =
         stdout(false, false).toBuilder().disabled(true).build();
     try (RequestLogger logger =
-        build(
+        buildSimulated(
             RequestLogConfig.builder()
                 .destinations(List.of(disabledStdout, stdout(true, false), otlp(null)))
                 .build())) {
@@ -130,6 +117,9 @@ class RequestLoggerFactoryTest {
           .containsExactly("stdout1", "otlp");
       logOneRequest(logger);
     }
+    assertThat(logServer.requests()).hasSize(1);
+    logServer.succeed(204);
+    assertThat(queuedDestinations()).isEmpty();
     assertThat(stdout.lines()).singleElement().asString().startsWith("RQ0 ");
   }
 
@@ -183,16 +173,19 @@ class RequestLoggerFactoryTest {
 
   /// Every destination gets the request, each with its own format and anonymization
   @Test
-  void multipleDestinations() throws Exception {
+  void multipleDestinations() {
     try (RequestLogger logger =
-        build(
+        buildSimulated(
             RequestLogConfig.builder()
                 .destinations(List.of(stdout(false, false), stdout(true, true), otlp(null)))
                 .build())) {
       assertThat(queuedDestinations()).containsExactly("otlp");
       logOneRequest(logger);
     }
-    await("all destinations drained", () -> queuedDestinations().isEmpty());
+    assertThat(logServer.requests()).as("otlp destination posted on close").hasSize(1);
+    logServer.succeed(204);
+    assertThat(queuedDestinations()).as("all destinations drained").isEmpty();
+    assertThat(OtlpTestSupport.paths(logServer.onlyRequest())).containsExactly("/");
     assertThat(stdout.lines()).hasSize(2);
     assertThat(stdout.lines().get(0)).contains("\"client.address\":\"192.0.2.7\"");
     assertThat(stdout.lines().get(1)).startsWith("RQ0 0 example.com 192.0.2.0 ");
@@ -276,7 +269,7 @@ class RequestLoggerFactoryTest {
             .build();
     assertThatThrownBy(
             () ->
-                build(
+                buildSimulated(
                     RequestLogConfig.builder()
                         .destinations(List.of(otlp("first"), noEndpoint))
                         .build()))

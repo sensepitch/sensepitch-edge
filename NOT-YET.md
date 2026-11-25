@@ -203,11 +203,13 @@ moved to [TODO.md](TODO.md#fast-tests-without-flakiness) as top priority on 2026
   - Done 2026-11-16: `ReloadableRequestLoggerTest.noRecordIsLostWhileReloading` (0.3 s, no own
     coverage) to `ReloadableRequestLoggerIT`, which uses the unit test class as its fixture.
   - Next: `ReloadableRequestLoggerTest` still takes 3.3 s in the full run (2026-11-16):
-    `finishCoversDrainingDestinations` 1.4 s, `finishedDestinationEndsWhenItsRecordsAgedOut`
-    0.3 s (on simulated time since 2026-11-24), `disableAndEnableByReload` 0.2 s,
-    `removedDestinationDoesNotBlockTheReload` 0.15 s.
-    Probably real timers (retry backoff after 503, age limit), not verified. What cannot move
-    for coverage gets a fake clock instead, see "Real time and races in the remaining tests" in
+    `finishCoversDrainingDestinations` 1.4 s (on simulated time since 2026-11-25),
+    `finishedDestinationEndsWhenItsRecordsAgedOut` 0.3 s (on simulated time since 2026-11-24),
+    `disableAndEnableByReload` 0.2 s, `removedDestinationDoesNotBlockTheReload` 0.15 s.
+    Probably real timers (retry backoff after 503, age limit), not verified. On 2026-11-25 a
+    focused run of the class took 0.94 s, the first test 0.55 s of it with warm-up and server
+    start, the others 0.15 s or less. What cannot move for coverage gets a fake clock instead,
+    see "Real time and races in the remaining tests" in
     [TODO.md](TODO.md#fast-tests-without-flakiness).
 - [ ] Performance test: different Netty allocators, leak detection,
   `-XX:NativeMemoryTracking=summary`

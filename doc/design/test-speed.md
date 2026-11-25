@@ -378,7 +378,8 @@ build.
 - The unit test phase is bounded by the isolated classes, which run one after the other, and by
   the class still waiting on real timers, `ReloadableRequestLoggerTest` (1.458 s in one run on
   2026-11-17; this is an observed cost, not a stable bound). `OtlpLogDestinationTest` moved to
-  simulated time on 2026-11-23.
+  simulated time on 2026-11-23, the timer tests of `ReloadableRequestLoggerTest` on 2026-11-24
+  and 2026-11-25 (0.94 s for the class in a focused run on 2026-11-25).
 - Parallel execution is checked by repetition, not proven: 10 and 25 green runs in a row. A race
   between tests that needs rarer timing can still be there.
 - `LogCapture` only sees the loggers of the proxy. Netty, JUL and other libraries are visible
@@ -405,8 +406,12 @@ build.
   the reload (2026-11-24): `RequestLoggerFactory.SenderSeams` passes the three seams to the
   `otlp` destinations a `ReloadableRequestLogger` creates, and the age-out of a removed
   destination, moved to `ReloadableRequestLoggerIT` on 2026-11-17 (table above), is back in
-  `ReloadableRequestLoggerTest` on simulated time. Left: the other tests of that class and of
-  `RequestLoggerFactoryTest`, see `TODO.md`.
+  `ReloadableRequestLoggerTest` on simulated time. Completed for reload and factory polling tests
+  (2026-11-25): `ReloadableRequestLoggerTest.removedDestinationIsClosed`,
+  `ReloadableRequestLoggerTest.finishCoversDrainingDestinations`, and the OTLP cases of
+  `RequestLoggerFactoryTest` (no `HttpServer` started there anymore) run on `FakeTime` and
+  `FakeLogServer` without `TestingParameters.await` polling. Left: `ProxyShutdownIT` and
+  `ConfigFileWatcherTest`, see `TODO.md`.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 

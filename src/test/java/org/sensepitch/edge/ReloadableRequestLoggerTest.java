@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
 import static org.sensepitch.edge.TestingParameters.TEST_TIMEOUT_SECONDS;
-import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.management.ThreadMXBean;
 import com.sun.net.httpserver.HttpServer;
@@ -23,7 +22,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,9 +42,6 @@ class ReloadableRequestLoggerTest {
   /// Records accepted by the OTLP server, per request
   final BlockingQueue<Integer> received = new LinkedBlockingQueue<>();
 
-  /// Status the OTLP server answers with, records are only received with 200
-  volatile int status = 200;
-
   /// When set, the log server holds each export on this latch before answering it, so a
   /// test can prove a reload does not wait for the server.
   volatile CountDownLatch answerGate;
@@ -54,9 +49,6 @@ class ReloadableRequestLoggerTest {
   /// Counted down when an export is held on `answerGate`, so a test can wait until the
   /// server is actually blocked.
   final CountDownLatch exportHeld = new CountDownLatch(1);
-
-  /// Requests the OTLP server got, including refused ones
-  final AtomicInteger attempts = new AtomicInteger();
 
   HttpServer server;
   ReloadableRequestLogger logger;
@@ -68,7 +60,6 @@ class ReloadableRequestLoggerTest {
         "/v1/logs",
         exchange -> {
           ExportLogsServiceRequest request = OtlpTestSupport.decode(exchange);
-          attempts.incrementAndGet();
           CountDownLatch gate = answerGate;
           if (gate != null) {
             exportHeld.countDown();
@@ -80,11 +71,8 @@ class ReloadableRequestLoggerTest {
               throw new IOException("Interrupted while holding an OTLP export", e);
             }
           }
-          int answer = status;
-          if (answer == 200) {
-            received.add(request.getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
-          }
-          exchange.sendResponseHeaders(answer, -1);
+          received.add(request.getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
+          exchange.sendResponseHeaders(200, -1);
           exchange.close();
         });
     server.start();
@@ -111,6 +99,24 @@ class ReloadableRequestLoggerTest {
                 .maxRetryDelayMillis(50)
                 .build())
         .build();
+  }
+
+  /// OTLP destination for simulated time: uncompressed so every post runs in the test thread, with
+  /// an unreachable endpoint because [FakeLogServer] takes the posts
+  static RequestLogDestinationConfig simulatedOtlp(String name, OtlpConfig.Builder otlpConfig) {
+    return RequestLogDestinationConfig.builder()
+        .type("otlp")
+        .name(name)
+        .otlp(
+            otlpConfig
+                .endpoint(HttpBatchSenderTest.UNREACHABLE)
+                .compression(OtlpConfig.NONE)
+                .build())
+        .build();
+  }
+
+  static RequestLoggerFactory.SenderSeams simulatedSeams(FakeTime clock, FakeLogServer logServer) {
+    return new RequestLoggerFactory.SenderSeams(clock, clock.scheduler()::schedule, logServer);
   }
 
   static RequestLogDestinationConfig stdout(boolean plainText) {
@@ -207,39 +213,76 @@ class ReloadableRequestLoggerTest {
         .isOne();
   }
 
-  /// A removed destination finishes after the grace period, nothing is buffered, so its gauge
-  /// disappears then
+  /// A removed destination finishes once its threads wrote their end markers; nothing is buffered,
+  /// so its gauge disappears right away
   @Test
-  void removedDestinationIsClosed() throws Exception {
+  void removedDestinationIsClosed() {
+    FakeTime clock = new FakeTime();
+    FakeLogServer logServer = new FakeLogServer();
     logger =
         RequestLoggerFactory.create(
-            config(stdout(false), otlp("vl", OUT_OF_REACH_MILLIS)), stdout, metrics);
+            config(
+                stdout(false),
+                simulatedOtlp("vl", OtlpConfig.builder().flushIntervalMillis(OUT_OF_REACH_MILLIS))),
+            stdout,
+            metrics,
+            simulatedSeams(clock, logServer));
     assertThat(queuedDestinations()).contains("vl");
     reload(config(stdout(true)));
-    await("removed destination ended", () -> !queuedDestinations().contains("vl"));
     assertThat(queuedDestinations()).doesNotContain("vl");
+    assertThat(logServer.requests()).isEmpty();
     logOneRequest();
     assertThat(stdout.lines()).singleElement().asString().startsWith("RQ0 ");
   }
 
-  /// At shutdown, finish also covers a destination still draining from a reload. Until all is
-  /// sent, the records not sent are reported by destination.
+  /// At shutdown, finish also covers a destination still draining from a reload. The unsent count
+  /// includes the records of both the active and the draining destination.
   @Test
-  void finishCoversDrainingDestinations() throws Exception {
-    status = 503;
-    logger = RequestLoggerFactory.create(config(otlp("old", OUT_OF_REACH_MILLIS)), stdout, metrics);
-    logOneRequest();
-    reload(config(otlp("new", OUT_OF_REACH_MILLIS)));
-    logOneRequest();
+  void finishCoversDrainingDestinations() {
+    int retryMillis = 1_000;
+    FakeTime clock = new FakeTime();
+    FakeLogServer logServer = new FakeLogServer();
+    RequestLogDestinationConfig oldDestination =
+        simulatedOtlp(
+            "old",
+            OtlpConfig.builder()
+                .flushIntervalMillis(OUT_OF_REACH_MILLIS)
+                .initialRetryDelayMillis(retryMillis)
+                .maxRetryDelayMillis(retryMillis));
+    RequestLogDestinationConfig newDestination =
+        simulatedOtlp(
+            "new",
+            OtlpConfig.builder()
+                .flushIntervalMillis(OUT_OF_REACH_MILLIS)
+                .initialRetryDelayMillis(retryMillis)
+                .maxRetryDelayMillis(retryMillis));
+    logger =
+        RequestLoggerFactory.create(
+            config(oldDestination), stdout, metrics, simulatedSeams(clock, logServer));
+    logger.logRequest(TestRequestLogInfo.request("/old"));
+    reload(config(newDestination));
+    logger.logRequest(TestRequestLogInfo.request("/new"));
     logger.endThread();
     CompletableFuture<Void> finished = logger.finish();
-    awaitAttempts(2);
+    assertThat(logServer.requests()).as("old and new posted their records").hasSize(2);
+    logServer.succeed(503);
+    logServer.succeed(503);
     assertThat(finished).isNotDone();
     assertThat(logger.unsent()).isEqualTo(2);
-    status = 200;
-    int got = receivedAfter(finished);
+    clock.advanceMillis(retryMillis);
+    assertThat(logServer.requests()).as("both retried").hasSize(4);
+    logServer.succeed(200);
+    assertThat(finished).as("waits until both draining and active finished").isNotDone();
+    logServer.succeed(200);
+    assertThat(finished).isDone();
     assertThat(logger.unsent()).isZero();
-    assertThat(got).isEqualTo(2);
+    assertThat(
+            List.of(
+                OtlpTestSupport.paths(logServer.requests().get(2)),
+                OtlpTestSupport.paths(logServer.requests().get(3))))
+        .containsExactlyInAnyOrder(List.of("/old"), List.of("/new"));
+    assertThat(dropped("old")).isZero();
+    assertThat(dropped("new")).isZero();
   }
 
   /// A removed destination whose log server does not come back ends once its records are older
@@ -252,27 +295,17 @@ class ReloadableRequestLoggerTest {
     FakeTime clock = new FakeTime();
     FakeLogServer logServer = new FakeLogServer();
     RequestLogDestinationConfig shortAge =
-        RequestLogDestinationConfig.builder()
-            .type("otlp")
-            .name("vl")
-            .otlp(
-                OtlpConfig.builder()
-                    .endpoint(endpoint())
-                    // no compression thread, all runs in the test thread
-                    .compression(OtlpConfig.NONE)
-                    .flushIntervalMillis(1)
-                    .maximumUnsentLogAgeMillis(ageMillis)
-                    // the breaker lets no retry through, only the last attempt of finishing
-                    .initialRetryDelayMillis(OUT_OF_REACH_MILLIS)
-                    .maxRetryDelayMillis(OUT_OF_REACH_MILLIS)
-                    .build())
-            .build();
+        simulatedOtlp(
+            "vl",
+            OtlpConfig.builder()
+                .flushIntervalMillis(1)
+                .maximumUnsentLogAgeMillis(ageMillis)
+                // the breaker lets no retry through, only the last attempt of finishing
+                .initialRetryDelayMillis(OUT_OF_REACH_MILLIS)
+                .maxRetryDelayMillis(OUT_OF_REACH_MILLIS));
     logger =
         RequestLoggerFactory.create(
-            config(shortAge),
-            stdout,
-            metrics,
-            new RequestLoggerFactory.SenderSeams(clock, clock.scheduler()::schedule, logServer));
+            config(shortAge), stdout, metrics, simulatedSeams(clock, logServer));
     CompletableFuture<Void> removedStopped = stoppedOfActiveDestination();
     for (int i = 0; i < records; i++) {
       logOneRequest();
@@ -292,10 +325,6 @@ class ReloadableRequestLoggerTest {
     assertThat(queuedDestinations()).doesNotContain("vl");
     assertThat(dropped("vl")).isEqualTo(records);
     assertThat(logServer.requests()).as("no further attempt").hasSize(2);
-  }
-
-  void awaitAttempts(int expected) throws Exception {
-    await("at least " + expected + " export attempts", () -> attempts.get() >= expected);
   }
 
   /// A configuration that fails closes only the destinations created for it, the active ones stay
