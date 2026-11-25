@@ -155,9 +155,15 @@ class ChallengePageHostBDDTest {
       return this;
     }
 
-    /// No placeholder is left, apart from one a client sent in the host, and no fixed host.
+    /// No placeholder is left, apart from one a client sent in the host, no fixed host, and the
+    /// script constants name the right endpoints and cookie.
     private Steps then_page_is_complete() {
-      assertThat(page).doesNotContain("packingpanic").contains("<div id=\"status\">");
+      assertThat(page)
+          .doesNotContain("packingpanic")
+          .contains("<div id=\"status\">")
+          .contains("var STEP = '" + Deflector.CHALLENGE_STEP_URL + "';")
+          .contains("var ENDPOINT = '" + Deflector.CHALLENGE_ANSWER_URL + "';")
+          .contains("var TOKEN_COOKIE = '" + Deflector.TOKEN_COOKIE_NAME + "';");
       assertThat(page.replace(ESCAPED_HOST_PLACEHOLDER, ""))
           .doesNotContain("{{")
           .doesNotContain("}}");

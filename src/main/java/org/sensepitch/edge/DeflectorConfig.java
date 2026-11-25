@@ -3,9 +3,10 @@ package org.sensepitch.edge;
 import java.util.List;
 import lombok.Builder;
 
-/// @param hashTargetPrefix the prefix that needs to be achieved by PoW, this is together with the
-///   length of the challenge this ia the difficulty, default is {@value
-///   #DEFAULT_CHALLENGE_TARGET_PREFIX}
+/// @param hashTargetPrefix the lowercase hex prefix the SHA-256 digest of challenge and nonce must
+///   start with; each digit multiplies the work by 16, default is {@value
+///   #DEFAULT_CHALLENGE_TARGET_PREFIX}, about 65,536 attempts, chosen for under 0.5 s on a 2024
+///   phone, see `doc/design/pow-admission.md`
 /// @param powMaxIterations maximum number of iterations for solving the PoW in the browser, default
 ///   is {@value #DEFAULT_POW_MAX_ITERATIONS}
 /// @param admissionMaxAgeMillis maximum age of a granted admission token; an older token is
@@ -34,7 +35,7 @@ public record DeflectorConfig(
         .admissionClockSkewMillis(DEFAULT_ADMISSION_CLOCK_SKEW_MILLIS);
   }
 
-  public static final String DEFAULT_CHALLENGE_TARGET_PREFIX = "888";
+  public static final String DEFAULT_CHALLENGE_TARGET_PREFIX = "8888";
   public static final int DEFAULT_POW_MAX_ITERATIONS = 1_000_000;
   public static final long DEFAULT_ADMISSION_MAX_AGE_MILLIS = 5L * 24 * 60 * 60 * 1000;
   public static final long DEFAULT_ADMISSION_CLOCK_SKEW_MILLIS = 5_000;

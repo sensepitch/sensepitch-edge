@@ -213,6 +213,7 @@ public class Deflector {
     msg = msg.replace("{{VERIFY_URL}}", CHALLENGE_ANSWER_URL);
     msg = msg.replace("{{PREFIX}}", challengeVerification.getTargetPrefix());
     msg = msg.replace("{{MAX_ITERATIONS}}", Integer.toString(powMaxIterations));
+    msg = msg.replace("{{TOKEN_COOKIE}}", TOKEN_COOKIE_NAME);
     // last, so nothing of the host is taken for a placeholder or resource path
     msg = msg.replace(CONNECTING_TO_PLACEHOLDER, connectingToLine(request));
     // from the channel allocator, so the plaintext is already in direct memory for BoringSSL,

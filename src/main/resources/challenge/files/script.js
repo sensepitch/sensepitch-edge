@@ -3,6 +3,9 @@
 
     // --- CONFIG ---
     var YIELD_EVERY = 10000; // iterations per chunk
+    // Reported in the answer, the server records it as telemetry only.
+    var METHOD = 'js';
+    var COOKIE_MESSAGE = 'Please enable cookies for this site and refresh.';
     var maxIterations = (typeof MAX_ITERATIONS === 'number' && MAX_ITERATIONS > 0)
         ? MAX_ITERATIONS
         : 0;
@@ -58,186 +61,116 @@
         document.addEventListener(ev, handler, true);
     }
 
-    // --- UTIL: UTF-8 encode (TextEncoder-free) -> Uint8Array ---
-    function utf8Bytes(str) {
-        // Simple UTF-8 encoder
-        var bytes = [], i = 0, c;
-        for (i = 0; i < str.length; i++) {
-            c = str.charCodeAt(i);
-            if (c < 0x80) bytes.push(c);
-            else if (c < 0x800) {
-                bytes.push(0xC0 | (c >> 6), 0x80 | (c & 0x3F));
-            } else if (c >= 0xD800 && c <= 0xDBFF) {
-                // surrogate pair
-                var c2 = str.charCodeAt(++i);
-                var code = ((c & 0x3FF) << 10) | (c2 & 0x3FF);
-                code += 0x10000;
-                bytes.push(
-                    0xF0 | (code >> 18),
-                    0x80 | ((code >> 12) & 0x3F),
-                    0x80 | ((code >> 6) & 0x3F),
-                    0x80 | (code & 0x3F)
-                );
-            } else {
-                bytes.push(
-                    0xE0 | (c >> 12),
-                    0x80 | ((c >> 6) & 0x3F),
-                    0x80 | (c & 0x3F)
-                );
-            }
-        }
-        return new Uint8Array(bytes);
-    }
+    // --- SHA-256 ---
+    // One synchronous pure JavaScript implementation for every browser. It hashes about 27 times
+    // as fast as one WebCrypto digest per nonce and allocates nothing per hash; the measurement
+    // and the reasoning are in doc/design/pow-admission.md.
+    var K = new Int32Array([
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ]);
+    var W = new Int32Array(64);
+    var H = new Int32Array(8);
 
-    // --- UTIL: hex string from bytes ---
-    function toHex(u8) {
-        var hex = '';
-        for (var i = 0; i < u8.length; i++) {
-            var h = u8[i].toString(16);
-            if (h.length < 2) h = '0' + h;
-            hex += h;
-        }
-        return hex;
-    }
-
-    // Minimal, reasonably fast pure-JS SHA-256 (public-domain style)
-    // Adapted to avoid typed-array dependencies beyond Uint8Array for inputs.
-    function sha256HexSync(ascii) {
-        var bytes = utf8Bytes(ascii);
-        var i, j, l;
-
-        var K = [
-            0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-            0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-            0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-            0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-            0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-            0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-            0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-            0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
-        ];
-
-        // Pre-processing (padding)
-        var ml = bytes.length;
-        var withOne = new Uint8Array(ml + 1); // append 0x80
-        for (i = 0; i < ml; i++) withOne[i] = bytes[i];
-        withOne[ml] = 0x80;
-
-        // Calculate required length (multiple of 64, leaving 8 bytes for bit length)
-        var totalLen = withOne.length;
-        while ((totalLen % 64) !== 56) totalLen++;
-        var padded = new Uint8Array(totalLen + 8);
-        for (i = 0; i < withOne.length; i++) padded[i] = withOne[i];
-
-        // Append 64-bit big-endian length
-        var bitLen = ml * 8;
-        for (i = 0; i < 8; i++) {
-            padded[padded.length - 1 - i] = bitLen & 0xFF;
-            bitLen = Math.floor(bitLen / 256);
-        }
-
-        var H0 = 0x6a09e667, H1 = 0xbb67ae85, H2 = 0x3c6ef372, H3 = 0xa54ff53a;
-        var H4 = 0x510e527f, H5 = 0x9b05688c, H6 = 0x1f83d9ab, H7 = 0x5be0cd19;
-
-        var W = new Array(64);
-        for (i = 0; i < padded.length; i += 64) {
-            for (j = 0; j < 16; j++) {
-                var idx = i + j * 4;
-                W[j] = (padded[idx] << 24) | (padded[idx + 1] << 16) | (padded[idx + 2] << 8) | (padded[idx + 3]);
-            }
+    // Hashes an ASCII string into H. The input is the server's base-23 challenge plus decimal
+    // digits, so every character is one byte and goes straight into the message words.
+    function sha256(ascii) {
+        var n = ascii.length;
+        var blocks = ((n + 8) >> 6) + 1;
+        var h0 = 0x6a09e667, h1 = 0xbb67ae85 | 0, h2 = 0x3c6ef372, h3 = 0xa54ff53a | 0;
+        var h4 = 0x510e527f, h5 = 0x9b05688c | 0, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+        var a, b, c, d, e, f, g, h, i, j, x, y, t1, t2;
+        for (var block = 0; block < blocks; block++) {
+            var base = block << 6;
+            var length = Math.min(n - base, 64);
+            for (j = 0; j < 16; j++) W[j] = 0;
+            for (i = 0; i < length; i++) W[i >> 2] |= ascii.charCodeAt(base + i) << (24 - ((i & 3) << 3));
+            if (length >= 0 && length < 64) W[length >> 2] |= 0x80 << (24 - ((length & 3) << 3));
+            if (block === blocks - 1) W[15] = n << 3;
             for (j = 16; j < 64; j++) {
-                var s0 = ror(W[j - 15], 7) ^ ror(W[j - 15], 18) ^ (W[j - 15] >>> 3);
-                var s1 = ror(W[j - 2], 17) ^ ror(W[j - 2], 19) ^ (W[j - 2] >>> 10);
-                W[j] = (W[j - 16] + s0 + W[j - 7] + s1) | 0;
+                x = W[j - 15];
+                y = W[j - 2];
+                W[j] = (W[j - 16] + ((x >>> 7 | x << 25) ^ (x >>> 18 | x << 14) ^ (x >>> 3)) + W[j - 7]
+                    + ((y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ (y >>> 10))) | 0;
             }
-
-            var a = H0, b = H1, c = H2, d = H3, e = H4, f = H5, g = H6, h = H7;
-
+            a = h0; b = h1; c = h2; d = h3; e = h4; f = h5; g = h6; h = h7;
             for (j = 0; j < 64; j++) {
-                var S1 = ror(e, 6) ^ ror(e, 11) ^ ror(e, 25);
-                var ch = (e & f) ^ (~e & g);
-                var temp1 = (h + S1 + ch + K[j] + W[j]) | 0;
-                var S0 = ror(a, 2) ^ ror(a, 13) ^ ror(a, 22);
-                var maj = (a & b) ^ (a & c) ^ (b & c);
-                var temp2 = (S0 + maj) | 0;
-
-                h = g; g = f; f = e; e = (d + temp1) | 0;
-                d = c; c = b; b = a; a = (temp1 + temp2) | 0;
+                t1 = (h + ((e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7))
+                    + ((e & f) ^ (~e & g)) + K[j] + W[j]) | 0;
+                t2 = (((a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10))
+                    + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+                h = g; g = f; f = e; e = (d + t1) | 0;
+                d = c; c = b; b = a; a = (t1 + t2) | 0;
             }
-
-            H0 = (H0 + a) | 0;
-            H1 = (H1 + b) | 0;
-            H2 = (H2 + c) | 0;
-            H3 = (H3 + d) | 0;
-            H4 = (H4 + e) | 0;
-            H5 = (H5 + f) | 0;
-            H6 = (H6 + g) | 0;
-            H7 = (H7 + h) | 0;
+            h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+            h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
         }
-
-        return (
-            hex32(H0) + hex32(H1) + hex32(H2) + hex32(H3) +
-            hex32(H4) + hex32(H5) + hex32(H6) + hex32(H7)
-        );
-
-        function ror(x, n) { return (x >>> n) | (x << (32 - n)); }
-        function hex32(x) {
-            var s = (x >>> 0).toString(16);
-            while (s.length < 8) s = '0' + s;
-            return s;
-        }
+        H[0] = h0; H[1] = h1; H[2] = h2; H[3] = h3; H[4] = h4; H[5] = h5; H[6] = h6; H[7] = h7;
     }
 
-    function sha256Hex(str, cb) {
-        try {
-            var subtle = (self.crypto && self.crypto.subtle) || (self.msCrypto && self.msCrypto.subtle);
-            if (subtle && typeof subtle.digest === 'function') {
-                var data = utf8Bytes(str);
-                var p = subtle.digest({ name: 'SHA-256' }, data);
-                if (typeof p.then === 'function') {
-                    p.then(function (buf) { cb(null, toHex(new Uint8Array(buf)), 'native'); },
-                        function (err) { cb(err || new Error('digest failed')); });
-                    return;
-                }
-                // old msCrypto: use events (already async)
-                p.oncomplete = function (e) { cb(null, toHex(new Uint8Array(e.target.result)), 'native'); };
-                p.onerror = function () { cb(new Error('digest failed')); };
-                return;
+    // Returns a test whether the digest of a string starts with the hex `prefix`. The prefix is
+    // parsed once into digest words and masks, a test then needs no hex string, which would cost
+    // about a third of the hashing time. A prefix with other characters than lowercase hex digits
+    // never matches, as on the server.
+    function prefixMatcher(prefix) {
+        if (!/^[0-9a-f]{0,64}$/.test(prefix)) return function () { return false; };
+        var words = [], masks = [];
+        for (var i = 0; i < prefix.length; i += 8) {
+            var part = prefix.substr(i, 8);
+            var bits = part.length * 4;
+            words.push(parseInt(part, 16) << (32 - bits));
+            masks.push(bits === 32 ? -1 : ((1 << bits) - 1) << (32 - bits));
+        }
+        return function (ascii) {
+            sha256(ascii);
+            for (var w = 0; w < words.length; w++) {
+                if (((H[w] ^ words[w]) & masks[w]) !== 0) return false;
             }
-        } catch (e) { /* fall through */ }
-
-        // Shim path (pure JS) — force async delivery to avoid stack growth:
-        setTimeout(function () {
-            cb(null, sha256HexSync(str), 'shim');
-        }, 0);
+            return true;
+        };
     }
+
+    // Continues with `callback` after the browser handled its other events. A message is not
+    // subject to the minimum delay of 4 ms that browsers impose on nested timers, which would cost
+    // more than the hashing of a chunk on a fast machine; setTimeout only in browsers without
+    // MessageChannel (before 2013).
+    var yieldToBrowser = (function () {
+        if (typeof MessageChannel !== 'function') {
+            return function (callback) { setTimeout(callback, 0); };
+        }
+        var channel = new MessageChannel();
+        var next;
+        channel.port1.onmessage = function () { next(); };
+        return function (callback) {
+            next = callback;
+            channel.port2.postMessage(0);
+        };
+    })();
 
     // --- PoW loop (chunked; cooperative) ---
+    // Hashes synchronously and yields to the browser after every YIELD_EVERY attempts.
     function runPoW(done) {
         status.textContent = 'Testing browser…';
         var nonce = 0;
+        var solves = prefixMatcher(TARGET_PREFIX);
         function chunk() {
-            var iterations = 0;
-            function step() {
+            var end = nonce + YIELD_EVERY;
+            for (; nonce < end; nonce++) {
                 if (maxIterations > 0 && nonce >= maxIterations) {
                     return done(new Error('max iterations exceeded'));
                 }
-                sha256Hex(CHALLENGE + nonce, function (err, hex, method) {
-                    if (!err && hex && hex.indexOf(TARGET_PREFIX) === 0) {
-                        return done(null, nonce, method);
-                    }
-                    nonce++;
-                    iterations++;
-                    if (iterations >= YIELD_EVERY) {
-                        status.textContent = status.textContent + '.';
-                        // Yield to the event loop
-                        setTimeout(chunk, 0);
-                    } else {
-                        step();
-                    }
-                });
+                if (solves(CHALLENGE + nonce)) {
+                    return done(null, nonce);
+                }
             }
-            step();
+            status.textContent = status.textContent + '.';
+            yieldToBrowser(chunk);
         }
         chunk();
     }
@@ -296,17 +229,19 @@
         if (started) return;
         started = true;
         var gate = document.getElementById('human-gate');
-        if (gate) gate.remove();
+        // removeChild, since Element.remove() is missing in old browsers
+        if (gate) gate.parentNode.removeChild(gate);
 
-        // Measure only the PoW run, including asynchronous digest and cooperative yield time.
+        // Measure only the PoW run, including the cooperative yield time.
         // Prefer a monotonic clock so wall-clock corrections cannot distort the duration.
         var now = (self.performance && typeof self.performance.now === 'function')
             ? function () { return self.performance.now(); }
             : function () { return new Date().getTime(); };
         var calculationStarted = now();
-        runPoW(function (err, nonce, method) {
+        runPoW(function (err, nonce) {
             if (err) {
                 status.textContent = 'Verification failed. Please refresh.';
+                reportProblem('max-iterations');
                 return;
             }
             var durationMs = Math.max(0, now() - calculationStarted);
@@ -316,23 +251,40 @@
                 + '&nonce=' + encodeURIComponent(nonce)
                 + '&completedAt=' + encodeURIComponent(completedAt)
                 + '&durationMs=' + encodeURIComponent(durationMs)
-                + '&method=' + encodeURIComponent(method);
+                + '&method=' + encodeURIComponent(METHOD);
             httpGetWithCreds(ENDPOINT + '?' + qs, function (_err, ok) {
-                if (ok) {
+                if (!ok) {
+                    status.textContent = 'Verification failed. Please refresh or return to the tab and try again.';
+                    reportProblem('answer-rejected');
+                } else if (!hasCookie(TOKEN_COOKIE)) {
+                    // a reload without the admission cookie would show the challenge again, endlessly
+                    status.textContent = COOKIE_MESSAGE;
+                    reportProblem('no-cookie');
+                } else {
                     status.textContent = 'Verified! Passing on…';
                     try { location.reload(); } catch (_e2) { location.href = location.href; }
-                } else {
-                    status.textContent = 'Verification failed. Please refresh or return to the tab and try again.';
                 }
             });
         });
     }
 
+    // Whether the browser stored the named cookie, readable since the server does not set it
+    // HttpOnly.
+    function hasCookie(name) {
+        return ('; ' + (document.cookie || '')).indexOf('; ' + name + '=') !== -1;
+    }
+
+    // Tells the server why a visitor got stuck; `event` is one of a fixed set of values, recorded
+    // in the request log.
+    function reportProblem(event) {
+        sendOnce(STEP, { event: event }, true);
+    }
+
     // --- Boot ---
-    // If cookie already present, bail out early
-    // FIXME: wrong / needed?
-    if (document.cookie && document.cookie.indexOf('sptkn=') !== -1) {
-        status.textContent = 'Challenge completed, cookie set.';
+    // Without cookies the admission cannot be stored, so the calculation would be in vain.
+    if (self.navigator && self.navigator.cookieEnabled === false) {
+        status.textContent = COOKIE_MESSAGE;
+        reportProblem('no-cookie');
         return;
     }
 

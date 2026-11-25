@@ -6,11 +6,13 @@ can pass without repeating the work. This raises the cost of clients that do not
 admission; it does not establish a person's identity or prevent automation.
 
 This document describes the current flow and limitations, checked against the implementation on
-2026-11-14. Implementation details belong in the JavaDoc of
+2026-11-14; the browser side (hashing, difficulty, cookie check) on 2026-11-25. Implementation
+details belong in the JavaDoc of
 [`Deflector`](../../src/main/java/org/sensepitch/edge/Deflector.java),
 [`ChallengeGenerationAndVerification`](../../src/main/java/org/sensepitch/edge/ChallengeGenerationAndVerification.java)
 and
-[`DefaultAdmissionTokenGenerator`](../../src/main/java/org/sensepitch/edge/DefaultAdmissionTokenGenerator.java).
+[`DefaultAdmissionTokenGenerator`](../../src/main/java/org/sensepitch/edge/DefaultAdmissionTokenGenerator.java),
+and in the browser script [`script.js`](../../src/main/resources/challenge/files/script.js).
 
 ## Purpose and scope
 
@@ -35,23 +37,116 @@ is:
 
 The page embeds a challenge and the configured hash prefix. It searches for a nonce such that
 the hexadecimal SHA-256 digest of `challenge + nonce` starts with that prefix. The default prefix
-is `888`; a three-digit hexadecimal prefix takes about 4,096 attempts on average. The browser
-uses WebCrypto when available and a JavaScript implementation otherwise. The default
-`powMaxIterations` is 1,000,000, a browser search budget rather than a server-side admission rule.
-JavaScript and cookies are needed to complete the normal browser flow. An initially hidden tab
-shows a checkbox before starting; this is a browser UI condition, not a server-verified gesture.
+is `8888`; a four-digit hexadecimal prefix takes about 65,536 attempts on average. Every browser
+uses the same synchronous JavaScript SHA-256, see
+[One lean JavaScript SHA-256, no WebCrypto](#one-lean-javascript-sha-256-no-webcrypto). The
+default `powMaxIterations` is 1,000,000, a browser search budget rather than a server-side
+admission rule. JavaScript and cookies are needed to complete the normal browser flow. An
+initially hidden tab shows a checkbox before starting; this is a browser UI condition, not a
+server-verified gesture.
 
 The browser submits the challenge and nonce by GET to `/.sensepitch.challenge.complete`. The
 server checks freshness and the hash prefix. A correct answer receives 200 and a new
 `sensepitch-tk` cookie; an invalid answer receives 400. After success the browser reloads the
 original page, which can then pass with the cookie. Exhausted searches or failed submissions
-show a message asking the user to refresh.
+show a message asking the user to refresh. A browser that blocks cookies gets a message instead
+of a reload, see [Stored cookie checked before reload](#stored-cookie-checked-before-reload).
 
-The page also requests assets under `/.sensepitch.challenge.files` and the handler provides
-`/.sensepitch.challenge.step` for progress reporting. Browser timing and method parameters are
-telemetry; acceptance depends on the challenge and nonce alone.
+The page also requests assets under `/.sensepitch.challenge.files`. The script reports to
+`/.sensepitch.challenge.step` with a fixed `event` value: `init-hidden` for a hidden tab, and
+`no-cookie`, `max-iterations` or `answer-rejected` when a visitor gets stuck. The step requests
+appear in the request log by their URI. Browser timing and method parameters are telemetry;
+acceptance depends on the challenge and nonce alone.
 
 ## Design decisions
+
+### One lean JavaScript SHA-256, no WebCrypto
+
+The script hashes with one synchronous, allocation-free JavaScript SHA-256 in every browser. It
+writes the ASCII input straight into a reused `Int32Array` of message words and compares the
+prefix as numbers against the digest words, without a hex string. The goal is the fastest method
+a browser offers: the closer a visitor's speed is to an attacker's on the same hardware, the more
+the work costs the attacker relative to the visitor.
+
+Measured 2026-11-25 on the development machine (AMD Ryzen AI 7 PRO 360, Linux). The real
+`script.js`, former and current, ran in headless Chromium 153 (Playwright's
+`chrome-headless-shell`) on a test page with a prefix that no nonce below the budget matches, the
+time taken from the start to the failure message, three runs each:
+
+| Script in the browser | Million hashes/s |
+|---|---|
+| Former: WebCrypto `crypto.subtle.digest`, one `await` per hash | 0.19 to 0.22 |
+| Current, yielding with `setTimeout` | 1.34 to 1.38 |
+| Current, yielding with a `MessageChannel` message (as shipped) | 2.9 to 3.2 |
+
+The current script is about 15 times as fast in the browser. Single methods in a loop, one core,
+Node.js v18.19.1 (V8 as in Chrome), input of about 15 ASCII bytes, ad-hoc `node -` scripts with
+200,000 hashes per method (2,000,000 for the lean JavaScript), the native rate with
+`openssl speed -seconds 2 -evp sha256 -bytes 16`:
+
+| Method | Million hashes/s |
+|---|---|
+| WebCrypto, one `await` per hash | 0.13 |
+| WebCrypto, 256 digests in flight | 0.21 to 0.23 |
+| Former JavaScript fallback (several arrays allocated per hash, hex string compared) | 0.22 to 0.25 |
+| Lean JavaScript, hex string compared | 2.4 |
+| Lean JavaScript, prefix compared as numbers | 3.5 (3.6 in Chromium) |
+| Native OpenSSL with the CPU's SHA extensions, for comparison | about 12 |
+
+WebCrypto is made for large inputs: for 15 bytes the asynchronous call per digest costs far more
+than the hash itself. The challenge is served over HTTPS only, so every modern browser had
+WebCrypto and took the slowest path. The former fallback delivered each hash through
+`setTimeout(…, 0)`, which browsers clamp to at least 4 ms when nested, so a browser without
+WebCrypto needed about 16 s for the former 4,096 attempts. A single implementation also leaves
+one code path to test. The answer's `method` telemetry is `js` for all browsers.
+
+Not done: a Web Worker per core (the search takes about 20 ms on a laptop and well below 0.5 s on
+a phone, so the extra code and browser variation do not pay yet), WebAssembly (not measured), and
+hashing the constant challenge prefix once (the input fits one 64-byte block, there is nothing to
+save). Firefox, Safari and phones are not measured.
+
+### Yield with a message, not a timer
+
+The script hashes `YIELD_EVERY` (10,000) attempts at a time and then yields, so the page stays
+responsive and the progress dots appear. Browsers delay a nested `setTimeout(…, 0)` by at least
+4 ms; at about 3 million hashes per second a chunk takes about 3 ms, so the timer more than
+doubled the time (the table above). A `MessageChannel` message is not clamped. Browsers without
+`MessageChannel` (before 2013) fall back to `setTimeout`. A time-based chunk size was not chosen:
+it would need the clock in the loop and make the tests depend on clock steps, and with the
+message the chunk size hardly matters.
+
+### Default prefix 8888: under 0.5 s on 2024 phones
+
+The difficulty is chosen so a 2024 mobile phone solves the challenge in under 0.5 s. The current
+script is about 15 times as fast in the browser as the former WebCrypto path; the prefix grows in
+steps of 16 (one hex digit), so the proportional step is one more digit, from `888` to `8888`.
+
+The number of attempts is geometrically distributed: the 90th percentile is 2.3 times the mean,
+the 95th 3 times. The phone speed is an assumption, not measured: a budget 2024 Android phone
+runs JavaScript at about 1/8 of the laptop above, about 0.375 million hashes/s of the 3.0 measured
+in Chromium; a 2024 flagship about as fast as the laptop.
+
+| Prefix | Mean attempts | Budget phone mean / p90 / p95 | Laptop mean |
+|---|---|---|---|
+| `888` | 4,096 | 11 / 25 / 33 ms | 1.4 ms |
+| `8888` | 65,536 | 0.17 / 0.40 / 0.52 s | 22 ms |
+| `88888` | 1,048,576 | 2.8 / 6.4 / 8.4 s | 0.35 s |
+
+With `8888` the mean and 9 in 10 visitors of a budget phone stay under 0.5 s, the slowest 5 %
+need a little more. Five digits would break the budget. The answers' `durationMs` in the request log shows the real
+times; if phones are much slower than assumed, the default goes back for discussion. With
+`8888` the default budget of 1,000,000 attempts runs out with a probability of about e^-15.
+Steps finer than 16 would need a bit target instead of a hex prefix, which changes the answer
+check.
+
+### Stored cookie checked before reload
+
+After an accepted answer the script reloads the page only if `document.cookie` shows the
+`sensepitch-tk` admission cookie, which is readable because it is not HttpOnly. Without it, the
+reload would get the challenge again, an endless loop without explanation for a visitor who
+blocks cookies. The script shows a message and reports `no-cookie` instead, and does the same
+before calculating if `navigator.cookieEnabled` is false. The cookie name reaches the script
+through the `{{TOKEN_COOKIE}}` placeholder from `Deflector.TOKEN_COOKIE_NAME`.
 
 ### Stateless challenge verification
 
@@ -145,6 +240,9 @@ human identity.
 - **Client cost varies:** the same prefix imposes different delays on different devices. Solvers
   can automate or parallelize the search, and a valid cookie avoids further PoW. The search
   budget does not guarantee that every browser will find a solution.
+- **Native code stays faster:** native SHA-256 with the CPU's SHA extensions is about 3 to 4 times
+  as fast per core as the browser's JavaScript (more with a tuned loop), GPUs by orders of
+  magnitude. The work sets a cost, it does not prove a human. Difficulty steps are 16-fold.
 - **Time and fleet configuration:** challenge acceptance depends on server wall clocks and the
   receiving node's hash prefix. Admission acceptance depends on shared verification keys.
   Configuration changes can therefore affect a browser between challenge issue and submission.

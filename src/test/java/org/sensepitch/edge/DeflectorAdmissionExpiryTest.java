@@ -34,6 +34,7 @@ class DeflectorAdmissionExpiryTest {
     DeflectorConfig defaults = DeflectorConfig.builder().build();
     assertThat(defaults.admissionMaxAgeMillis()).isEqualTo(MAX_AGE);
     assertThat(defaults.admissionClockSkewMillis()).isEqualTo(SKEW);
+    assertThat(defaults.hashTargetPrefix()).isEqualTo("8888");
   }
 
   @Test
