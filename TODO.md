@@ -52,6 +52,7 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 - [ ] Check the nightly workflows, "Flaky tests":
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/flaky-tests.yml and
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/nightly.yml
+  - BLOCKED: GitHub API unreachable during selection. Recent run artifacts needed.
   - P1: a test that failed in any run of the flaky test hunt, or a failed nightly run, is a bug
     and has priority over all other work here; add an entry below per problem until it is fixed.
     The flaky test summary lists each failed test with the number of runs it failed in; a failed
@@ -234,10 +235,6 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     - [ ] minimum upload rate
     - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
 - [ ] Protection for slow requests. Have a better protection than a per request timeout, which allows more time for legit uploads and stricter timerouts for simple GET requests which should arrive in one go. Do a research design draft first
-
-## Config
-
-- [ ] Log field `sensepitch.config.id` should be config only without secrets.
 
 ## Evergreen / Cleanups
 

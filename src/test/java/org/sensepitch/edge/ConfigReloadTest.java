@@ -2,6 +2,7 @@ package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import java.io.IOException;
 import java.io.InputStream;
@@ -232,20 +233,9 @@ class ConfigReloadTest {
     reload(CONFIG.toBuilder().sites(sites("a.com", response("changed"))).build());
     assertThat(steps.proxy.state().configId()).isNotEqualTo(first);
     // computed from the configuration with the map keys injected, as on every node
-    assertThat(EdgeState.configId(steps.proxy.state().config(), List.of()))
+    assertThat(EdgeState.configId(steps.proxy.state().config()))
         .as("same id on another node")
         .isEqualTo(steps.proxy.state().configId());
-  }
-
-  /// The secrets count in the config id, in their order, the masked YAML dump does not show them
-  @Test
-  void configIdCoversTheSecretDigests() {
-    String plain = EdgeState.configId(CONFIG, List.of());
-    String ab = EdgeState.configId(CONFIG, List.of("a", "b"));
-    assertThat(ab).matches("[0-9a-f]{16}").isNotEqualTo(plain);
-    assertThat(EdgeState.configId(CONFIG, List.of("a", "b"))).isEqualTo(ab);
-    assertThat(EdgeState.configId(CONFIG, List.of("b", "a"))).isNotEqualTo(ab);
-    assertThat(EdgeState.configId(CONFIG, List.of("a", "c"))).isNotEqualTo(ab);
   }
 
   @Test
@@ -422,7 +412,7 @@ class ConfigReloadTest {
                             .certPath(cert.toString())
                             .build())
                     .build())
-            .protection(deflectorWithSecret(token))
+            .protection(deflectorWithSecret(SecretConfig.builder().file(token.toString()).build()))
             .sites(
                 sites(
                     "a.com",
@@ -446,7 +436,10 @@ class ConfigReloadTest {
   @Test
   void filesOfARejectedConfigurationAreReported(@TempDir Path dir) throws IOException {
     Path token = dir.resolve("token");
-    ProxyConfig withSecret = CONFIG.toBuilder().protection(deflectorWithSecret(token)).build();
+    ProxyConfig withSecret =
+        CONFIG.toBuilder()
+            .protection(deflectorWithSecret(SecretConfig.builder().file(token.toString()).build()))
+            .build();
     assertThat(reload(withSecret)).isFalse();
     assertThat(steps.proxy.referencedFiles())
         .containsOnly(Map.entry(token.toAbsolutePath(), ConfigFiles.Fingerprint.ABSENT));
@@ -458,64 +451,57 @@ class ConfigReloadTest {
     assertThat(steps.proxy.referencedFiles()).isEmpty();
   }
 
-  /// Deflector protection whose admission secret is read from the file
-  static ProtectionConfig deflectorWithSecret(Path token) {
+  /// Deflector protection with the given admission secret
+  static ProtectionConfig deflectorWithSecret(SecretConfig secret) {
     return ProtectionConfig.builder()
         .deflector(
             DeflectorConfig.builder()
                 .serverIpv4Address("127.0.0.1")
                 .tokenGenerators(
                     List.of(
-                        AdmissionTokenGeneratorConfig.builder()
-                            .prefix("X")
-                            .secret(SecretConfig.builder().file(token.toString()).build())
-                            .build()))
+                        AdmissionTokenGeneratorConfig.builder().prefix("X").secret(secret).build()))
                 .build())
         .build();
   }
 
-  /// A rotated secret gives a new config id, although the configuration is unchanged. A request
-  /// log destination kept over a reload, with its secret header, keeps its share of the id.
+  /// Read the field from the next request so the check covers the active pipeline after reload.
+  private String loggedConfigId() throws IOException {
+    int index = steps.requestLog.lines().size();
+    steps.when_requesting("a.com", "/");
+    String id =
+        new ObjectMapper()
+            .readTree(steps.requestLog.lines().get(index))
+            .required(SensepitchLogFields.CONFIG_ID)
+            .asText();
+    assertThat(id).matches("[0-9a-f]{16}");
+    return id;
+  }
+
   @Test
-  void configIdFollowsTheSecrets(@TempDir Path dir) throws IOException {
+  void loggedConfigIdIgnoresInlineSecretChanges() throws IOException {
+    ProtectionConfig first = deflectorWithSecret(SecretConfig.builder().value("first").build());
+    ProtectionConfig second = deflectorWithSecret(SecretConfig.builder().value("second").build());
+    assertThat(reload(CONFIG.toBuilder().protection(first).build())).isTrue();
+    String id = loggedConfigId();
+    assertThat(reload(CONFIG.toBuilder().protection(second).build())).isTrue();
+    assertThat(loggedConfigId()).isEqualTo(id);
+  }
+
+  @Test
+  void loggedConfigIdIgnoresFileRotation(@TempDir Path dir) throws IOException {
     Path token = Files.writeString(dir.resolve("token"), "one");
-    Path auth = Files.writeString(dir.resolve("auth"), "Bearer one");
-    ProxyConfig withSecrets =
+    ProxyConfig config =
         CONFIG.toBuilder()
-            .protection(deflectorWithSecret(token))
-            .requestLog(
-                RequestLogConfig.builder()
-                    .destinations(
-                        List.of(
-                            RequestLogDestinationConfig.builder()
-                                .type("otlp")
-                                .otlp(
-                                    OtlpConfig.builder()
-                                        .endpoint("http://127.0.0.1:9/v1/logs")
-                                        .secretHeaders(
-                                            List.of(
-                                                SecretHeaderConfig.builder()
-                                                    .name("Authorization")
-                                                    .secret(
-                                                        SecretConfig.builder()
-                                                            .file(auth.toString())
-                                                            .build())
-                                                    .build()))
-                                        .build())
-                                .build()))
-                    .build())
+            .protection(deflectorWithSecret(SecretConfig.builder().file(token.toString()).build()))
             .build();
-    assertThat(reload(withSecrets)).isTrue();
-    String first = steps.proxy.state().configId();
-    assertThat(first)
-        .as("covers the secrets")
-        .isNotEqualTo(EdgeState.configId(steps.proxy.state().config(), List.of()));
-    assertThat(reload(withSecrets)).isTrue();
-    assertThat(steps.proxy.state().configId()).as("unchanged").isEqualTo(first);
-    Path tmp = Files.writeString(dir.resolve("tmp"), "two");
-    Files.move(tmp, token, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-    assertThat(reload(withSecrets)).isTrue();
-    assertThat(steps.proxy.state().configId()).isNotEqualTo(first);
+    assertThat(reload(config)).isTrue();
+    String first = loggedConfigId();
+    Files.writeString(token, "replacement");
+    assertThat(reload(config)).isTrue();
+    assertThat(loggedConfigId()).isEqualTo(first);
+    assertThat(reload(config.toBuilder().sites(sites("a.com", response("changed"))).build()))
+        .isTrue();
+    assertThat(loggedConfigId()).isNotEqualTo(first);
   }
 
   /// Two states that differ only in their IP lookup, for the close-replaced tests. The other

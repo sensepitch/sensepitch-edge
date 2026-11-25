@@ -654,8 +654,9 @@ protection:
 As environment variables: `SENSEPITCH_EDGE_PROTECTION_DEFLECTOR_TOKEN_GENERATORS_0_SECRET_FILE`
 or `..._SECRET_VALUE`. Secrets are `tokenGenerators[].secret` and
 `requestLog.destinations[].otlp.secretHeaders[].secret`, see Destinations. The configuration dump
-in the diagnostic log masks an inline `value`. The request log field `sensepitch.config.id` covers
-the secrets as well, so a rotated secret gives a new id, see Fields.
+in the diagnostic log masks an inline `value`. The request log field `sensepitch.config.id` uses
+this masked YAML. Rotating an inline value or replacing a secret file at the same path preserves
+the id. On upgrade, configurations with resolved secrets receive a new id.
 
 Earlier versions took the admission secret as a plain string, `secret: munich`. This form is
 rejected now, write `secret: {value: munich}` or move it into a file.
@@ -940,7 +941,7 @@ Attributes without a semantic convention:
 | `sensepitch.connection.id`, `sensepitch.connection.request_count` | groups the requests of a keep-alive connection |
 | `sensepitch.request.outcome` | why the request ended, always present, see below |
 | `sensepitch.upstream.status` | status of the upstream response when the edge replaced it with a fallback page |
-| `sensepitch.config.id` | short hash (64 bit, 16 hex characters) of the configuration and its secrets (see Secrets) active when the request started. The same configuration and secrets give the same id on every node with the same edge version, a reload with changes or a rotated secret gives a new id. Whoever knows the configuration can try candidate secrets against the id, so secrets should be random |
+| `sensepitch.config.id` | First 16 hex characters of SHA-256 over the masked configuration YAML active when the request started. Nodes running the same edge version with identical masked YAML log the same id. Secret file paths are part of the YAML. |
 | `sensepitch.protection.outcome` | deflector outcome: `passed`, `bypassed`, `method_rejected`, `challenge_sent`, `answer_accepted`, `answer_rejected`, the label values of `sensepitch_deflector_requests_total` |
 | `sensepitch.upstream.name`, `sensepitch.upstream.target` | the upstream that served the request: its name in the configuration, e.g. `upstreams.backend` or `sites.example.com.paths./api/*.upstream`, and its configured `host:port`. A static response has its path as name, e.g. `sites.example.com.response`, and no target. Absent when the edge answered itself, e.g. with a challenge |
 | `sensepitch.client.asn` | autonomous system number of the client address |

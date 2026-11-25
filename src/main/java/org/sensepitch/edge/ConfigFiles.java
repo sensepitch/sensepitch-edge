@@ -11,9 +11,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -25,10 +23,6 @@ import java.util.Objects;
 /// after the read is visible later. [ConfigFileWatcher] watches the recorded files and reloads
 /// when one changes, a component kept over a reload because its configuration is unchanged checks
 /// [Snapshot#unchanged()] on its files, see [EdgeState] and [ReloadableRequestLogger].
-///
-/// The secrets resolved by [#secret(SecretConfig)] are kept as digests, in the order of
-/// resolution, for the config id, see [EdgeState#configId(ProxyConfig, List)]. The order follows
-/// the configuration, sites first, then the request log destinations.
 ///
 /// One instance collects the files of one build of the configuration, on one thread. Locations
 /// with a `classpath:` prefix are resources inside the jar and are not recorded. Relative paths
@@ -49,17 +43,13 @@ public final class ConfigFiles {
   /// two reads of the same build, the older fingerprint lets the watcher see the change
   private final Map<Path, Fingerprint> files = new LinkedHashMap<>();
 
-  /// SHA-256 of each resolved secret in the order of resolution, for the config id
-  private final List<String> secretDigests = new ArrayList<>();
-
-  /// The files and secret digests of a build or of one component of it, see [#snapshot()]
+  /// Files read by a build or one of its components, see [#snapshot()]
   ///
   /// @param files absolute path to the fingerprint taken when the file was read
-  /// @param secretDigests SHA-256 of each resolved secret, never the secret itself
-  public record Snapshot(Map<Path, Fingerprint> files, List<String> secretDigests) {
+  public record Snapshot(Map<Path, Fingerprint> files) {
 
     /// Nothing read
-    static final Snapshot EMPTY = new Snapshot(Map.of(), List.of());
+    static final Snapshot EMPTY = new Snapshot(Map.of());
 
     /// Whether a component built from this snapshot can be kept: `true` if every file still has
     /// its fingerprint
@@ -133,9 +123,7 @@ public final class ConfigFiles {
   /// @throws IllegalArgumentException if the file is empty or holds only whitespace, so a broken
   ///   rotation is rejected and the last working secret stays active
   String secret(SecretConfig secret) {
-    String value = secret.value() != null ? secret.value() : readSecretFile(secret.file());
-    secretDigests.add(EdgeState.sha256Hex(value));
-    return value;
+    return secret.value() != null ? secret.value() : readSecretFile(secret.file());
   }
 
   /// Reads a secret file, for [#secret(SecretConfig)]
@@ -177,15 +165,13 @@ public final class ConfigFiles {
     return files.computeIfAbsent(absolute, Fingerprint::of);
   }
 
-  /// Records the files and secrets of a component taken over from the previous build, at the
-  /// position the component has in this build, see [Snapshot#unchanged()]
+  /// Records the files of a component taken over from the previous build, see [Snapshot#unchanged()]
   void recordAll(Snapshot taken) {
     taken.files().forEach(files::putIfAbsent);
-    secretDigests.addAll(taken.secretDigests());
   }
 
-  /// @return the files and secret digests recorded so far
+  /// @return the files recorded so far
   Snapshot snapshot() {
-    return new Snapshot(Map.copyOf(files), List.copyOf(secretDigests));
+    return new Snapshot(Map.copyOf(files));
   }
 }

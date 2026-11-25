@@ -88,26 +88,12 @@ in the YAML dump (`Proxy.toYaml`). Alternatives:
 The break is reported with the line, not the value: `RecordConstructor` names the record type and
 the line when it finds a scalar.
 
-### Secrets in the config id
+### Hash the masked configuration for the request log
 
-The masked YAML dump feeds `EdgeState.configId`, so the dump alone does not cover the secrets. The
-SHA-256 of the config id therefore covers the dump followed by the SHA-256 of each resolved
-secret, inline or from a file, and keeps the first 64 bits (16 hex characters). A rotated secret
-gives a new id like a configuration change, and the request log needs no second field.
-
-- **Not a separate id:** a 48-bit `sensepitch.secrets.id` field was tried first; one id is simpler
-  to query and a wider hash costs nothing.
-- **Not XOR of two hashes:** whoever knows the configuration could compute its hash and XOR it
-  out, leaving a bare hash of the secrets. With one SHA-256 over both, the config hash part
-  cannot be separated.
-- **Secrets only, not all referenced files:** certificate changes are logged on reload with serial
-  and expiry already, and hashing the IP databases would read tens of megabytes per reload.
-- **Order follows the configuration:** sites, then request log destinations, so the same
-  configuration and secrets give the same id on every node. A kept destination does not read its
-  secret again, its `ConfigFiles.Snapshot` carries the digest to the next build.
-- **Weakness:** whoever knows the configuration can try candidate secrets against the 64-bit id,
-  so a weak secret, e.g. a word, can be found. A per-node salt would break the equal id on all
-  nodes. The secrets are meant to be random.
+Including resolved secret digests let a reader with the configuration check candidate secrets
+against a logged id. `EdgeState.configId` now hashes only the masked YAML from `Proxy.toYaml`.
+A configured file path contributes to the id. File fingerprints independently trigger reloads,
+so replacing credentials at the same path applies the new values while preserving the id.
 
 ### Secret headers as a list
 

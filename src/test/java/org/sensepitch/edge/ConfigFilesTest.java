@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -188,49 +187,5 @@ class ConfigFilesTest {
     assertThatThrownBy(() -> files.secret(SecretConfig.builder().file(missing).build()))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("Cannot read secret file: " + missing);
-  }
-
-  // secret digests, for the config id
-
-  static List<String> digests(SecretConfig... secrets) {
-    ConfigFiles files = new ConfigFiles();
-    for (SecretConfig secret : secrets) {
-      files.secret(secret);
-    }
-    return files.snapshot().secretDigests();
-  }
-
-  static SecretConfig value(String value) {
-    return SecretConfig.builder().value(value).build();
-  }
-
-  @Test
-  void digestsInTheOrderOfResolution() {
-    assertThat(digests()).isEmpty();
-    assertThat(digests(value("a"), value("b")))
-        .containsExactly(EdgeState.sha256Hex("a"), EdgeState.sha256Hex("b"));
-  }
-
-  @Test
-  void secretFileCountsLikeTheInlineValue() throws IOException {
-    Path token = Files.writeString(dir.resolve("token"), "top-secret\n");
-    SecretConfig file = SecretConfig.builder().file(token.toString()).build();
-    assertThat(digests(file)).isEqualTo(digests(value("top-secret")));
-    replace(token, "rotated");
-    assertThat(digests(file)).isEqualTo(digests(value("rotated")));
-  }
-
-  /// A component kept over a reload, e.g. a request log destination with a secret header, does
-  /// not read its secret again, its snapshot carries the digest; the snapshot holds no secret
-  @Test
-  void takenOverSnapshotCarriesItsDigests() {
-    files.secret(value("top-secret"));
-    ConfigFiles.Snapshot kept = files.snapshot();
-    assertThat(kept.secretDigests()).singleElement().asString().doesNotContain("top-secret");
-    ConfigFiles next = new ConfigFiles();
-    next.secret(value("other"));
-    next.recordAll(kept);
-    assertThat(next.snapshot().secretDigests())
-        .containsExactly(EdgeState.sha256Hex("other"), EdgeState.sha256Hex("top-secret"));
   }
 }

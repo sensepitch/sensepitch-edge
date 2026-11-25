@@ -216,10 +216,8 @@ public class Proxy implements ProxyContext {
     requestLogDestinations =
         RequestLoggerFactory.create(
             config.requestLog(), requestLogOutput, requestLogMetrics, eventLoopGroup, files);
-    // after the request log, its secret headers count for the config id
-    ConfigFiles.Snapshot snapshot = files.snapshot();
-    state = initial.withSecrets(snapshot.secretDigests());
-    referencedFiles = snapshot.files();
+    state = initial;
+    referencedFiles = files.snapshot().files();
     expose(requestLogMetrics);
     requestLogger =
         new DistributingRequestLogger(
@@ -262,12 +260,10 @@ public class Proxy implements ProxyContext {
         candidateFiles = files.snapshot().files();
         return ReloadResult.rejected("Configuration rejected: " + e.getMessage());
       }
-      ConfigFiles.Snapshot snapshot = files.snapshot();
-      next = next.withSecrets(snapshot.secretDigests());
       state = next;
       current.closeReplacedBy(next, eventLoopGroup);
       requestLog.apply();
-      referencedFiles = snapshot.files();
+      referencedFiles = files.snapshot().files();
       candidateFiles = Map.of();
       String diff = ConfigDiff.diff(toYaml(current.config()), toYaml(next.config()));
       if (diff.isEmpty()) {
@@ -337,9 +333,9 @@ public class Proxy implements ProxyContext {
     LOG.info("Configuration:\n" + toYaml(proxyConfig));
   }
 
-  /// The configuration as YAML, for the log and the [EdgeState#configId(ProxyConfig, java.util.List)]. The
-  /// value of a [SecretConfig] is masked, the config id adds the secrets separately. Without class
-  /// tags, so the dump, secrets aside, can be loaded again as configuration.
+  /// The configuration as YAML, for the log and [EdgeState#configId(ProxyConfig)]. The
+  /// dump masks each [SecretConfig] value and omits class tags so it can be loaded again
+  /// after restoring the secrets.
   static String toYaml(ProxyConfig proxyConfig) {
     DumperOptions options = new DumperOptions();
     options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);

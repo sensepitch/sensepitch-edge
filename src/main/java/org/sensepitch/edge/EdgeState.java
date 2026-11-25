@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -24,8 +23,8 @@ import java.util.concurrent.TimeUnit;
 /// @param upstreams the upstreams in use, handed to the next state to take over unchanged ones
 /// @param ipLookupFiles the database files of the IP lookup, it is taken over by the next state
 ///   only if they are unchanged, see [ConfigFiles.Snapshot#unchanged()]
-/// @param configId short hash of the configuration and its secrets, logged with each request,
-///   see [#configId(ProxyConfig, List)]
+/// @param configId short hash of the masked configuration, logged with each request,
+///   see [#configId(ProxyConfig)]
 /// @author Jens Wilke
 record EdgeState(
     ProxyConfig config,
@@ -42,25 +41,10 @@ record EdgeState(
   /// Length of the config id in hex characters, 64 bits
   static final int CONFIG_ID_LENGTH = 16;
 
-  /// Short hash of the configuration and its secrets: the start of the SHA-256 over its YAML form,
-  /// in which secret values are masked, followed by the digest of each secret. The same
-  /// configuration and secrets give the same id on every node with the same edge version, a
-  /// rotated secret gives a new id. Whoever knows the configuration can try candidate secrets
-  /// against the id, so the secrets should be random.
-  ///
-  /// @param secretDigests SHA-256 of each secret in the order of resolution, see
-  ///   [ConfigFiles.Snapshot#secretDigests()]
-  static String configId(ProxyConfig config, List<String> secretDigests) {
-    StringBuilder text = new StringBuilder(Proxy.toYaml(config));
-    for (String digest : secretDigests) {
-      text.append('\n').append(digest);
-    }
-    return sha256Hex(text.toString()).substring(0, CONFIG_ID_LENGTH);
-  }
-
-  /// SHA-256 of the UTF-8 text in hex, for the config id and the digests of the secrets
-  static String sha256Hex(String text) {
-    return HexFormat.of().formatHex(Digests.sha256(text.getBytes(StandardCharsets.UTF_8)));
+  /// First 64 bits of SHA-256 over the UTF-8 masked configuration YAML, for the request log
+  static String configId(ProxyConfig config) {
+    byte[] digest = Digests.sha256(Proxy.toYaml(config).getBytes(StandardCharsets.UTF_8));
+    return HexFormat.of().formatHex(digest).substring(0, CONFIG_ID_LENGTH);
   }
 
   /// Builds and validates a complete state. Nothing of the previous state is modified or closed,
@@ -116,25 +100,7 @@ record EdgeState(
         ipTraitsLookup,
         ipLookupFiles,
         upstreams,
-        configId(config, List.of()));
-  }
-
-  /// The same state with the secrets in the config id, they are known only when the request log
-  /// destinations are built as well
-  ///
-  /// @param secretDigests see [#configId(ProxyConfig, List)]
-  EdgeState withSecrets(List<String> secretDigests) {
-    return new EdgeState(
-        config,
-        siteSelector,
-        sniMapping,
-        certificates,
-        knownHosts,
-        unservicedHost,
-        ipTraitsLookup,
-        ipLookupFiles,
-        upstreams,
-        configId(config, secretDigests));
+        configId(config));
   }
 
   private static IpTraitsLookup buildIpTraitsLookup(
