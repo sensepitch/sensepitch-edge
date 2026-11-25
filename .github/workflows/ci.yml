@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -81,6 +82,85 @@ jobs:
         name: jacoco-csv
         path: target/site/jacoco/jacoco.csv
         retention-days: 1
+
+  # The container image ghcr.io/sensepitch/sensepitch-edge, the repository used by the Helm chart,
+  # for pushes to main and v* tags. It packages the JAR that the build job verified and uploaded,
+  # it never builds again (see doc/design/oci-image.md). The tag is the version in that JAR's
+  # manifest (pom.xml version, a snapshot made unique by commit time and id); main also gets the
+  # moving tag main. A v* tag marks a release commit: it must equal v<pom.xml version>, and the
+  # image also gets latest.
+  image:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    # Dockerfile and .dockerignore only
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+
+    - name: Download the verified JAR
+      uses: actions/download-artifact@v8
+      with:
+        name: sensepitch-edge-with-dependencies.jar
+        path: target
+
+    - name: Version of the built JAR
+      id: version
+      run: |
+        version=$(unzip -p target/sensepitch-edge-*-with-dependencies.jar META-INF/MANIFEST.MF \
+          | sed -n 's/^Implementation-Version: *//p' | tr -d '\r')
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Release tag matches the version
+      if: startsWith(github.ref, 'refs/tags/v')
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+          echo "::error::tag $GITHUB_REF_NAME does not match the pom.xml version $VERSION"
+          exit 1
+        fi
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to the GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Image metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/sensepitch/sensepitch-edge
+        tags: |
+          type=raw,value=${{ steps.version.outputs.version }}
+          type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+        flavor: |
+          latest=false
+
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        # persist the image layers between runs
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
   # Coverage badges for the README, kept on the branch "badges" so main gets no generated commits.
   # The only job with write access, and only for pushes to main.

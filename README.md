@@ -1043,8 +1043,8 @@ The image runs the shaded JAR on a Temurin 25 JRE as a non-root user, with `java
 `SIGTERM` reaches the graceful shutdown. Files the configuration references (TLS keys and
 certificate, the IPinfo database) must be mounted as well. The base-image and registry choices
 are in [doc/design/oci-image.md](doc/design/oci-image.md). The
-[image publishing workflow](.github/workflows/build-and-push-image.yml) runs on pushes to `main`
-and `v*` tags. Images are tagged with the version of the JAR inside, e.g.
+`image` job of the [CI workflow](.github/workflows/ci.yml) builds and pushes it on pushes to `main`
+and `v*` tags, from the JAR the CI build verified. Images are tagged with the version of the JAR inside, e.g.
 `0.1-20261112.153045-dbe0c1a`; `main` follows the newest build of `main`, `latest` the newest
 release.
 

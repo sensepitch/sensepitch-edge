@@ -75,17 +75,19 @@ class DockerfileTest {
     assertThat(patterns).containsExactly("*", "!target/sensepitch-edge-*-with-dependencies.jar");
   }
 
-  /// The CI workflow publishes the image used by the chart, tagged with the version of the built
-  /// JAR; no version is written into the workflow, `pom.xml` is the only place.
+  /// The CI workflow publishes the image used by the chart from the JAR its build job verified,
+  /// tagged with that JAR's version; no version is written into the workflow, `pom.xml` is the
+  /// only place.
   @Test
   void workflowPushesTheChartImage() throws IOException {
-    Path workflow = repoRoot().resolve(".github/workflows/build-and-push-image.yml");
+    Path workflow = repoRoot().resolve(".github/workflows/ci.yml");
     assertThat(workflow).as("active workflow").isRegularFile();
 
     List<String> lines = Files.readAllLines(workflow);
     assertThat(lines).anyMatch(line -> line.contains("docker/build-push-action@"));
     assertThat(lines).anyMatch(line -> line.trim().equals("push: true"));
     assertThat(lines).anyMatch(line -> line.contains("ghcr.io/sensepitch/sensepitch-edge"));
+    assertThat(lines).anyMatch(line -> line.contains("actions/download-artifact@"));
     assertThat(lines).anyMatch(line -> line.contains("Implementation-Version"));
     assertThat(lines).noneMatch(line -> line.contains("SNAPSHOT"));
   }

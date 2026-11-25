@@ -86,12 +86,12 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] 2. OCI image: Dockerfile with a Java 25 runtime, non-root, `java` as PID 1 so `SIGTERM`
   arrives (exec form); CI builds and pushes it
   - P1.
-  - BLOCKED: the staged image publishing workflow needs to be applied under
-    `.github/workflows/build-and-push-image.yml` before publishing can be verified.
+  - BLOCKED: publishing by the `image` job in `.github/workflows/ci.yml` can only be verified
+    by a run on GitHub.
   - Decided: Temurin JRE (glibc, same vendor as build), registry
     `ghcr.io/sensepitch/sensepitch-edge`, shaded jar kept; see
     [doc/design/oci-image.md](doc/design/oci-image.md).
-  - `DockerfileTest` validates the stages, Maven command, shaded JAR copy, non-root user, PID 1
+  - `DockerfileTest` validates the single JRE stage, shaded JAR copy, non-root user, PID 1
     entry point, exposed ports, build context and image publishing workflow. Confirm a GitHub
     Actions run publishes the chart's image to GHCR.
 - [ ] 3. manifests or a minimal Helm chart for a standalone edge: Deployment with probes and

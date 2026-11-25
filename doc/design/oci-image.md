@@ -2,7 +2,7 @@
 
 Covers the `Dockerfile` at the repository root, the `.dockerignore` next to it, the
 `DockerfileTest` that validates their structure, and the
-[image publishing workflow](../../.github/workflows/build-and-push-image.yml). The document records
+`image` job of the [CI workflow](../../.github/workflows/ci.yml). The document records
 why the image is built the way it is. `README.md` explains how to run the edge. The Helm chart of
 TODO.md item 3 deploys the image on Kubernetes.
 
@@ -25,9 +25,10 @@ constraints that bound the design:
 
 ## Overview
 
-One stage on `eclipse-temurin:25-jre`. The workflow runs the full gate `./mvnw clean verify`,
-reads the version from the manifest of the shaded JAR it built, and builds the image from the same
-checkout. The build context is that JAR alone (`.dockerignore`); the Dockerfile copies it under the
+One stage on `eclipse-temurin:25-jre`. The `build` job of CI runs the full gate
+`./mvnw clean verify` and uploads the shaded JAR as an artifact; for pushes to `main` and `v*`
+tags, the `image` job downloads that artifact, reads the version from its manifest and builds the
+image. The build context is that JAR alone (`.dockerignore`); the Dockerfile copies it under the
 stable name `/app/sensepitch-edge.jar`, switches to the non-root user and sets the exec-form entry
 point. The image contains only the JRE and the JAR, and is tagged with the JAR's version.
 
@@ -44,8 +45,8 @@ one the tests exercise.
 
 ### The image packages the verified JAR, it builds nothing
 
-The image contains the JAR that `./mvnw clean verify` built and tested in the same workflow run,
-copied from `target/`. A second build inside the image (the former multi-stage Dockerfile, see
+The image contains the JAR that `./mvnw clean verify` built and tested in the `build` job of the
+same CI run, handed to the `image` job as an artifact. Each push is verified once. A second build inside the image (the former multi-stage Dockerfile, see
 Alternatives considered) would run in another environment without tests, so the shipped JAR
 would not be the tested one. The rule is in `AGENTS.md` ("Build once, ship what was verified").
 Consequence: a local `docker build` needs a prior `./mvnw package`, and `target/` must hold a
@@ -94,7 +95,8 @@ image next to the code, is free for public repositories, and authenticates with 
 join continued lines, then checks the single JRE stage without a Maven build, the copy of the
 shaded JAR, the non-root user, the exec-form entry point and default command, and the exposed
 ports. It also checks that `.dockerignore` admits only the shaded JAR, and that the workflow
-publishes the chart's image tagged with the JAR's version and names no version itself. These
+publishes the chart's image from the downloaded artifact, tagged with the JAR's version, and names
+no version itself. These
 checks run without Docker or a network connection. The GitHub Actions runner builds the image
 and pushes it to the registry.
 
@@ -120,6 +122,12 @@ Maven repository in a BuildKit cache mount, `.git` kept in the build context for
 stamp), the JRE stage copied the JAR. It makes `docker build` work on a bare checkout, but the
 shipped JAR was a second build, in another environment than the tested one and with a different
 build time in its version. Dropped for packaging the verified JAR.
+
+### A separate image workflow
+
+Used until 2026-11-25: `build-and-push-image.yml` ran its own `./mvnw clean verify` on every push
+to `main`, next to the same run in `ci.yml`. Dropped for the `image` job in `ci.yml`, which
+verifies once and packages the artifact of that verification.
 
 ### Version from the git tag
 
