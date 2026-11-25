@@ -171,7 +171,8 @@ public class CombinedIpTraitsLookupTest {
 
   /// The configured GeoIP2 databases are read and recorded, so the configuration file watcher
   /// reloads when one is replaced. An address the databases do not know, or a network without a
-  /// country, leaves the trait unset.
+  /// country, leaves the trait unset. The close releases both readers, a lookup afterwards counts
+  /// an error per database.
   @Test
   public void geoIp2Databases() throws Exception {
     Path country = maxmindDatabase("GeoIP2-Country-Test.mmdb");
@@ -197,6 +198,12 @@ public class CombinedIpTraitsLookupTest {
     // only registered_country and traits in the database
     assertThat(lookup(lookup, "214.1.1.1").isoCountry()).isNull();
     assertThat(logs.messages()).noneMatch(m -> m.contains("lookup failed"));
+    lookup.close();
+    IpTraits closed = lookup(lookup, "81.2.69.142");
+    assertThat(closed.isoCountry()).isNull();
+    assertThat(closed.isAsnKnown()).isFalse();
+    assertThat(metrics.ipLookupErrorCounter.collect().getDataPoints().getFirst().getValue())
+        .isEqualTo(2);
   }
 
   /// An ASN-only GeoIP2 configuration opens only the ASN database, the country database is not

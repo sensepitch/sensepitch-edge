@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 /// Writes minimal IPv4 databases in the MaxMind DB format. For tests that need a database file
 /// without shipping one and without a writer library.
@@ -22,6 +23,9 @@ final class TinyMmdb {
 
   /// A record value above the node count points into the data section, at value - nodes - 16
   private static final int DATA_RECORD = NODE_COUNT + 16;
+
+  /// A record value equal to the node count means the network has no data
+  private static final int NO_DATA_RECORD = NODE_COUNT;
 
   private static final byte[] METADATA_MARKER = {
     (byte) 0xAB, (byte) 0xCD, (byte) 0xEF, 'M', 'a', 'x', 'M', 'i', 'n', 'd', '.', 'c', 'o', 'm'
@@ -42,6 +46,19 @@ final class TinyMmdb {
   /// Writes an IPinfo database that maps every IPv4 address to a flat `country_code`.
   static void writeCountry(Path file, String countryCode) throws IOException {
     write(file, ipInfoRecord(countryCode), "ipinfo");
+  }
+
+  /// Writes an IPinfo database that maps the lower half of the IPv4 space (`0.0.0.0/1`) to a flat
+  /// record of `fields`, in their iteration order. The upper half (`128.0.0.0/1`) has no data.
+  static void writeIpInfoLowerHalf(Path file, Map<String, String> fields) throws IOException {
+    ByteArrayOutputStream record = new ByteArrayOutputStream();
+    control(record, MAP, fields.size());
+    fields.forEach(
+        (key, value) -> {
+          string(record, key);
+          string(record, value);
+        });
+    write(file, DATA_RECORD, NO_DATA_RECORD, record.toByteArray(), "ipinfo");
   }
 
   /// Writes a GeoLite2-Country database that maps every IPv4 address to `country.iso_code`.
@@ -68,10 +85,16 @@ final class TinyMmdb {
   }
 
   private static void write(Path file, byte[] record, String databaseType) throws IOException {
+    write(file, DATA_RECORD, DATA_RECORD, record, databaseType);
+  }
+
+  /// Writes a database with one data record; `left` and `right` are the records of the only node,
+  /// for the addresses with the first bit 0 and 1, pointing to the data record or to no data
+  private static void write(Path file, int left, int right, byte[] record, String databaseType)
+      throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    // the only node: left and right record point to the data record
-    record24(out, DATA_RECORD);
-    record24(out, DATA_RECORD);
+    record24(out, left);
+    record24(out, right);
     out.write(new byte[16]);
     out.writeBytes(record);
     out.write(METADATA_MARKER);
