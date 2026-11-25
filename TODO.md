@@ -241,6 +241,10 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
 - [ ] Protection for slow requests. Have a better protection than a per request timeout, which allows more time for legit uploads and stricter timerouts for simple GET requests which should arrive in one go. Do a research design draft first
 
+## Config
+
+- [ ] Log field `sensepitch.config.id` should be config only without secrets.
+
 ## Evergreen / Cleanups
 
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without
