@@ -96,6 +96,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      IMAGE: ghcr.io/sensepitch/sensepitch-edge
 
     steps:
     # Dockerfile and .dockerignore only
@@ -142,7 +144,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ghcr.io/sensepitch/sensepitch-edge
+        images: ${{ env.IMAGE }}
         tags: |
           type=raw,value=${{ steps.version.outputs.version }}
           type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
@@ -151,6 +153,7 @@ jobs:
           latest=false
 
     - name: Build and push
+      id: push
       uses: docker/build-push-action@v6
       with:
         context: .
@@ -162,8 +165,21 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    # the coordinates to pull: every pushed tag and the immutable digest
+    - name: Image summary
+      env:
+        TAGS: ${{ steps.meta.outputs.tags }}
+        DIGEST: ${{ steps.push.outputs.digest }}
+      run: |
+        {
+          echo "### Image"
+          echo
+          echo "$TAGS" | sed '/^$/d; s/.*/- `&`/'
+          echo "- \`$IMAGE@$DIGEST\`"
+        } >> "$GITHUB_STEP_SUMMARY"
+
   # Coverage badges for the README, kept on the branch "badges" so main gets no generated commits.
-  # The only job with write access, and only for pushes to main.
+  # The only job with write access to the repository, and only for pushes to main.
   badges:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
