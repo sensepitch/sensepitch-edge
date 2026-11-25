@@ -103,7 +103,8 @@ one code path to test. The answer's `method` telemetry is `js` for all browsers.
 Not done: a Web Worker per core (the search takes about 20 ms on a laptop and well below 0.5 s on
 a phone, so the extra code and browser variation do not pay yet), WebAssembly (not measured), and
 hashing the constant challenge prefix once (the input fits one 64-byte block, there is nothing to
-save). Firefox, Safari and phones are not measured.
+save). Safari and phones are not measured. For long inputs WebCrypto overtakes JavaScript, see
+"Long input hashed with WebCrypto" under "Alternatives considered".
 
 ### Yield with a message, not a timer
 
@@ -225,6 +226,53 @@ The answer endpoint sets `human` even for a rejected answer, so use the protecti
 distinguish acceptance from rejection. These labels describe the protection path, not verified
 human identity.
 
+## Alternatives considered
+
+### Long input hashed with WebCrypto
+
+Open, not adopted yet. WebCrypto pays a fixed cost per call and then hashes in native code, so
+with a long input it overtakes JavaScript and comes close to a native solver on the same core.
+Measured 2026-11-25 on the development machine (AMD Ryzen AI 7 PRO 360, Linux) with an ad-hoc
+test page: one reused `Uint8Array` per length, the nonce written into its first 8 bytes per
+attempt, 2 s per cell, three runs, the WebCrypto digest checked against the JavaScript one for
+every length. Headless Chromium 153 (`chrome-headless-shell`) and headless Firefox 159; native
+with `openssl speed -seconds 1 -evp sha256 -bytes N`. MB/s of input, ranges over the runs:
+
+| Bytes | Chromium JS | Chromium WebCrypto, 1 / 64 in flight | Firefox JS | Firefox WebCrypto, 1 / 64 in flight | Native, one core |
+|---|---|---|---|---|---|
+| 16 | 65 | 5 / 6.5 | 55 to 57 | 2.3 / 7 to 8 | 182 |
+| 256 | 203 to 208 | 75 to 79 / 102 | 184 to 186 | 38 / 114 to 123 | 1,254 |
+| 1,024 | 233 to 245 | 282 to 287 / 360 to 365 | 213 to 217 | 126 to 139 / 358 to 453 | 2,001 |
+| 4,096 | 250 to 253 | 818 to 827 / 926 to 968 | 206 to 228 | 457 to 501 / 1,129 to 1,928 | 2,304 |
+| 16,384 | 242 to 277 | 1,471 to 1,583 / 1,587 to 1,612 | 220 to 227 | 1,032 to 1,178 / 3,116 to 3,220 | 2,386 |
+| 65,536 | 252 to 262 | 1,918 to 1,993 / 1,953 to 2,162 | 223 to 234 | 1,684 to 1,841 / 3,874 to 3,926 | 2,407 |
+
+- JavaScript stays at about 250 MB/s whatever the length, WebCrypto overtakes it at about 1 KB.
+- At 64 KB a native solver is only about 1.2 times as fast per core as Chromium and 1.3 times as
+  Firefox, against 3 to 4 times for the current 15-byte input.
+- Chromium ran the digests on one core also with 64 in flight (CPU time of the browser's process
+  tree, sampled from `/proc`). Firefox spreads digests in flight over several cores, beyond the
+  native rate of one core; an attacker uses all cores as well, so the comparison per core stands.
+
+What it would take:
+
+- **Nonce first.** SHA-256 hashes from left to right. With a constant challenge in front, a native
+  solver hashes it once and continues from the saved state, while WebCrypto cannot, which would
+  widen the gap instead. The input would be nonce, challenge and a filler the page derives from
+  the challenge, so nothing long is sent.
+- **A bit target.** At 64 KB a laptop core does about 30,000 attempts per second, so a phone's
+  0.5 s allows a few thousand. Steps of 16 attempts per hex digit are too coarse there; the
+  answer check would compare leading bits instead of a hex prefix.
+- **Server cost per answer:** one verification hashes the whole input, about 8 µs at 16 KB and
+  30 µs at 64 KB on the event loop, instead of well under 1 µs. Every bogus answer costs that, so
+  the cheap checks (format, age) have to come first.
+- **Browsers without WebCrypto** would fall back to JavaScript at about a tenth of the speed.
+- **Unmeasured:** phones (their SHA instructions may change the ratio against JavaScript) and
+  Safari.
+
+The gain is against custom native solvers only: a bot that runs a headless browser pays the same
+as a visitor either way, and GPUs keep their lead because the work still grows with the compute.
+
 ## Limitations
 
 - **Replay and precomputation:** a valid challenge/nonce pair can be submitted repeatedly while
@@ -242,7 +290,8 @@ human identity.
   budget does not guarantee that every browser will find a solution.
 - **Native code stays faster:** native SHA-256 with the CPU's SHA extensions is about 3 to 4 times
   as fast per core as the browser's JavaScript (more with a tuned loop), GPUs by orders of
-  magnitude. The work sets a cost, it does not prove a human. Difficulty steps are 16-fold.
+  magnitude. The work sets a cost, it does not prove a human. Difficulty steps are 16-fold. A
+  long input hashed with WebCrypto would narrow the gap per core, see "Alternatives considered".
 - **Time and fleet configuration:** challenge acceptance depends on server wall clocks and the
   receiving node's hash prefix. Admission acceptance depends on shared verification keys.
   Configuration changes can therefore affect a browser between challenge issue and submission.
