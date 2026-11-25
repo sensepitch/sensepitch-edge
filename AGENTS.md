@@ -239,6 +239,13 @@ delay.
   `doc/design/`. Prefer the smallest change that solves the stated problem, and decide which
   observable behaviour and compatibility must stay unchanged. Do not refactor for novelty: a
   refactoring names its concrete improvement and its tradeoff, see below.
+- **Check upstream before working around a library bug**, or before calling it unreported: look
+  up the newest release on Maven Central and diff the relevant sources against the version in
+  use, and search the project's issues and pull requests with
+  `gh search issues|prs --repo <owner>/<repo>` for the classes and methods involved. Prefer
+  upgrading to a workaround. Report a search that found nothing as "not found with <search>",
+  not as "no known report". Example: the Netty 4.2.20 shutdown race in
+  `doc/design/request-log.md` was fixed in 4.2.21 before the workaround in `6d9663f` was written.
 - **Every plan starts with a summary of incompatible setup changes**: config (YAML/env) keys that were renamed, removed or reinterpreted, changed defaults, new mandatory settings, and behaviour changes for existing setups. If there are none, say so explicitly.
 - **For refactoring tasks, the plan includes a summary of whether the change is an improvement**: what gets better (clarity, coupling, performance, extensibility), what gets worse or stays neutral, and an overall verdict.
 - **Run `./mvnw spotless:check` BEFORE making any edits** to establish the formatting baseline. This ensures your diff only contains your changes, not unrelated reformatting.
