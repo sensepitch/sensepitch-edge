@@ -10,14 +10,19 @@
 # The base is glibc-based Ubuntu, which is required by the netty-tcnative
 # native libraries bundled in the shaded JAR (they ship for glibc Linux, macOS
 # and Windows, not musl), see doc/design/oci-image.md.
-FROM eclipse-temurin:25-jre
+#
+# Pinned by digest, so the same JAR always gives the same image; Dependabot
+# proposes the newest 25-jre digest weekly, and a change here is a new version.
+FROM eclipse-temurin:25-jre@sha256:4ed132f6832e9804b123e89a849a7b4502756ae64a4ee08ebab939d9d5d0a9fa
 WORKDIR /app
 
 # Non-root, matching the Helm chart's runAsUser/runAsGroup. The numeric IDs need
 # no /etc/passwd entry and work with readOnlyRootFilesystem.
 USER 65532:65532
 
-COPY target/sensepitch-edge-*-with-dependencies.jar /app/sensepitch-edge.jar
+# A fixed mode: the image layer records it, so the permissions of the
+# downloaded file would otherwise change the digest. Owned by root, read-only.
+COPY --chmod=0444 target/sensepitch-edge-*-with-dependencies.jar /app/sensepitch-edge.jar
 
 # Exec form, no shell: java is PID 1 and receives SIGTERM directly, so the
 # graceful shutdown in README.md runs. CMD is the mounted config.yml, matching

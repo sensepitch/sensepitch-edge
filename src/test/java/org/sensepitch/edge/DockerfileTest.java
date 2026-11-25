@@ -15,16 +15,20 @@ import org.junit.jupiter.api.Test;
 /// executed here, only its structure is checked.
 class DockerfileTest {
 
-  /// One stage on the pinned Temurin 25 JRE that packages the shaded JAR the build verified,
-  /// nothing is compiled in the image build.
+  /// One stage on the Temurin 25 JRE, pinned by digest so the image is reproducible, that
+  /// packages the shaded JAR the build verified, nothing is compiled in the image build.
   @Test
   void packagesTheVerifiedShadedJarOnTemurin25() throws IOException {
     List<String> instructions = instructions();
 
     assertThat(instructions.stream().filter(line -> line.startsWith("FROM ")))
-        .containsExactly("FROM eclipse-temurin:25-jre");
+        .singleElement()
+        .asString()
+        .matches("FROM eclipse-temurin:25-jre@sha256:[0-9a-f]{64}");
     assertThat(instructions)
-        .contains("COPY target/sensepitch-edge-*-with-dependencies.jar /app/sensepitch-edge.jar");
+        .contains(
+            "COPY --chmod=0444 target/sensepitch-edge-*-with-dependencies.jar"
+                + " /app/sensepitch-edge.jar");
     assertThat(instructions).noneMatch(line -> line.contains("mvn"));
   }
 
@@ -77,7 +81,7 @@ class DockerfileTest {
 
   /// The CI workflow publishes the image used by the chart from the JAR its build job verified,
   /// tagged with that JAR's version; no version is written into the workflow, `pom.xml` is the
-  /// only place.
+  /// only place. The image is reproducible: timestamps from the build commit, no provenance.
   @Test
   void workflowPushesTheChartImage() throws IOException {
     Path workflow = repoRoot().resolve(".github/workflows/ci.yml");
@@ -85,7 +89,10 @@ class DockerfileTest {
 
     List<String> lines = Files.readAllLines(workflow);
     assertThat(lines).anyMatch(line -> line.contains("docker/build-push-action@"));
-    assertThat(lines).anyMatch(line -> line.trim().equals("push: true"));
+    assertThat(lines)
+        .anyMatch(line -> line.trim().equals("outputs: type=registry,rewrite-timestamp=true"));
+    assertThat(lines).anyMatch(line -> line.trim().startsWith("SOURCE_DATE_EPOCH: "));
+    assertThat(lines).anyMatch(line -> line.trim().equals("provenance: false"));
     assertThat(lines).anyMatch(line -> line.contains("ghcr.io/sensepitch/sensepitch-edge"));
     assertThat(lines).anyMatch(line -> line.contains("actions/download-artifact@"));
     assertThat(lines).anyMatch(line -> line.contains("Implementation-Version"));

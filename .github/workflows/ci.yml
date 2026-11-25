@@ -19,14 +19,19 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      source-date-epoch: ${{ steps.build-commit.outputs.source-date-epoch }}
 
     strategy:
       matrix:
         java-version: [25]
 
     steps:
+    # the whole history, for the newest commit changing a build input below
     - name: Checkout code
       uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
 
     - name: Set up JDK ${{ matrix.java-version }}
       uses: actions/setup-java@v6
@@ -40,8 +45,39 @@ jobs:
       with:
         node-version: '22'
 
+    # The commit that names the version: the newest one changing an input of the JAR or the
+    # image, see doc/design/oci-image.md. Every path counts except the excluded ones, which
+    # change neither, so a new path counts by default. ci.yml counts: it sets the JDK and builds
+    # the image. Needs the whole history, in a shallow clone the oldest commit adds every file.
+    - name: Newest commit changing a build input
+      id: build-ref
+      run: |
+        ref=$(git log -1 --format=%H -- . \
+          ':(exclude,glob)*.md' \
+          ':(exclude)doc' \
+          ':(exclude)plans' \
+          ':(exclude)charts' \
+          ':(exclude)performance-test' \
+          ':(exclude)src/test' \
+          ':(exclude).github/dependabot.yml' \
+          ':(exclude).github/scripts' \
+          ':(exclude).github/workflows/flaky-tests.yml' \
+          ':(exclude).github/workflows/nightly.yml' \
+          ':(exclude).gitignore' \
+          ':(exclude)LICENSE')
+        test -n "$ref"
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
     - name: Build, test and check
-      run: ./mvnw clean verify
+      run: ./mvnw clean verify -Dedge.build.ref=${{ steps.build-ref.outputs.ref }}
+
+    # the commit time of the version, the timestamp of the image, as of the JAR entries
+    - name: Build commit time
+      id: build-commit
+      run: |
+        epoch=$(sed -n 's/^project.build.outputTimestamp=//p' target/edge-build-commit.properties)
+        test -n "$epoch"
+        echo "source-date-epoch=$epoch" >> "$GITHUB_OUTPUT"
 
     # line and branch coverage of unit and integration tests, from the JaCoCo report of verify
     - name: Coverage summary
@@ -88,7 +124,8 @@ jobs:
   # it never builds again (see doc/design/oci-image.md). The tag is the version in that JAR's
   # manifest (pom.xml version, a snapshot made unique by commit time and id); main also gets the
   # moving tag main. A v* tag marks a release commit: it must equal v<pom.xml version>, and the
-  # image also gets latest.
+  # image also gets latest. The image is reproducible: a commit that changes no build input (e.g.
+  # documentation only) has the version of the previous one and pushes the same digest.
   image:
     needs: build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
@@ -140,6 +177,17 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    # empty if this version was not pushed before
+    - name: Digest pushed before for this version
+      id: previous
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # the plain template {{ .Manifest.Digest }} prints the whole text block, not the digest
+        digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" \
+          --format '{{ json .Manifest }}' 2>/dev/null | jq -r .digest || true)
+        echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
     - name: Image metadata
       id: meta
       uses: docker/metadata-action@v6
@@ -152,18 +200,35 @@ jobs:
         flavor: |
           latest=false
 
+    # Reproducible: the image and file timestamps are the build commit time, the labels name only
+    # the repository and the version, no provenance attestation (it records the run).
     - name: Build and push
       id: push
       uses: docker/build-push-action@v7
+      env:
+        SOURCE_DATE_EPOCH: ${{ needs.build.outputs.source-date-epoch }}
       with:
         context: .
         file: ./Dockerfile
-        push: true
+        outputs: type=registry,rewrite-timestamp=true
+        provenance: false
         tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        # persist the image layers between runs
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        labels: |
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          org.opencontainers.image.version=${{ steps.version.outputs.version }}
+
+    # A version names one image: a different digest means the build is not reproducible, e.g. a
+    # new JDK patch in the build job compiled differently. The tag already points to the new one.
+    - name: Same digest as before
+      if: steps.previous.outputs.digest != ''
+      env:
+        PREVIOUS: ${{ steps.previous.outputs.digest }}
+        DIGEST: ${{ steps.push.outputs.digest }}
+      run: |
+        if [ "$PREVIOUS" != "$DIGEST" ]; then
+          echo "::error::$IMAGE was $PREVIOUS for this version, the rebuild is $DIGEST"
+          exit 1
+        fi
 
     # the coordinates to pull: every pushed tag and the immutable digest
     - name: Image summary

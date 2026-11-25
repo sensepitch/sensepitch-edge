@@ -25,7 +25,7 @@ constraints that bound the design:
 
 ## Overview
 
-One stage on `eclipse-temurin:25-jre`. The `build` job of CI runs the full gate
+One stage on `eclipse-temurin:25-jre`, pinned by digest. The `build` job of CI runs the full gate
 `./mvnw clean verify` and uploads the shaded JAR as an artifact; for pushes to `main` and `v*`
 tags, the `image` job downloads that artifact, reads the version from its manifest and builds the
 image. The build context is that JAR alone (`.dockerignore`); the Dockerfile copies it under the
@@ -52,14 +52,63 @@ would not be the tested one. The rule is in `AGENTS.md` ("Build once, ship what 
 Consequence: a local `docker build` needs a prior `./mvnw package`, and `target/` must hold a
 single shaded JAR (`./mvnw clean package`), otherwise the `COPY` fails.
 
-### The version comes from pom.xml and the commit
+### The version comes from pom.xml and the build commit
 
-`pom.xml` is the only place that names the version. A snapshot is made unique by the commit:
-`0.1-SNAPSHOT` at commit `dbe0c1a` committed 2026-11-12 15:30:45 UTC becomes
-`0.1-20261112.153045-dbe0c1a` (git-commit-id and build-helper plugins, `edge.build.version`).
-Commit time instead of build time: every build of the same commit gets the same version. The
-version is written to the JAR manifest (`Implementation-Version`, also the OTLP `service.version`)
-and the workflow reads it from there, so the image tag is the version the running edge reports.
+`pom.xml` is the only place that names the version. A snapshot is made unique by the build
+commit, the property `edge.build.ref`, `HEAD` unless CI passes another: `0.1-SNAPSHOT` with build
+commit `dbe0c1a` committed 2026-11-12 15:30:45 UTC becomes `0.1-20261112.153045-dbe0c1a`
+(`edge-build-commit` executions of the exec and properties plugins, then the build-helper plugin,
+`edge.build.version`). Commit time instead of build time: every build of the same commit gets the
+same version. The version is written to the JAR manifest (`Implementation-Version`, also the OTLP
+`service.version`) and the workflow reads it from there, so the image tag is the version the
+running edge reports.
+
+### A commit that changes no build input keeps the version
+
+Until 2026-11-25 the version named `HEAD`, so a commit that changed only documentation gave a new
+version, a different manifest and a new image. The `build` job now finds the build commit with
+`git log -1 -- . ':(exclude)…'` and passes it as `-Dedge.build.ref`. All paths count except a list
+of those that change neither JAR nor image: Markdown in the root, `doc/`, `plans/`, `charts/`,
+`performance-test/`, `src/test/`, the other workflows, Dependabot. An exclude list and not a list
+of inputs, because the two mistakes differ: a new input missing from an include list would change the JAR under the
+old version; a new non-input missing from the exclude list only gives a needless new version.
+`ci.yml` counts as an input, it sets the JDK and builds the image. Tests are not an input: a
+commit that only adds tests verifies the same JAR again.
+
+The list is in the workflow, not in `pom.xml`: which commit names a published version is a
+decision of the publishing build. A local build keeps the simple rule, the version of `HEAD`, and
+needs no history. CI checks out the full history (`fetch-depth: 0`): in a shallow clone the
+oldest commit seems to add every file, so the build commit would be `HEAD` again.
+
+The exec plugin calls the `git` binary for the commit time in two formats, the version's and the
+epoch seconds of `project.build.outputTimestamp`; the former git-commit-id plugin gives one.
+
+### The JAR and the image are reproducible
+
+The same build commit gives a byte-identical JAR and the same image digest, so pushing it again
+publishes no new image.
+
+- JAR: `project.build.outputTimestamp` is the build commit time, jar and shade plugins write it
+  as the time of every entry; the manifest has `Build-Jdk-Spec` (25), not the JDK patch.
+  Checked 2026-11-25 with Temurin 25.0.5 and Maven 3.9.11: two `./mvnw clean package` of the same
+  commit gave the same SHA-256 (before the change they differed).
+- Image: the base is pinned by digest, Dependabot proposes the new digest weekly and the change
+  of the `Dockerfile` is a new version. The `image` job sets `SOURCE_DATE_EPOCH` to the build
+  commit time (handed over from the `build` job, read from the file the exec plugin wrote) and
+  exports with `rewrite-timestamp=true`, so the config's `created` and the file times in the
+  layers are that time. The layer also records the JAR's mode, which is the mode of the
+  downloaded file unless `COPY --chmod=0444` fixes it.
+  Checked 2026-11-25 with buildx 0.30.1 and the docker-container driver as in CI: four builds
+  from the same JAR, each on a new builder, with different file times and modes 644, 600 and
+  664, gave the same manifest digest, as OCI export and pushed to a local `registry:2`. Without
+  `--chmod`, mode 664 gave another digest.
+- Labels are the repository (links the package on ghcr.io) and the version only; the labels
+  `docker/metadata-action` generates carry the run's time and commit. No provenance attestation:
+  it records the workflow run, so its image index would be new on every run.
+
+Before the push the job reads the digest the version's tag had; a different digest after the push
+fails the job. This catches what the pins do not cover, e.g. a new JDK patch of `setup-java` that
+compiles differently; by then the tag already points to the new image.
 
 Image tags:
 
@@ -129,6 +178,18 @@ Used until 2026-11-25: `build-and-push-image.yml` ran its own `./mvnw clean veri
 to `main`, next to the same run in `ci.yml`. Dropped for the `image` job in `ci.yml`, which
 verifies once and packages the artifact of that verification.
 
+### Skip the image job for documentation-only pushes
+
+`paths-ignore` on the push trigger would avoid the new image of a documentation commit with less
+code. Rejected: the version would still name `HEAD`, a later build of the same JAR would differ
+in its manifest, and a push mixing code and documentation commits is not ignored anyway.
+Reproducibility answers the actual question, whether this image is the one already published.
+
+### Skip the push when the version's tag exists
+
+Keeps provenance, but the shipped image would be the first build, never checked against later
+ones. A reproducible rebuild compared to the published digest verifies it.
+
 ### Version from the git tag
 
 The `v*` tag name gave the image's semver tags (`docker/metadata-action` `type=semver`) while the
@@ -139,18 +200,20 @@ source and a check of the tag.
 
 ## Limitations
 
-- `eclipse-temurin:25-jre` is a floating tag: it tracks the newest 25.x patch. Strict reproducibility needs a digest pin; the digest cannot be determined without
-  network access and is left as a planned improvement.
+- The JDK of the `build` job (`setup-java`, newest Temurin 25) is not pinned; a JAR is
+  reproducible as long as that JDK compiles the same. The digest check above reports a change.
+- No provenance attestation is published, see above.
+- A local build has the version of `HEAD`, so after a documentation-only commit it differs from
+  the CI build of that commit; `-Dedge.build.ref=<commit>` gives the CI version. A working tree
+  with uncommitted changes reports the version of its last commit.
 - The structural `DockerfileTest` in the Maven gate checks the image files. The publishing
   workflow builds the image. The container smoke test runs separately.
 - The image is built for the runner architecture (`linux/amd64`). A multi-architecture manifest
   is left for when an arm64 fleet is needed.
-- A build of a working tree with uncommitted changes reports the version of its last commit.
 - `docker build` needs a prior `./mvnw package`, see above.
 
 ## Planned improvements
 
-- Pin the base image by digest, refreshed by a scheduled job.
 - Build a multi-architecture manifest (linux/amd64, linux/arm64).
 - Add an image smoke test in CI: run the image with a test config and assert `/healthz` and
   `/readyz` answer 200 and `SIGTERM` exits.

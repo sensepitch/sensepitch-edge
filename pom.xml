@@ -43,6 +43,9 @@
          than our code (allocation, timing), are load sensitive and add no coverage. They run
          nightly and for performance work: -Dexcessive -->
     <test.excludedGroups>excessive</test.excludedGroups>
+    <!-- the commit that names the version, see edge-build-commit below; CI passes the newest
+         commit that changes a build input -->
+    <edge.build.ref>HEAD</edge.build.ref>
   </properties>
 
   <dependencies>
@@ -270,35 +273,64 @@
       </plugins>
     </pluginManagement>
     <plugins>
-      <!-- Commit time (UTC) and abbreviated commit id for edge.build.version below. -->
+      <!-- The build commit edge.build.ref, HEAD by default. CI passes the newest commit that
+           changes an input of the JAR or the image, so a documentation-only commit keeps the
+           version and produces the same JAR and image, see doc/design/oci-image.md.
+           Writes edge.build.commit (UTC commit time and id, e.g. 20261112.153045-dbe0c1a) and
+           project.build.outputTimestamp (commit time, the timestamp of every JAR entry, which
+           makes the JAR reproducible) to a file, read by the properties plugin below. -->
       <plugin>
-        <groupId>io.github.git-commit-id</groupId>
-        <artifactId>git-commit-id-maven-plugin</artifactId>
-        <version>10.0.1</version>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.7.0</version>
         <executions>
           <execution>
+            <id>edge-build-commit</id>
             <phase>initialize</phase>
             <goals>
-              <goal>revision</goal>
+              <goal>exec</goal>
             </goals>
+            <configuration>
+              <executable>git</executable>
+              <environmentVariables>
+                <TZ>UTC</TZ>
+              </environmentVariables>
+              <outputFile>${project.build.directory}/edge-build-commit.properties</outputFile>
+              <arguments>
+                <argument>log</argument>
+                <argument>-1</argument>
+                <argument>--abbrev=7</argument>
+                <argument>--date=format-local:%Y%m%d.%H%M%S</argument>
+                <argument>--format=edge.build.commit=%cd-%h%nproject.build.outputTimestamp=%ct</argument>
+                <argument>${edge.build.ref}</argument>
+              </arguments>
+            </configuration>
           </execution>
         </executions>
-        <configuration>
-          <abbrevLength>7</abbrevLength>
-          <dateFormat>yyyyMMdd.HHmmss</dateFormat>
-          <dateFormatTimeZone>UTC</dateFormatTimeZone>
-          <generateGitPropertiesFile>false</generateGitPropertiesFile>
-          <includeOnlyProperties>
-            <includeOnlyProperty>^git.commit.id.abbrev$</includeOnlyProperty>
-            <includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
-          </includeOnlyProperties>
-        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>properties-maven-plugin</artifactId>
+        <version>1.4.0</version>
+        <executions>
+          <execution>
+            <id>edge-build-commit</id>
+            <phase>initialize</phase>
+            <goals>
+              <goal>read-project-properties</goal>
+            </goals>
+            <configuration>
+              <files>
+                <file>${project.build.directory}/edge-build-commit.properties</file>
+              </files>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <!-- The version written to the manifest of the fat JAR, the one version of every artifact
-           (JAR, image tag), see doc/design/oci-image.md: SNAPSHOT replaced by commit time and
-           commit, e.g. 0.1-20261112.153045-dbe0c1a. It depends on the commit only, so every
-           build of a commit gets the same version. A release version stays as is. Must follow
-           the git plugin, both run in initialize. -->
+           (JAR, image tag), see doc/design/oci-image.md: SNAPSHOT replaced by the build commit,
+           e.g. 0.1-20261112.153045-dbe0c1a. A release version stays as is. Must follow the two
+           plugins above, all run in initialize. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
@@ -314,7 +346,7 @@
               <name>edge.build.version</name>
               <value>${project.version}</value>
               <regex>SNAPSHOT$</regex>
-              <replacement>${git.commit.time}-${git.commit.id.abbrev}</replacement>
+              <replacement>${edge.build.commit}</replacement>
               <failIfNoMatch>false</failIfNoMatch>
             </configuration>
           </execution>
