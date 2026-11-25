@@ -157,9 +157,9 @@ thread signals its own end:
 - `ThreadBatcher.close()` is the end marker: it refuses further records, reserves the last batch
   and hands it to the sender.
 - An event loop writes it when it terminates: Netty removes its `FastThreadLocal`s after the loop
-  ran its last tasks, and `onRemoval` closes the batcher. At shutdown that comes after the proxy
-  closed the remaining connections and their aborted requests were logged, see "The proxy closes
-  the remaining connections, not the event loops" below.
+  ran its last tasks, and `onRemoval` closes the batcher. That comes after the loop closed its
+  channels and logged their aborted requests, so the order is right by construction, see "The
+  event loops close the remaining connections" below.
 - On reload, `BatchingRequestLogger.endThread()` runs as a task on each event loop after the
   destination array was switched, so it runs after the last `logRequest` of that loop into the old
   destination.
@@ -193,8 +193,8 @@ configuration leaves the active ones untouched, then switches (`apply`).
 
 The shutdown in `Proxy` follows the data: keep accepting for `shutdownAcceptGraceMillis` while
 readiness is already false, stop the listener, let the requests in flight complete (up to
-`shutdownTimeoutMillis − requestLog.drainTimeoutMillis` from the start), close the remaining
-connections, which logs their requests as aborted (499), shut down the event loops, which writes
+`shutdownTimeoutMillis − requestLog.drainTimeoutMillis` from the start), shut down the event
+loops, which closes the remaining connections, logs their requests as aborted (499) and writes
 the end markers, then wait for the destinations to send everything until `shutdownTimeoutMillis`.
 The request log gets its own budget, by default a third of the total, because the records of the
 aborted requests only exist after the connections are gone. What is left at a deadline is logged
@@ -211,28 +211,29 @@ external load balancer as well. Traefik has the same option for its entry points
 name avoids "drain", which here already means the request log (`drainTimeoutMillis`) and the
 closing of connections.
 
-### The proxy closes the remaining connections, not the event loops
+### The event loops close the remaining connections
 
-After the connection drain timed out, `Proxy` closes the remaining ingress connections itself,
-through their pipelines (`TrackIngressConnectionsHandler.close()`), waits for that within the
-shutdown deadline, and only then shuts down the event loops. Leaving the close to the loops loses
-records: in Netty 4.2.20 `SingleThreadIoEventLoop.run()` checks `isShuttingDown()` before it
-closes all channels (`IoHandler.prepareToDestroy()`) and calls `confirmShutdown()` at the end of
-the same iteration. A shutdown request that arrives in between, e.g. while the loop runs the
-`SHUTDOWN` event of the drain, ends the loop with its channels open; `cleanup()` closes only the
-selector. The connections of that loop never fire `channelInactive`, their requests are not
-logged, and the client sockets stay open. Found from the source on 2026-11-25, after
+The connections the drain left open are closed by their event loops when the group shuts down,
+which logs their requests as aborted before the loops write their end markers. This needs Netty
+4.2.21 or later. In 4.2.20 `SingleThreadIoEventLoop.run()` checked `isShuttingDown()` before it
+closed all channels (`IoHandler.prepareToDestroy()`) and called `confirmShutdown()` at the end of
+the same iteration. A shutdown request that arrived in between, e.g. while the loop ran the
+`SHUTDOWN` event of the drain, ended the loop with its channels open; their requests were never
+logged and the client sockets stayed open. Netty fixed it in
+[netty#18035](https://github.com/netty/netty/pull/18035) (issue
+[#17897](https://github.com/netty/netty/issues/17897)), released in 4.2.21.Final.
+
+Found on 2026-11-25 from the 4.2.20 source, after
 `ProxyShutdownIT.acceptGraceKeepsServingThenClosesWithinTheBudget` lost the 499 record in about
-one of 25 runs of the nightly flaky test hunt; reproduced locally once in 20 runs pinned to two
-CPUs (`taskset -c 0-1`), never with 16. Not reported to Netty yet. Netty 4.1's `NioEventLoop`
-closed the channels and confirmed the shutdown under the same check (from memory, not
-re-checked).
+one of 25 runs of the nightly flaky test hunt. Reproduced locally once in 20 runs pinned to two
+CPUs (`taskset -c 0-1`), never with all 16. With 4.2.21 and without a workaround, 40 runs pinned
+to two CPUs passed. Commit `6d9663f` worked around it by closing the remaining connections in
+`Proxy` before the loop shutdown; it was dropped with the upgrade, see "Alternatives considered".
 
-A close through the pipeline sends a TLS `close_notify` and marks the close as ours, so the
-"unexpected close during the exchange" warning of `DownstreamHandler` is no longer logged for
-these connections at shutdown. Upstream connections are still closed by their loops: their
-requests are logged by the ingress side, a missed close only leaves a socket open until the
-process exits.
+The 4.2.21 fix calls `prepareToDestroy()` a second time on a regular shutdown, which corrupts
+memory with io_uring ([netty#18483](https://github.com/netty/netty/issues/18483), fixed in
+4.2.22 by [netty#18487](https://github.com/netty/netty/pull/18487)). The proxy uses NIO only, where
+the second call closes nothing.
 
 ### Gzip on one dedicated compression thread
 
@@ -393,6 +394,15 @@ no queue limit that matches the sender's requests in flight. A dedicated bounded
 compression a predictable CPU budget and a shutdown point of its own.
 zstd would compress better and faster, but it is not supported by all OTLP receivers and would
 need a native library; gzip is accepted by VictoriaLogs and the OpenTelemetry collector.
+
+### Closing the remaining connections in `Proxy`
+
+Commit `6d9663f` closed the connections the drain left open through their pipelines
+(`ChannelGroup.close()`) and waited for that before it shut down the event loops, to avoid the
+Netty 4.2.20 race described in "The event loops close the remaining connections". Dropped when
+Netty 4.2.21 fixed the race: the explicit close duplicated what the loops do, and it changed the
+shutdown slightly (a TLS `close_notify`, no "unexpected close" warning, a wait taken from the
+request log budget).
 
 ### Batching the stdout path the same way
 
