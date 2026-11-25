@@ -8,6 +8,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -34,7 +35,9 @@ import java.util.function.Consumer;
 /// - When the queue is full, the record is dropped and counted in the metric
 ///   `sensepitch_request_log_dropped_total`. Losing access-log lines is preferable to stalling
 ///   traffic. The first drop is also reported as an error.
-/// - [#close()] writes out everything queued before and stops the thread.
+/// - [#close()] writes out everything queued before and stops the thread. If the output is
+///   blocked, it gives up after [#DEFAULT_CLOSE_TIMEOUT] and reports that records are pending, so a stuck
+///   standard out cannot stop the shutdown.
 ///
 /// @author Jens Wilke
 public class AsyncRequestLogWriter
@@ -55,13 +58,16 @@ public class AsyncRequestLogWriter
   /// Marks the end of the queue, compared by identity
   private static final byte[] END = new byte[0];
 
-  private static final long CLOSE_TIMEOUT_MILLIS = 5_000;
+  /// How long [#close()] waits for room in the queue for the end marker, and then again for the
+  /// writer thread to finish
+  static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
   private final String destination;
   private final BlockingQueue<byte[]> queue;
   private final OutputStream output;
   private final RequestLogMetrics metrics;
   private final CounterDataPoint dropped;
+  private final Duration closeTimeout;
   private final Thread thread;
   private final AtomicBoolean closed = new AtomicBoolean();
   private final AtomicBoolean dropReported = new AtomicBoolean();
@@ -79,7 +85,23 @@ public class AsyncRequestLogWriter
 
   public AsyncRequestLogWriter(
       String destination, OutputStream output, int capacity, RequestLogMetrics metrics) {
+    this(destination, output, capacity, metrics, DEFAULT_CLOSE_TIMEOUT);
+  }
+
+  /// Writer with its own metrics, named [#STDOUT], and the given close timeout. Seam for tests,
+  /// which close a blocked writer with a zero timeout instead of waiting [#DEFAULT_CLOSE_TIMEOUT].
+  AsyncRequestLogWriter(OutputStream output, int capacity, Duration closeTimeout) {
+    this(STDOUT, output, capacity, new RequestLogMetrics(), closeTimeout);
+  }
+
+  private AsyncRequestLogWriter(
+      String destination,
+      OutputStream output,
+      int capacity,
+      RequestLogMetrics metrics,
+      Duration closeTimeout) {
     this.destination = destination;
+    this.closeTimeout = closeTimeout;
     this.output = new BufferedOutputStream(output, BUFFER_SIZE);
     this.queue = new ArrayBlockingQueue<>(capacity);
     this.metrics = metrics;
@@ -136,19 +158,29 @@ public class AsyncRequestLogWriter
     }
   }
 
-  /// Writes out the records queued so far and stops the writer thread. Waits at most a few
-  /// seconds, so a blocked standard out cannot prevent the shutdown. Can be called more than once.
+  /// Writes out the records queued so far and stops the writer thread. Waits at most twice the
+  /// close timeout, so a blocked standard out cannot prevent the shutdown. Can be called more than
+  /// once.
+  ///
+  /// - No room for the end marker: the queued records are given up. The writer thread is
+  ///   interrupted, so it ends once the output unblocks instead of waiting for records forever.
+  /// - The writer thread does not finish in time: it writes the records queued before the end
+  ///   marker and ends, if the output ever unblocks.
   @Override
   public void close() {
     if (!closed.compareAndSet(false, true)) {
       return;
     }
     try {
-      if (!queue.offer(END, CLOSE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+      if (!queue.offer(END, closeTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
         LOG.error("Request log writer is blocked, closing without writing out pending records");
+        thread.interrupt();
         return;
       }
-      thread.join(CLOSE_TIMEOUT_MILLIS);
+      // the Duration variant, a zero timeout does not wait, unlike join(0)
+      if (!thread.join(closeTimeout)) {
+        LOG.error("Request log writer is blocked, closing before pending records are written");
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }

@@ -9,8 +9,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -129,6 +131,80 @@ public class AsyncRequestLogWriterTest {
     }
     long written = sink.toString(StandardCharsets.UTF_8).lines().count();
     assertThat(written + writer.droppedCount()).isEqualTo(records);
+  }
+
+  /// No room for the end marker: close gives up the queued record at once and reports it. The
+  /// writer thread ends after the output unblocks: its second flush comes from the interrupt.
+  @Test
+  public void closeWithFullQueueAndBlockedOutputReturnsAndGivesUpQueuedRecords() throws Exception {
+    FlushBlockingOutput output = new FlushBlockingOutput();
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(output, 1, Duration.ZERO);
+    writer.writeLine("taken");
+    output.awaitFlushes(1);
+    writer.writeLine("queued");
+    writer.close();
+    assertThat(logs.messages(AsyncRequestLogWriter.class))
+        .singleElement()
+        .asString()
+        .contains("closing without writing out pending records");
+    output.release.release(2);
+    output.awaitFlushes(2);
+    assertThat(output.written()).isEqualTo("taken\n");
+  }
+
+  /// Room for the end marker but the writer does not finish in time: close returns and reports
+  /// it. Once the output unblocks, the writer writes the records queued before close and ends.
+  @Test
+  public void closeWithBlockedOutputReturnsAndPendingRecordsFollowLater() throws Exception {
+    FlushBlockingOutput output = new FlushBlockingOutput();
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(output, 4, Duration.ZERO);
+    writer.writeLine("taken");
+    output.awaitFlushes(1);
+    writer.writeLine("queued");
+    writer.close();
+    assertThat(logs.messages(AsyncRequestLogWriter.class))
+        .singleElement()
+        .asString()
+        .contains("closing before pending records are written");
+    output.release.release(2);
+    output.awaitFlushes(2);
+    assertThat(output.written()).isEqualTo("taken\nqueued\n");
+  }
+
+  /// Output whose flush blocks until the test releases it, ignoring interrupts like a blocked
+  /// write to standard out. Each flush is signalled before it blocks.
+  static class FlushBlockingOutput extends OutputStream {
+
+    final Semaphore release = new Semaphore(0);
+    private final Semaphore flushes = new Semaphore(0);
+    private final ByteArrayOutputStream sink = new ByteArrayOutputStream();
+
+    @Override
+    public synchronized void write(int b) {
+      sink.write(b);
+    }
+
+    @Override
+    public synchronized void write(byte[] b, int off, int len) {
+      sink.write(b, off, len);
+    }
+
+    @Override
+    public void flush() {
+      flushes.release();
+      release.acquireUninterruptibly();
+    }
+
+    void awaitFlushes(int count) throws InterruptedException {
+      assertThat(flushes.tryAcquire(count, EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("writer flushed %d times", count)
+          .isTrue();
+      flushes.release(count);
+    }
+
+    synchronized String written() {
+      return sink.toString(StandardCharsets.UTF_8);
+    }
   }
 
   @Test
