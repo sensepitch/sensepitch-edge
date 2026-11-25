@@ -8,7 +8,7 @@ TODO.md item 3 deploys the image on Kubernetes.
 
 ## Purpose and scope
 
-The image is the packaging that runs the standalone edge on Kubernetes (TODO.md item 2). The
+The image is the packaging that runs the standalone edge on Kubernetes. The
 constraints that bound the design:
 
 - The edge is a self-contained shaded JAR, `target/sensepitch-edge-*-with-dependencies.jar`,

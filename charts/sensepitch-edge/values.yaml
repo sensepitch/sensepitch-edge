@@ -6,8 +6,8 @@
 replicaCount: 2
 
 image:
-  # No image is published yet, see TODO.md item 2. Point these values at the
-  # image built from the shaded JAR before installing the chart.
+  # The image CI publishes, see doc/design/oci-image.md; point these values at
+  # your own build of the shaded JAR to use that instead.
   repository: ghcr.io/sensepitch/sensepitch-edge
   pullPolicy: IfNotPresent
   # Defaults to .Chart.AppVersion when empty, or main (the newest build of main) when the chart has none.

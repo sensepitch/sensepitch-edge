@@ -6,7 +6,8 @@ the configuration, and mounts Secrets for sensitive files. It does not install t
 controller or any Gateway API resources.
 
 The chart is deliberately small. It assumes the image runs the shaded JAR with the configuration
-file as its only argument. No image is published yet, see TODO.md item 2.
+file as its only argument. CI publishes that image to `ghcr.io/sensepitch/sensepitch-edge`, see
+[doc/design/oci-image.md](../../doc/design/oci-image.md) for its tags.
 
 ## Prerequisites
 
@@ -193,7 +194,7 @@ helm template edge charts/sensepitch-edge \
 | Key | Default | Meaning |
 |---|---|---|
 | `replicaCount` | `2` | edge pods |
-| `image.repository` | `ghcr.io/sensepitch/sensepitch-edge` | replace until item 2 publishes an image |
+| `image.repository` | `ghcr.io/sensepitch/sensepitch-edge` | image published by CI; set to use your own build |
 | `image.tag` | `""` | image tag; empty uses `.Chart.AppVersion`, `main` (newest build of main) without one |
 | `imagePullSecrets` | `[]` | pull Secrets for a private registry |
 | `service.type` | `ClusterIP` | main HTTPS Service type |

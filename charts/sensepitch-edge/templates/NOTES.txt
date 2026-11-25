@@ -7,8 +7,7 @@ kubelet reaches it through the pod IP for the /healthz and /readyz probes.
 
 Before the first pod can serve traffic:
 
-  1. Ensure image {{ include "sensepitch-edge.image" . }}
-     exists (see TODO.md item 2).
+  1. Ensure the nodes can pull image {{ include "sensepitch-edge.image" . }}.
   2. Create or provide TLS Secret "{{ .Values.tls.existingSecret }}" with keys
      "{{ .Values.tls.certKey }}" and "{{ .Values.tls.keyKey }}".
   3. Replace the localhost smoke-test site in values.config with your hosts and upstreams.
