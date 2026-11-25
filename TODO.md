@@ -22,23 +22,31 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 - [ ] Real time and races in the remaining tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P1: each one is slow or can fail on a loaded machine although the code is right.
-  - On simulated time (`FakeTime`, `FakeLogServer`) once the class has a clock seam:
-    `ReloadableRequestLoggerTest` and `RequestLoggerFactoryTest` (the seam is there:
-    `RequestLoggerFactory.create` with `SenderSeams`, first used by
-    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut`),
-    `AsyncRequestLogWriterTest` and `ConfigFileWatcherTest` (no clock or scheduler seam; the
-    watcher also waits on the file system), `ProxyOptionsTest` (OTLP posting
-    with a 1 ms flush interval), and the durations in `ProxyShutdownIT`. The tests stay in the
-    test scope meanwhile, see the coverage rule in `AGENTS.md`.
+  - Onto `FakeTime`/`FakeLogServer` with the existing seam (`RequestLoggerFactory.create` with
+    `SenderSeams`, as in
+    `ReloadableRequestLoggerTest.finishedDestinationEndsWhenItsRecordsAgedOut`):
+    `ReloadableRequestLoggerTest.removedDestinationIsClosed` (polls the queued gauge) and
+    `finishCoversDrainingDestinations` (polls the attempt counter),
+    `RequestLoggerFactoryTest.multipleDestinations` (polls until drained).
+  - `ProxyShutdownIT`: the shutdown clock seam is there (`startProxy` with a nano time and wait,
+    as in `acceptGraceKeepsServingThenClosesWithinTheBudget`); `slowRequestIsAbortedAndStillLogged`
+    (about 1 s) and `unsentRecordsAreReported` (about 0.5 s) still wait real shutdown and drain
+    timeouts. `awaitListening` probes with a literal 250 ms connect timeout.
+  - `ConfigFileWatcherTest`: no clock or scheduler seam, and the watcher waits on the file
+    system; the test stays in the unit scope meanwhile, see the coverage rule in `AGENTS.md`.
   - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
     `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
+    `AsyncRequestLogWriterTest` has no timer to simulate, it waits on latches only.
+    `ProxyOptionsTest` (OTLP with a 1 ms flush) waits for the post as an event and asserts no
+    timing.
 - [ ] Instance scoped diagnostic logging and event driven waits, plan in
   [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
   - P1, test speed and clarity, no operator visible change: non-trace loggers become instance
     fields owned by a `LogScope` (proxy instance and component), trace stays on a `static final`
     `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
     and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
-    polling.
+    polling. Not started yet; the classes held `@Isolated` by it are listed in
+    [doc/design/test-speed.md](doc/design/test-speed.md).
   - Polling to replace: `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`,
     `awaitHandshakeErrors`), `ShadedJarIT.awaitOutput` (reads the stderr file) and the counter and
     gauge `await`s in `ReloadableRequestLoggerTest`. Where no log is involved: a test log server
