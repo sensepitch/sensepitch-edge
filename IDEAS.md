@@ -25,3 +25,8 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   `DecoderFailureHandler` lets through, so the upstream may see a truncated body as complete.
   Operators, medium importance, a client error would end as an upstream answer. From the
   `answer-http-decoder-failures` turn, 2026-11-24.
+- Give `Deflector.deriveServerIpv4Address()` a seam for `PublicIpv4Finder.findFirstPublicIpv4()`
+  so its present-address, absent-address, and `SocketException` fallback paths are unit-tested
+  deterministically instead of varying by whether the test host has a public IPv4. Developers, low
+  importance, removes host-NIC coverage variance. From the
+  `test-public-ipv4-finder-deterministically` turn, 2026-11-26.
