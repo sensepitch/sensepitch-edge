@@ -29,6 +29,11 @@ import java.net.InetSocketAddress;
 /// are forwarded before the final response; only the `LastHttpContent` of that final response ends
 /// the exchange and closes the upstream.
 ///
+/// Every close of the upstream by the edge clears [#upstreamChannelFuture] first, so a close
+/// reported afterwards by the [ForwardHandler] belongs to no active exchange and is ignored. A close
+/// of the upstream connection of the active exchange came from the upstream: it is counted as
+/// `closed_in_flight` and ends the exchange at once, see [#userEventTriggered].
+///
 /// @author Jens Wilke
 public class DownstreamHandler extends ChannelDuplexHandler {
 
@@ -50,14 +55,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// An informational response was written, its `LastHttpContent` follows, then the final response.
   /// Its last content ends neither the exchange nor [responseStarted].
   private boolean informationalResponse;
-
-  /// The request of the current exchange was received completely, for the log of an unexpected
-  /// close, see [#channelInactive(ChannelHandlerContext)]
-  private boolean requestComplete;
-
-  /// A close was requested via the pipeline, so the proxy ends the connection on purpose, see
-  /// [#close(ChannelHandlerContext, ChannelPromise)]
-  private boolean closeRequested;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
@@ -89,7 +86,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       if (requestLog != null) {
         requestLog.setUpstream(upstream);
       }
-      requestComplete = request instanceof LastHttpContent;
       responseStarted = false;
       informationalResponse = false;
       upstreamChannelFuture = upstream.connect(ctx);
@@ -101,7 +97,6 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         ReferenceCountUtil.release(msg);
         return;
       }
-      requestComplete = true;
       // Upstream channel might be still connecting or retrieved and checked by the pool.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener(
@@ -169,12 +164,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       LOG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
       return;
     }
-    // counted when the request is logged
-    LOG.warnOnce(
-        metrics.requestOutcomeCounter,
-        new String[] {ProxyMetrics.ingress(ctx), outcome.value()},
-        ctx.channel(),
-        "upstream failure, outcome=" + outcome + ": " + cause);
+    // no diagnostic line: the request log records the outcome and the cause
     RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
     if (requestLog != null) {
       requestLog.setException(cause);
@@ -200,10 +190,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// connection is closed without one: the client sees a truncated response, which it can tell
   /// from a complete one by the content length or the missing last chunk.
   void completeWithError(ChannelHandlerContext ctx, HttpResponseStatus status) {
-    if (upstreamChannelFuture != null) {
-      closeUpstream(upstreamChannelFuture);
-      upstreamChannelFuture = null;
-    }
+    dropUpstream();
     if (responseStarted) {
       responseStarted = false;
       ctx.channel().close();
@@ -212,6 +199,17 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
     response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+  }
+
+  /// Ends the use of the upstream of the active exchange and closes it. The reference is cleared
+  /// before the close, so the [ForwardHandler] report of this close, which may arrive at once when
+  /// both channels share an event loop, belongs to no exchange, see [#userEventTriggered].
+  private void dropUpstream() {
+    Future<Channel> exchangeUpstream = upstreamChannelFuture;
+    if (exchangeUpstream != null) {
+      upstreamChannelFuture = null;
+      closeUpstream(exchangeUpstream);
+    }
   }
 
   /// Closes the upstream connection of an exchange once it is established, also when it is still
@@ -295,65 +293,28 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     ctx.executor().execute(flushTask);
   }
 
-  /// If the channel becomes inactive, make sure upstream reads are enabled, so upstream read is
-  /// completed and the connection is put back into the pool.
+  /// When the client connection closes during an exchange, the upstream connection is dropped at
+  /// once, also while it is still connecting: nobody takes the rest of the response, and there is
+  /// no pool to return the connection to. Without this, the end of the response would never reach
+  /// [#write], since Netty removes the handlers of a closed channel, and the upstream connection
+  /// would stay open until the upstream closes it.
   ///
-  /// That should work okay for small responses. For longer responses it might be better to close
-  /// the upstream channel to avoid transferring data needlessly.
-  ///
-  /// An unexpected close is logged once at debug level, it is no fault of ours. Expected is a
-  /// close without an exchange in progress (idle keep-alive connection, close after the response,
-  /// shutdown drain) or a close the proxy requested via the pipeline: error responses, timeouts and
-  /// exceptions, including connection resets, which the [ExceptionHandler] counts. Unexpected is
-  /// any other close while an exchange is in progress: the client closes the connection, or the
-  /// event loops end after the shutdown drain timed out. The request log records the request as
-  /// [RequestOutcome#CLIENT_ABORTED] and `ingressRequestsAborted` counts it, the debug line adds
-  /// the phase and the upstream state.
+  /// A client that closes during an exchange is no fault of ours and gets no diagnostic line: the
+  /// request log records the request as [RequestOutcome#CLIENT_ABORTED], and
+  /// `ingressRequestsAborted` counts it, see [ProxyLogger] "Levels".
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null) {
-      if (!closeRequested) {
-        // counted when the request is logged
-        LOG.warnOnce(
-            metrics.ingressRequestsAborted,
-            new String[] {ProxyMetrics.ingress(ctx)},
-            ctx.channel(),
-            "unexpected close during the exchange, phase="
-                + exchangePhase()
-                + ", upstream="
-                + upstreamState());
-      }
-      if (upstreamChannelFuture.isSuccess()) {
-        upstreamChannelFuture.resultNow().config().setAutoRead(true);
-      }
+      dropUpstream();
     }
     super.channelInactive(ctx);
   }
 
-  /// Phase of the exchange for the log of an unexpected close, named like the phases of the
-  /// [ExceptionHandler]
+  /// Phase of the exchange for the log of an unexpected request, named like the phases of the
+  /// [ExceptionHandler]. Never `upload`: the HTTP codec delivers a new request only after the last
+  /// content of the previous one.
   private String exchangePhase() {
-    if (!requestComplete) {
-      return "upload";
-    }
     return responseStarted ? "responding" : "waiting";
-  }
-
-  /// State of the upstream connection for the log of an unexpected close
-  private String upstreamState() {
-    if (!upstreamChannelFuture.isDone()) {
-      return "connecting";
-    }
-    return upstreamChannelFuture.isSuccess() ? "connected" : "connect failed";
-  }
-
-  /// Marks the close as requested by the proxy. Every close of ours passes here: a close via the
-  /// channel, e.g. `ChannelFutureListener.CLOSE`, starts at the tail of the pipeline. A close by
-  /// the peer does not, it only fires [#channelInactive(ChannelHandlerContext)].
-  @Override
-  public void close(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception {
-    closeRequested = true;
-    super.close(ctx, promise);
   }
 
   /// Remove upstream reference when processing for this request is complete. The upstream channel
@@ -379,10 +340,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         // there is no connection pool, so the upstream connection is closed after each response,
         // also if the upstream would keep it alive. The reference is cleared here to ensure no more
         // throttling is done.
-        if (upstreamChannelFuture != null) {
-          closeUpstream(upstreamChannelFuture);
-          upstreamChannelFuture = null;
-        }
+        dropUpstream();
         responseStarted = false;
       }
     }
@@ -409,11 +367,37 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     headers.remove(HttpHeaderNames.UPGRADE);
   }
 
+  /// Drops the upstream of the active exchange, the [ExceptionHandler] further down ends it
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-    if (upstreamChannelFuture != null && upstreamChannelFuture.isSuccess()) {
-      upstreamChannelFuture.resultNow().close();
-    }
+    dropUpstream();
     super.exceptionCaught(ctx, cause);
+  }
+
+  /// Ends the exchange when its upstream closed the connection before the response was complete:
+  /// a `502` if the response has not started, else the client connection is closed, see
+  /// [#completeWithError]. A close of an upstream the edge dropped itself, or of an exchange that
+  /// is over, is ignored, see the class doc. The close is a request level event of the upstream,
+  /// counted in [ProxyMetrics#upstreamErrorCounter] and recorded as
+  /// [RequestOutcome#UPSTREAM_CLOSED]; no diagnostic line, see [ProxyLogger] "Levels".
+  @Override
+  public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+    if (!(evt instanceof ForwardHandler.UpstreamClosed closed)) {
+      super.userEventTriggered(ctx, evt);
+      return;
+    }
+    if (upstreamChannelFuture == null
+        || !upstreamChannelFuture.isSuccess()
+        || upstreamChannelFuture.resultNow() != closed.upstream()) {
+      return;
+    }
+    metrics
+        .upstreamErrorCounter
+        .labelValues(
+            ProxyMetrics.upstreamLabel(upstream),
+            ProxyMetrics.UpstreamErrorType.CLOSED_IN_FLIGHT.label)
+        .inc();
+    RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.UPSTREAM_CLOSED);
+    completeWithError(ctx, HttpResponseStatus.valueOf(502, "Upstream closed"));
   }
 }

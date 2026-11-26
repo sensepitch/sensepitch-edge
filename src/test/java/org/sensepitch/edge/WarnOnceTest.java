@@ -77,21 +77,6 @@ public class WarnOnceTest {
             "one again");
   }
 
-  /// An event counted elsewhere is logged the same way, but not counted again
-  @Test
-  public void warnOnceDoesNotCount() {
-    logs.warnProblems();
-    problems.labelValues("here", "one").inc();
-    LOG.warnOnce(problems, new String[] {"here", "one"}, null, "counted elsewhere");
-    LOG.warnOnce(problems, new String[] {"here", "one"}, null, "counted elsewhere again");
-    assertThat(problems.labelValues("here", "one").get()).isEqualTo(1);
-    assertThat(levels(logs.entries())).containsExactly(Level.WARNING, Level.DEBUG);
-    assertThat(logs.entries().getFirst().info().message())
-        .isEqualTo(
-            "counted elsewhere"
-                + ProxyLogger.firstOccurrenceHint(problems, new String[] {"here", "one"}));
-  }
-
   /// A counter without labels is its own series and named without labels
   @Test
   public void counterWithoutLabelsIsNamedWithoutBraces() {

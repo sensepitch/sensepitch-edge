@@ -43,6 +43,22 @@ stack trace. `ERROR` stays for faults that do not repeat per request, e.g. a con
 cannot be applied; one that may repeat, e.g. a failing request log export, logs once and counts
 the rest. The rule is in the `ProxyLogger` doc and in `AGENTS.md`.
 
+### No diagnostic line for what the request log shows
+
+A request level event that the request log represents is counted but not logged. Represented means
+that the status of its record shows the problem, `499` or `5xx`, and the record has the outcome and
+the type and message of the exception. Then it is not logged, neither at `DEBUG` nor with the
+first-occurrence `WARNING`: a client abort (`client_aborted`), a timeout, a failed connect or write,
+a closed upstream. One place per event is enough. A second one adds noise and makes the two drift
+apart, and a first-occurrence `WARNING` for a browser that leaves a page flags normal client
+behaviour as a problem. The diagnostic log keeps what the request log does not show: events without
+a request record (a handshake failure, data from an upstream after its exchange, a failed request
+log write, a failed fingerprint or IP lookup) and details the record lacks, e.g. the stack trace of
+an unexpected exception, which may be a bug. A problem the edge masks, so that the record shows no
+failure status, e.g. an error answered with a successful response, needs a diagnostic line: an
+operator watching the status codes would not see it. Decided on 2026-11-26 after a client abort
+logged a misleading `WARN` in production.
+
 ### The bundled configurations disable the Log4j2 hook
 
 `shutdownHook="disable"` on the `<Configuration>` element of both bundled files. The setting sits
@@ -89,8 +105,9 @@ origin. The counter of type `other` shows such faults without the flood.
 - An own Log4j2 configuration without `shutdownHook="disable"` loses the shutdown reports again.
 - Messages logged after `LogManager.shutdown()`, e.g. by a thread that outlives the shutdown, are
   dropped.
-- A premature upstream close is counted in `sensepitch_upstream_errors{type="closed_in_flight"}`;
-  the request itself ends later by its timeout or abort outcome.
+- A premature upstream close is counted in `sensepitch_upstream_errors{type="closed_in_flight"}`
+  and ends the request at once with the outcome `upstream_closed`; a close by the edge itself is
+  not counted, see `DownstreamHandler`.
 
 [log4j]: https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled
 [jvm-shutdown]: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Runtime.html#addShutdownHook(java.lang.Thread)

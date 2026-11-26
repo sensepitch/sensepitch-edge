@@ -322,15 +322,8 @@ class TimeoutsTest {
     rattle();
     assertThat(ingressChannel.isActive()).isFalse();
     ingressChannel.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
-    assertThat(logs.entries())
-        .filteredOn(e -> e.source().equals(ExceptionHandler.class.getName()))
-        .singleElement()
-        .satisfies(
-            e -> {
-              assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG);
-              assertThat(e.message()).contains("phase=responding");
-              assertThat(e.error()).isInstanceOf(IngressTimeoutHandler.WriteTimeoutException.class);
-            });
+    // no diagnostic line, the request log has the timeout, see ProxyLogger "Levels"
+    assertThat(logs.messages(ExceptionHandler.class)).isEmpty();
     // logged when the connection closes, the timeout was reported first
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.RESPONSE_WRITE_TIMEOUT);
     assertOutcomeCount(RequestOutcome.RESPONSE_WRITE_TIMEOUT, 1);

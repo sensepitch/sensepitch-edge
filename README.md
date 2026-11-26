@@ -284,14 +284,21 @@ repeated or malformed host or an undecodable request; both are answered with `40
 ### Request level errors
 
 A failure that can happen per request or connection is never logged as an error, an outage or an
-attack would flood the log. It is counted, and logged at debug level with the details:
+attack would flood the log. It is counted. When the request log shows it with a failure status,
+`499` or `5xx`, e.g. a client abort, a timeout or a failing upstream with outcome and cause, there
+is no line in the diagnostic log;
+otherwise it is logged at debug level with the details, the first occurrence of each kind at
+warning:
 
 - `sensepitch_ingress_request_errors_total{ingress,phase,type}`: exceptions on the client
   connection. `type="other"` is an unexpected exception, possibly a bug, worth an alert; `ja4` a
   failed TLS fingerprint.
-- `sensepitch_upstream_errors_total{upstream,type}`: an upstream that closed during a request
-  (`closed_in_flight`), sent data after the response (`unexpected_data`) or failed after it
-  (`exception_without_request`).
+- `sensepitch_upstream_errors_total{upstream,type}`: an upstream that closed the connection
+  before its response was complete (`closed_in_flight`, the request outcome is `upstream_closed`),
+  sent data after the response (`unexpected_data`) or failed after it
+  (`exception_without_request`). A close by the edge, e.g. after a timeout or when the client
+  left, is not counted. Before, it was, so a client leaving during a response counted as
+  `closed_in_flight`.
 - `sensepitch_request_log_errors_total`: request log records that could not be written.
 - `sensepitch_ip_lookup_errors_total`: failed lookups in an IP database, e.g. a corrupt file.
 
@@ -1015,11 +1022,12 @@ to see at a glance whether the edge, the upstream or the client is involved. The
 | `fallback` | the upstream answered 500 or 503 and the fallback page was sent instead, see `sensepitch.upstream.status` |
 | `upstream_connect_failed` | the connection to the upstream failed (502) |
 | `upstream_write_failed` | forwarding the request to the upstream failed (502) |
+| `upstream_closed` | the upstream closed the connection before its response was complete (502, or the client connection is closed if the response had started). Before, the request waited for `upstream_timeout` |
 | `upstream_timeout` | the upstream did not respond within the response timeout (504) |
 | `request_timeout` | the client did not complete the request in time (408) |
 | `request_too_large` | the request header (431) or request line (414) is larger than the edge accepts, 8192 and 4096 bytes |
 | `response_write_timeout` | the client did not take the response in time |
-| `client_aborted` | the connection closed before the response was complete (499) |
+| `client_aborted` | the connection closed before the response was complete (499); the upstream connection is closed at once. Before, the rest of the response was read from the upstream and the connection stayed open until the upstream closed it |
 | `edge_error` | another error, answered with 502 |
 
 ### Migrating from the previous JSON format

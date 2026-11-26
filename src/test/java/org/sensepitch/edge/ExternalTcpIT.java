@@ -102,7 +102,7 @@ class ExternalTcpIT {
                                 .build())
                         .protection(ProtectionConfig.builder().disable(true).build())
                         .build(),
-                    // port 1 is closed, so forwarding here fails and the proxy logs
+                    // port 1 is closed, so forwarding here fails
                     "deadupstream.com",
                     SiteConfig.builder()
                         .upstream(
@@ -321,7 +321,7 @@ class ExternalTcpIT {
   }
 
   @Test
-  void deadUpstreamIsLogged() throws Exception {
+  void deadUpstreamIsInTheRequestLog() throws Exception {
     try (SSLSocket socket = tlsSocket()) {
       socket.startHandshake();
       socket
@@ -335,11 +335,11 @@ class ExternalTcpIT {
       socket.getOutputStream().flush();
       awaitUpstreamFailureHandled(socket);
     }
-    assertLogged();
+    assertUpstreamFailureInTheRequestLog();
   }
 
   @Test
-  void deadUpstreamIsLoggedHttp10() throws Exception {
+  void deadUpstreamIsInTheRequestLogHttp10() throws Exception {
     try (SSLSocket socket = tlsSocket()) {
       socket.startHandshake();
       socket
@@ -350,7 +350,7 @@ class ExternalTcpIT {
       socket.getOutputStream().flush();
       awaitUpstreamFailureHandled(socket);
     }
-    assertLogged();
+    assertUpstreamFailureInTheRequestLog();
   }
 
   /// The upstream connect fails asynchronously, so the log is not written yet when the request has
@@ -364,10 +364,12 @@ class ExternalTcpIT {
     drainEventLoops();
   }
 
-  private void assertLogged() {
-    assertThat(proxyMessages())
-        .describedAs("proxy must log the failed upstream connection")
-        .isNotEmpty();
+  /// The failed connect is in the request log with its outcome and cause, so the diagnostic log has
+  /// no line for it, see [ProxyLogger] "Levels"
+  private void assertUpstreamFailureInTheRequestLog() throws Exception {
+    assertThat(awaitRequestLog())
+        .contains("\"sensepitch.request.outcome\":\"upstream_connect_failed\"", "\"error.type\":");
+    assertThat(proxyMessages()).isEmpty();
   }
 
   private void assertNothingLogged() throws InterruptedException {

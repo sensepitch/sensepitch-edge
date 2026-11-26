@@ -244,6 +244,12 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
 
 ## Ingress, HTTP
 
+- [ ] Bind the upstream connection to the event loop of its client connection: `DefaultUpstream`
+  bootstraps on the whole event loop group (`.group(ctx.eventLoopGroup())`), so the
+  `ForwardHandler` and the `DownstreamHandler` of one exchange usually run on different threads
+  and every hop between them is a task on the other loop. One loop per exchange would save the
+  hops and make the state of the exchange single threaded; check the load balance across loops.
+
 - [ ] Request size limits: decide the options below, then implement the chosen ones. Research,
   measurements and sources in the draft
   [request-body-limit-draft.md](doc/design/request-body-limit-draft.md)

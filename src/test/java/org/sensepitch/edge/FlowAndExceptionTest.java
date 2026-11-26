@@ -575,24 +575,13 @@ public class FlowAndExceptionTest {
                 .labelValues(SanitizeHostHandler.MISSING_HOST, "waiting", "other")
                 .get())
         .isEqualTo(1);
-    assertThat(logs.entries())
-        .filteredOn(
-            e ->
-                e.source().equals(ForwardHandler.class.getName())
-                    && e.info().message().startsWith("upstream failure"))
-        .singleElement()
-        .satisfies(
-            e -> {
-              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
-              assertThat(e.info().channel()).isSameAs(upstreamChannel);
-              assertThat(e.message()).contains("downstream=", "Connection reset");
-            });
+    assertThat(logs.messages(ForwardHandler.class)).isEmpty();
     assertThat(logs.errors()).isEmpty();
   }
 
   /// With the production levels, an upstream exception during an exchange gives one `WARNING`: by
-  /// the [ExceptionHandler] that counts it, naming its series. The [ForwardHandler] that sees it
-  /// first logs it at `DEBUG` only, so one event is not reported at `WARNING` twice. The upstream
+  /// the [ExceptionHandler] that counts it, naming its series, with the stack trace the request log
+  /// does not have. The [ForwardHandler] that sees it first does not log it. The upstream
   /// close that follows is no `closed_in_flight`, the event is counted once.
   @Test
   public void upstreamExceptionDuringTheExchangeWarnsOnceNamingTheSeries() {
@@ -613,22 +602,17 @@ public class FlowAndExceptionTest {
                           + " ones are logged at DEBUG)")
                   .doesNotContain(ExceptionHandler.class.getSimpleName());
             });
-    assertThat(logs.entries())
-        .filteredOn(e -> e.source().equals(ForwardHandler.class.getName()))
-        .extracting(e -> e.info().level())
-        .containsOnly(Level.DEBUG);
+    assertThat(logs.messages(ForwardHandler.class)).isEmpty();
     assertThat(upstreamErrors("closed_in_flight")).isZero();
   }
 
-  /// A failed connect and a failed write are counted by their outcome. Each is its own kind of
-  /// event and warns once, naming its series; the repeated connect failure is at `DEBUG`.
+  /// A failed connect and a failed write are counted by their outcome and recorded in the request
+  /// log with the cause, so even with the production levels there is no diagnostic line, see
+  /// [ProxyLogger] "Levels"
   @Test
-  public void upstreamConnectAndWriteFailuresWarnOnTheirOwn() {
+  public void upstreamConnectAndWriteFailuresAreNotLogged() {
     logs.warnProblems();
     connectFailure = new SocketException("Connection refused");
-    sendGetRequest();
-    rattle();
-    ingressChannel = ingressChannel(null);
     sendGetRequest();
     rattle();
     connectFailure = null;
@@ -636,27 +620,10 @@ public class FlowAndExceptionTest {
     ingressChannel = ingressChannel(null);
     sendGetRequest();
     rattle();
-    String connectFailed = "upstream failure, outcome=" + RequestOutcome.UPSTREAM_CONNECT_FAILED;
-    String writeFailed = "upstream failure, outcome=" + RequestOutcome.UPSTREAM_WRITE_FAILED;
-    assertThat(logs.entries())
-        .filteredOn(e -> e.source().equals(DownstreamHandler.class.getName()))
-        .extracting(e -> e.info().level() + " " + e.info().message())
-        .satisfiesExactly(
-            m ->
-                assertThat(m)
-                    .startsWith("WARNING " + connectFailed)
-                    .endsWith(
-                        " (first occurrence counted in sensepitch_ingress_request_outcomes_total"
-                            + "{ingress=\"missing_host\",outcome=\"upstream_connect_failed\"}, further ones"
-                            + " are logged at DEBUG)"),
-            m -> assertThat(m).startsWith("DEBUG " + connectFailed).doesNotContain("first"),
-            m ->
-                assertThat(m)
-                    .startsWith("WARNING " + writeFailed)
-                    .endsWith(
-                        " (first occurrence counted in sensepitch_ingress_request_outcomes_total"
-                            + "{ingress=\"missing_host\",outcome=\"upstream_write_failed\"}, further ones"
-                            + " are logged at DEBUG)"));
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
+    assertThat(requestLogCapture.outcomes())
+        .containsExactly(
+            RequestOutcome.UPSTREAM_CONNECT_FAILED, RequestOutcome.UPSTREAM_WRITE_FAILED);
   }
 
   @Test
@@ -692,26 +659,21 @@ public class FlowAndExceptionTest {
             });
   }
 
+  /// The upstream closes before it answered: the client gets a 502 at once instead of waiting for
+  /// the response timeout. The close is counted for the upstream; the request log has it as
+  /// `upstream_closed`, so there is no diagnostic line.
   @Test
-  public void prematureUpstreamClosureIsDebugAndRequestStillReportedOnClientClose() {
+  public void prematureUpstreamClosureIsAnsweredWithBadGateway() {
     sendGetRequest();
     upstreamChannel.unsafe().close(upstreamChannel.voidPromise());
-    assertThat(logs.entries())
-        .filteredOn(e -> e.source().equals(ForwardHandler.class.getName()))
-        .singleElement()
-        .satisfies(
-            e -> {
-              assertThat(e.info().level()).isEqualTo(Level.DEBUG);
-              assertThat(e.info().channel()).isSameAs(upstreamChannel);
-              assertThat(e.message())
-                  .contains("request still in flight", "downstream=", "upstream=");
-            });
-    assertThat(ingressChannel.isOpen()).isTrue();
-    assertThat((Object) ingressChannel.readOutbound()).isNull();
+    ingressChannel.runPendingTasks();
+    HttpResponse response = ingressChannel.readOutbound();
+    assertThat(response.status().code()).isEqualTo(502);
+    ReferenceCountUtil.release(response);
+    assertThat(ingressChannel.isOpen()).isFalse();
     assertThat(upstreamErrors("closed_in_flight")).isOne();
-    closeByPeer();
-    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
-    assertThat(logs.errors()).isEmpty();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_CLOSED);
+    assertThat(logs.entries()).isEmpty();
   }
 
   /// A slow client fills the ingress output buffer. Upstream reading is paused and the buffer is
@@ -735,25 +697,32 @@ public class FlowAndExceptionTest {
     ingressChannel.finishAndReleaseAll();
   }
 
-  /// When the client goes away, upstream reading continues so the response can be drained. The
-  /// close is unexpected and logged once with the phase, the request log has the request as
-  /// aborted.
+  /// When the client goes away, the upstream connection is closed at once: nobody takes the rest of
+  /// the response. The close is the edge's, so it is no upstream error. The request log has the
+  /// request as aborted, there is no diagnostic line.
   @Test
-  public void ingressInactiveResumesUpstreamReading() {
+  public void ingressInactiveClosesTheUpstream() {
     sendGetRequest();
-    upstreamChannel.config().setAutoRead(false);
     closeByPeer();
-    assertThat(upstreamChannel.config().isAutoRead()).isTrue();
-    assertThat(logs.messages(DownstreamHandler.class))
-        .singleElement()
-        .satisfies(
-            m ->
-                assertThat(m)
-                    .endsWith(
-                        "unexpected close during the exchange, phase=waiting, upstream=connected"));
-    assertThat(logs.entries())
-        .filteredOn(e -> e.source().equals(DownstreamHandler.class.getName()))
-        .allSatisfy(e -> assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG));
+    assertThat(upstreamChannel.isOpen()).isFalse();
+    assertThat(upstreamErrors("closed_in_flight")).isZero();
+    // no diagnostic line, the request log has the abort, see ProxyLogger "Levels"
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
+  }
+
+  /// The client closes during the upload, the upstream connects afterwards: that late connection
+  /// is closed at once
+  @Test
+  public void lateUpstreamConnectAfterClientCloseIsClosed() {
+    deferConnect = true;
+    HttpRequest post = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/form");
+    HttpUtil.setContentLength(post, 3);
+    ingressChannel.writeInbound(post);
+    closeByPeer();
+    EmbeddedChannel late = new EmbeddedChannel();
+    pendingConnect.setSuccess(late);
+    assertThat(late.isOpen()).isFalse();
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
   }
 
@@ -765,13 +734,8 @@ public class FlowAndExceptionTest {
     HttpUtil.setContentLength(post, 3);
     ingressChannel.writeInbound(post);
     closeByPeer();
-    assertThat(logs.messages(DownstreamHandler.class))
-        .singleElement()
-        .satisfies(
-            m ->
-                assertThat(m)
-                    .endsWith(
-                        "unexpected close during the exchange, phase=upload, upstream=connecting"));
+    // no diagnostic line, the request log has the abort, see ProxyLogger "Levels"
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
     pendingConnect.setFailure(new SocketException("Connection refused"));
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
   }
@@ -784,14 +748,8 @@ public class FlowAndExceptionTest {
         new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
     rattle();
     closeByPeer();
-    assertThat(logs.messages(DownstreamHandler.class))
-        .singleElement()
-        .satisfies(
-            m ->
-                assertThat(m)
-                    .endsWith(
-                        "unexpected close during the exchange, phase=responding,"
-                            + " upstream=connected"));
+    // no diagnostic line, the request log has the abort, see ProxyLogger "Levels"
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
     ingressChannel.finishAndReleaseAll();
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
   }
@@ -803,14 +761,8 @@ public class FlowAndExceptionTest {
     connectFailure = new SocketException("Connection refused");
     ingressChannel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/"));
     closeByPeer();
-    assertThat(logs.messages(DownstreamHandler.class))
-        .singleElement()
-        .satisfies(
-            m ->
-                assertThat(m)
-                    .endsWith(
-                        "unexpected close during the exchange, phase=upload,"
-                            + " upstream=connect failed"));
+    // no diagnostic line, the request log has the abort, see ProxyLogger "Levels"
+    assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.CLIENT_ABORTED);
   }
 
@@ -933,6 +885,12 @@ public class FlowAndExceptionTest {
   }
 
   class MockUpstream implements Upstream {
+
+    /// The `upstream` label of the metrics, the same as the [ForwardHandler] of the test has
+    @Override
+    public String name() {
+      return "upstream";
+    }
 
     @Override
     public Future<Channel> connect(ChannelHandlerContext downstreamContext) {

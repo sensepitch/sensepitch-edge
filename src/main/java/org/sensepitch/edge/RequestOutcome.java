@@ -30,6 +30,9 @@ public enum RequestOutcome {
   /// Forwarding the request to the upstream failed
   UPSTREAM_WRITE_FAILED,
 
+  /// The upstream closed the connection before the response was complete
+  UPSTREAM_CLOSED,
+
   /// The upstream did not respond within the response timeout
   UPSTREAM_TIMEOUT,
 

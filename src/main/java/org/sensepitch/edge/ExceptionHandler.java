@@ -25,10 +25,11 @@ import javax.net.ssl.SSLHandshakeException;
 import lombok.extern.slf4j.Slf4j;
 
 /// Counts connection failures in [ProxyMetrics#ingressErrorCounter] and completes the connection
-/// without exposing exception details to the peer. Every failure is a request level event, so it
-/// is logged at debug only, with phase, channel and cause, see [ProxyLogger] for the levels; an
-/// unexpected one, possibly a fault of ours, is counted as type `other`. Resets and common TLS
-/// rejections are counted without a debug line.
+/// without exposing exception details to the peer. Every failure is a request level event, see
+/// [ProxyLogger] "Levels". Resets, common TLS rejections and our own timeouts are only counted:
+/// the request log records them, or they are routine. An unexpected one, possibly a fault of ours,
+/// is counted as type `other` and logged with phase, channel and the stack trace, which the request
+/// log does not have.
 ///
 /// @author Jens Wilke
 @Slf4j
@@ -151,15 +152,20 @@ public class ExceptionHandler extends ChannelInboundHandlerAdapter {
     boolean timeout =
         cause instanceof IngressTimeoutHandler.UpstreamResponseTimeoutException
             || cause instanceof IngressTimeoutHandler.WriteTimeoutException;
-    ProxyMetrics.IngressErrorType type = timeout ? TIMEOUT : OTHER;
     // a more specific outcome, e.g. a timeout, was reported before the exception, it wins
     loggingHandler.setOutcome(RequestOutcome.EDGE_ERROR);
-    LOG.incrementAndWarnOnce(
-        metrics.ingressErrorCounter,
-        new String[] {ProxyMetrics.ingress(ctx), phase, type.label},
-        ctx.channel(),
-        "phase=" + phase,
-        cause);
+    if (timeout) {
+      // the request log has the timeout as outcome, no diagnostic line, see ProxyLogger "Levels"
+      metrics.countIngressError(ctx, phase, TIMEOUT);
+    } else {
+      // the stack trace of a possible bug is not in the request log
+      LOG.incrementAndWarnOnce(
+          metrics.ingressErrorCounter,
+          new String[] {ProxyMetrics.ingress(ctx), phase, OTHER.label},
+          ctx.channel(),
+          "phase=" + phase,
+          cause);
+    }
     // send a proper response if possible, log via standard request log
     if (loggingHandler.isRequestReceived() && !loggingHandler.isResponseStarted()) {
       // The exception is recorded in the request log. It is not sent to the client, it may reveal

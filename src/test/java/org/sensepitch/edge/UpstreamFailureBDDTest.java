@@ -21,10 +21,11 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 import java.io.IOException;
-import java.lang.System.Logger.Level;
 import java.net.ConnectException;
+import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.List;
 import net.serenitybdd.annotations.Step;
@@ -52,7 +53,82 @@ class UpstreamFailureBDDTest {
           .then_the_client_received_only_a_bad_gateway("Upstream write problem")
           .then_the_connections_are_closed()
           .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED)
-          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_WRITE_FAILED);
+          .then_the_failure_is_in_the_request_log(RequestOutcome.UPSTREAM_WRITE_FAILED)
+          .then_no_upstream_close_is_counted();
+    }
+  }
+
+  /// The case seen in production: the browser leaves during the response, the edge drops the
+  /// upstream. That close is the edge's, not the upstream's, so it is no upstream error.
+  @Test
+  void clientAbortDuringTheResponseIsNoUpstreamError() {
+    try (Steps steps = new Steps()) {
+      steps
+          .given_a_request_forwarded_upstream()
+          .when_the_upstream_sends_the_response_headers()
+          .when_a_write_to_the_client_fails_since_it_left()
+          .then_the_upstream_is_closed()
+          .then_the_outcome_is(RequestOutcome.CLIENT_ABORTED)
+          .then_no_upstream_close_is_counted();
+    }
+  }
+
+  /// The upstream goes away before it answered: the client gets a 502 at once, no timer has to
+  /// fire
+  @Test
+  void upstreamCloseBeforeTheResponseIsAnswered() {
+    try (Steps steps = new Steps()) {
+      steps
+          .given_a_request_forwarded_upstream()
+          .when_the_upstream_closes_the_connection()
+          .then_the_client_received_only_a_bad_gateway("Upstream closed")
+          .then_the_client_connection_is_closed()
+          .then_the_outcome_is(RequestOutcome.UPSTREAM_CLOSED)
+          .then_the_upstream_close_is_counted();
+    }
+  }
+
+  /// After the headers no error response is possible, the client connection is closed, so the
+  /// client sees the truncated response
+  @Test
+  void upstreamCloseAfterTheHeadersDropsTheClient() {
+    try (Steps steps = new Steps()) {
+      steps
+          .given_a_request_forwarded_upstream()
+          .when_the_upstream_sends_the_response_headers()
+          .when_the_upstream_closes_the_connection()
+          .then_the_client_received_only_the_upstream_response(0)
+          .then_the_client_connection_is_closed()
+          .then_the_outcome_is(RequestOutcome.UPSTREAM_CLOSED)
+          .then_the_upstream_close_is_counted();
+    }
+  }
+
+  /// A close report counts only for the upstream connection of the active exchange: a report of
+  /// another channel, e.g. one the edge dropped, changes nothing, the exchange goes on
+  @Test
+  void closeOfAnotherUpstreamIsIgnored() {
+    try (Steps steps = new Steps()) {
+      steps
+          .given_a_request_forwarded_upstream()
+          .when_a_close_of_another_upstream_is_reported()
+          .when_the_upstream_sends_the_response_headers()
+          .when_the_upstream_sends_a_body_part()
+          .when_the_upstream_completes_the_response()
+          .then_the_client_received_the_complete_response()
+          .then_the_outcome_is(RequestOutcome.COMPLETED)
+          .then_no_upstream_close_is_counted();
+    }
+  }
+
+  @Test
+  void closeReportWhileConnectingIsIgnored() {
+    try (Steps steps = new Steps()) {
+      steps
+          .given_a_request_while_the_upstream_is_connecting()
+          .when_a_close_of_another_upstream_is_reported()
+          .then_the_client_connection_is_open()
+          .then_no_upstream_close_is_counted();
     }
   }
 
@@ -65,7 +141,7 @@ class UpstreamFailureBDDTest {
           .then_the_client_received_only_a_bad_gateway("Upstream connection problem")
           .then_the_client_connection_is_closed()
           .then_the_outcome_is(RequestOutcome.UPSTREAM_CONNECT_FAILED)
-          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_CONNECT_FAILED);
+          .then_the_failure_is_in_the_request_log(RequestOutcome.UPSTREAM_CONNECT_FAILED);
     }
   }
 
@@ -79,7 +155,8 @@ class UpstreamFailureBDDTest {
           .then_the_client_received_only_the_upstream_response(0)
           .then_the_connections_are_closed()
           .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED)
-          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_WRITE_FAILED);
+          .then_the_failure_is_in_the_request_log(RequestOutcome.UPSTREAM_WRITE_FAILED)
+          .then_no_upstream_close_is_counted();
     }
   }
 
@@ -95,7 +172,7 @@ class UpstreamFailureBDDTest {
           .then_the_client_received_only_the_upstream_response(2)
           .then_the_connections_are_closed()
           .then_the_outcome_is(RequestOutcome.UPSTREAM_WRITE_FAILED)
-          .then_the_failure_is_reported_at_debug(RequestOutcome.UPSTREAM_WRITE_FAILED);
+          .then_the_failure_is_in_the_request_log(RequestOutcome.UPSTREAM_WRITE_FAILED);
     }
   }
 
@@ -160,24 +237,25 @@ class UpstreamFailureBDDTest {
     @Step
     Steps given_a_request_forwarded_upstream() {
       startRequest(
-          ctx -> {
-            upstream =
-                new EmbeddedChannel(
-                    heldWrite, new ForwardHandler(ctx.channel(), metrics, "upstream"));
-            return ctx.executor().newSucceededFuture(upstream);
-          });
+          (UpstreamConnector)
+              ctx -> {
+                upstream =
+                    new EmbeddedChannel(
+                        heldWrite, new ForwardHandler(ctx.channel(), metrics, UPSTREAM));
+                return ctx.executor().newSucceededFuture(upstream);
+              });
       assertThat(heldWrite.promise).as("request is written upstream").isNotNull();
       return this;
     }
 
     @Step
     Steps given_a_request_while_the_upstream_is_connecting() {
-      startRequest(ctx -> connecting = ctx.executor().newPromise());
+      startRequest((UpstreamConnector) ctx -> connecting = ctx.executor().newPromise());
       return this;
     }
 
     /// Sends a request without content through the ingress pipeline, shared by the givens
-    private void startRequest(Upstream upstreamConnector) {
+    private void startRequest(UpstreamConnector upstreamConnector) {
       RequestLogger logger = requestLog.plainText();
       ingress =
           new EmbeddedChannel(
@@ -189,7 +267,7 @@ class UpstreamFailureBDDTest {
                     logger.logRequest(info);
                   }),
               new IngressTimeoutHandler(ConnectionConfig.DEFAULT, metrics),
-              new DownstreamHandler(upstreamConnector, metrics),
+              new DownstreamHandler(upstreamConnector.named(), metrics),
               new ExceptionHandler(metrics));
       ingress.runPendingTasks();
       ingress.writeInbound(
@@ -237,6 +315,52 @@ class UpstreamFailureBDDTest {
       connecting.setFailure(failure);
       ingress.runPendingTasks();
       return this;
+    }
+
+    /// The client left, the next response write to it fails, as in production with a
+    /// `StacklessClosedChannelException`. Fired directly: a closed `EmbeddedChannel` is
+    /// deregistered at once, so its failed void promise would not reach the pipeline.
+    @Step
+    Steps when_a_write_to_the_client_fails_since_it_left() {
+      ingress.pipeline().fireExceptionCaught(new ClosedChannelException());
+      ingress.runPendingTasks();
+      return this;
+    }
+
+    /// The upstream goes away: a close by the peer, reported by its [ForwardHandler]
+    @Step
+    Steps when_the_upstream_closes_the_connection() {
+      upstream.unsafe().close(upstream.voidPromise());
+      ingress.runPendingTasks();
+      return this;
+    }
+
+    @Step
+    Steps when_a_close_of_another_upstream_is_reported() {
+      EmbeddedChannel other = new EmbeddedChannel();
+      ingress.pipeline().fireUserEventTriggered(new ForwardHandler.UpstreamClosed(other));
+      other.finishAndReleaseAll();
+      ingress.runPendingTasks();
+      return this;
+    }
+
+    @Step
+    Steps then_the_upstream_close_is_counted() {
+      assertThat(closedInFlight()).isEqualTo(1);
+      return this;
+    }
+
+    @Step
+    Steps then_no_upstream_close_is_counted() {
+      assertThat(closedInFlight()).isZero();
+      return this;
+    }
+
+    private double closedInFlight() {
+      return metrics
+          .upstreamErrorCounter
+          .labelValues(UPSTREAM, ProxyMetrics.UpstreamErrorType.CLOSED_IN_FLIGHT.label)
+          .get();
     }
 
     @Step
@@ -340,30 +464,22 @@ class UpstreamFailureBDDTest {
       return this;
     }
 
+    /// The cause is in the request log next to the outcome, so there is no diagnostic line, see
+    /// [ProxyLogger] "Levels"
     @Step
-    Steps then_the_failure_is_reported_at_debug(RequestOutcome outcome) {
+    Steps then_the_failure_is_in_the_request_log(RequestOutcome outcome) {
       assertThat(loggedErrors).containsExactly(failure);
-      assertThat(logs.entries())
-          .filteredOn(entry -> entry.source().equals(DownstreamHandler.class.getName()))
-          .singleElement()
-          .satisfies(
-              entry -> {
-                assertThat(entry.info().level()).isEqualTo(Level.DEBUG);
-                assertThat(entry.message())
-                    .contains(
-                        "upstream failure",
-                        "outcome=" + outcome,
-                        failure.getClass().getName(),
-                        failure.getMessage());
-              });
+      assertThat(requestLog.outcomes()).containsExactly(outcome);
+      assertThat(logs.messages(DownstreamHandler.class)).isEmpty();
       return this;
     }
 
     @Step
     Steps then_the_late_failure_is_ignored() {
       assertThat(loggedErrors).containsExactly((Throwable) null);
+      // no line mentions the late failure; a second request is logged, it has no record
       assertThat(logs.messages(DownstreamHandler.class))
-          .noneMatch(message -> message.contains("upstream failure"));
+          .noneMatch(message -> message.contains(failure.getMessage()));
       return this;
     }
 
@@ -375,6 +491,29 @@ class UpstreamFailureBDDTest {
       if (upstream != null) {
         upstream.finishAndReleaseAll();
       }
+    }
+  }
+
+  /// The `upstream` label of the metrics, the name of the upstream
+  static final String UPSTREAM = "upstream";
+
+  /// The connect of an [Upstream] as a lambda, made a named upstream by [#named()]
+  interface UpstreamConnector {
+    Future<Channel> connect(ChannelHandlerContext ctx);
+
+    /// The upstream named [#UPSTREAM], the label its metrics are counted with
+    default Upstream named() {
+      return new Upstream() {
+        @Override
+        public Future<Channel> connect(ChannelHandlerContext ctx) {
+          return UpstreamConnector.this.connect(ctx);
+        }
+
+        @Override
+        public String name() {
+          return UPSTREAM;
+        }
+      };
     }
   }
 

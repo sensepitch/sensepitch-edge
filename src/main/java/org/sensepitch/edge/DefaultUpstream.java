@@ -95,9 +95,8 @@ public class DefaultUpstream implements Upstream {
     return bs.connect();
   }
 
-  /// Label of the upstream metrics, the name or, without one, the target, as in
-  /// [ProxyMetrics#upstreamRequestsInFlight(Upstream)]
+  /// Label of the upstream metrics, see [ProxyMetrics#upstreamLabel(Upstream)]
   private String metricsName() {
-    return name != null ? name : target;
+    return ProxyMetrics.upstreamLabel(this);
   }
 }

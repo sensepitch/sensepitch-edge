@@ -134,8 +134,9 @@ public class ProxyMetrics implements HasMultipleMetrics {
 
   /// The `type` label of [#upstreamErrorCounter], the lower case name
   public enum UpstreamErrorType {
-    /// The upstream closed before the response was complete; the request ends later by its
-    /// timeout or abort outcome
+    /// The upstream closed the connection before the response was complete, a close by the edge
+    /// is not counted; the exchange ends at once with [RequestOutcome#UPSTREAM_CLOSED], see
+    /// [DownstreamHandler#userEventTriggered]
     CLOSED_IN_FLIGHT,
     /// Data after the response
     UNEXPECTED_DATA,
@@ -321,8 +322,12 @@ public class ProxyMetrics implements HasMultipleMetrics {
   /// Counter of the requests in flight to the upstream, incremented when the upstream is selected
   /// and decremented when the request is logged
   LongAdder upstreamRequestsInFlight(Upstream upstream) {
-    String name = upstream.name() != null ? upstream.name() : String.valueOf(upstream.target());
-    return upstreamRequestsInFlight.computeIfAbsent(name, k -> new LongAdder());
+    return upstreamRequestsInFlight.computeIfAbsent(upstreamLabel(upstream), k -> new LongAdder());
+  }
+
+  /// The `upstream` label of the upstream metrics: the name or, without one, the target
+  static String upstreamLabel(Upstream upstream) {
+    return upstream.name() != null ? upstream.name() : String.valueOf(upstream.target());
   }
 
   /// Upstreams with requests in flight, by name

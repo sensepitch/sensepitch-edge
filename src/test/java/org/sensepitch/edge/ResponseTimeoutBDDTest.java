@@ -60,20 +60,10 @@ class ResponseTimeoutBDDTest {
     }
   }
 
-  /// A timeout retains phase/cause context without a default-level diagnostic.
+  /// The request log has the timeout as outcome, so there is no diagnostic line, see
+  /// [ProxyLogger] "Levels"
   private void assertTimeoutDiagnostic() {
-    assertThat(logs.entries())
-        .filteredOn(e -> e.source().equals(ExceptionHandler.class.getName()))
-        .singleElement()
-        .satisfies(
-            e -> {
-              assertThat(e.info().level()).isEqualTo(System.Logger.Level.DEBUG);
-              assertThat(e.info().channel()).isNotNull();
-              assertThat(e.message()).contains("phase=");
-              assertThat(e.error())
-                  .isInstanceOf(IngressTimeoutHandler.UpstreamResponseTimeoutException.class);
-            });
-    assertThat(logs.errors()).isEmpty();
+    assertThat(logs.entries()).isEmpty();
   }
 
   static class Steps implements AutoCloseable {
@@ -89,7 +79,12 @@ class ResponseTimeoutBDDTest {
     @Step
     Steps given_a_silent_upstream_and_client(boolean delayedWrite) {
       writes.blocked = delayedWrite;
-      startRequest(ctx -> ctx.executor().newSucceededFuture(upstream));
+      startRequest(
+          ctx -> {
+            // reports a close during the exchange, as in production
+            upstream.pipeline().addLast(new ForwardHandler(ctx.channel(), metrics, "upstream"));
+            return ctx.executor().newSucceededFuture(upstream);
+          });
       assertThat(upstream.isActive()).isTrue();
       return this;
     }
@@ -138,8 +133,10 @@ class ResponseTimeoutBDDTest {
     }
 
     @Step
+    /// Closed by the edge, so it is no upstream error
     Steps then_the_upstream_is_closed() {
       assertThat(upstream.isActive()).isFalse();
+      assertThat(metrics.upstreamErrorCounter.collect().getDataPoints()).isEmpty();
       return this;
     }
 

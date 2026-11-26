@@ -223,7 +223,7 @@ public class ExceptionHandlerTest {
   }
 
   @Test
-  public void responseWriteTimeoutAfterResponseStartsIsDebugAndCounted() {
+  public void responseWriteTimeoutAfterResponseStartsIsCountedNotLogged() {
     EmbeddedChannel channel = afterHandshake();
     channel.writeInbound(
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
@@ -237,11 +237,12 @@ public class ExceptionHandlerTest {
     assertThat(count("responding", "timeout")).isEqualTo(1);
     assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.RESPONSE_WRITE_TIMEOUT);
     assertThat(channel.isOpen()).isFalse();
-    assertDebugLine(channel, "responding", cause);
+    // the request log has the timeout as outcome, see ProxyLogger "Levels"
+    assertThat(logs.entries()).isEmpty();
   }
 
   @Test
-  public void upstreamResponseTimeoutIsDebugWith504AndSpecificOutcome() {
+  public void upstreamResponseTimeoutIsCountedWith504AndSpecificOutcome() {
     EmbeddedChannel channel = afterHandshake();
     channel.writeInbound(
         new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"),
@@ -255,7 +256,7 @@ public class ExceptionHandlerTest {
     assertThat(response.status()).isEqualTo(HttpResponseStatus.GATEWAY_TIMEOUT);
     assertThat(requestLog.outcomes()).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
     assertThat(channel.isOpen()).isFalse();
-    assertDebugLine(channel, "waiting", cause);
+    assertThat(logs.entries()).isEmpty();
   }
 
   @Test

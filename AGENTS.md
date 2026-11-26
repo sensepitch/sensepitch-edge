@@ -307,6 +307,12 @@ delay.
 - **Every request level event is counted in a metric** (or recorded in the request log), so it is
   never silent and can be investigated when needed. A new request level log line comes with its
   counter and a test that asserts both.
+- **No diagnostic line for an event the request log represents**, not even at `DEBUG`: it is only
+  counted. Represented means the status of the record shows the problem, `499` or `5xx`, next to
+  the outcome and the exception type and message. A problem that is masked, so the record has no
+  failure status, needs a diagnostic line. A request level log line needs a reason
+  why the request log does not cover the event, e.g. no record exists or the stack trace of a
+  possible bug is needed.
 - Tests do not assert on trace output, it is no acceptance criterion. Trace is enabled in tests
   only so the trace code is covered; `LogCapture` captures `DEBUG` and above, so debug output can
   be asserted.

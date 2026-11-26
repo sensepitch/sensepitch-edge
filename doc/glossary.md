@@ -75,9 +75,10 @@ legal in a host name: `unknown_host`, `missing_host`, `nil_host`, the `SPECIAL_H
 "Configuration reload". **State**: everything built from the configuration that a reload replaces,
 [`EdgeState`](../src/main/java/org/sensepitch/edge/EdgeState.java).
 
-**request level event**: an event that can happen per request or connection, e.g. an upstream
-error. It is counted and logged at debug, its first occurrence at warning, never at `INFO` or
-above, see [`ProxyLogger`](../src/main/java/org/sensepitch/edge/ProxyLogger.java).
+**request level event**: an event that can happen per request or connection, e.g. an upstream error.
+It is counted; unless its request log record shows it with status `499` or `5xx`, it is also logged
+at debug, its first occurrence at warning, never at `INFO` or above, see
+[`ProxyLogger`](../src/main/java/org/sensepitch/edge/ProxyLogger.java).
 
 **request log**: one record per exchange, to standard out or OTLP, see
 [request log](design/request-log.md). Not the diagnostic log.

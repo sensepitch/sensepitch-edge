@@ -30,7 +30,8 @@ import java.util.List;
 /// - `TRACE`: internals, several lines per request.
 ///
 /// **Request level events are logged at `DEBUG`, errors included, except the first occurrence of
-/// each kind at `WARNING`, see below, never at `INFO` or `ERROR`.** A request level event is one
+/// each kind at `WARNING`, never at `INFO` or `ERROR`; those the request log represents are not
+/// logged at all, see below.** A request level event is one
 /// that can happen for a request or a connection: a client or upstream misbehaving, an upstream
 /// outage, a timeout, but also an unexpected exception that may be a bug of ours. Such an event can
 /// repeat for every request, thousands of times per second, e.g. during an outage or an attack. At
@@ -42,20 +43,28 @@ import java.util.List;
 /// request; one that may, e.g. a failing request log export, logs once and counts the rest.
 ///
 /// **The first occurrence of each kind of request level event is logged at `WARNING`.** With
-/// `DEBUG` off, as in the default configuration, a misconfiguration that makes every request fail,
-/// e.g. an unreachable upstream during the initial setup, would otherwise leave no trace in the
+/// `DEBUG` off, as in the default configuration, a misconfiguration that makes every connection
+/// fail, e.g. TLS handshakes failing after a broken setup, would otherwise leave no trace in the
+/// log. A failing request, e.g. one to an unreachable upstream, leaves its trace in the request
 /// log. The kind of an event is the series that counts it, the data point of a counter for its
 /// label values, e.g. `sensepitch_upstream_errors_total{type="closed_in_flight",upstream="a"}`.
 /// [#incrementAndWarnOnce(Counter, String[], Channel, String, Throwable)] counts the event and
-/// logs it, so counting and logging cannot drift apart;
-/// [#warnOnce(Counter, String[], Channel, String, Throwable)] only logs an event that another
-/// place counts, e.g. the request outcome counted when the request is logged. The label values come from the label enums the counters
-/// use, e.g. [ProxyMetrics.IngressErrorType]. The logger already names the class, so the kind does
+/// logs it, so counting and logging cannot drift apart. The label values come from the label enums
+/// the counters use, e.g. [ProxyMetrics.IngressErrorType]. The logger already names the class, so the kind does
 /// not repeat it. The first occurrence of a series in the JVM is logged at `WARNING` and names the
 /// series, where an operator finds the further ones, which are logged at `DEBUG`. So the log shows
-/// each problem once per series, e.g. once per ingress, however often it repeats. An event
-/// reported by another handler too, e.g. an upstream exception the [ExceptionHandler] counts, is
-/// logged at `DEBUG` only by the one that does not count it.
+/// each problem once per series, e.g. once per ingress, however often it repeats.
+///
+/// **An event that the request log represents gets no diagnostic line**, neither `WARNING` nor
+/// `DEBUG`; it is only counted. It is represented when the status of its record shows the problem,
+/// `499` or `5xx`, and the record has the outcome and the type and message of the exception, e.g. a
+/// client abort (`499 client_aborted`), a timeout or a failed or closed upstream (`502`, `504`).
+/// A problem the edge masks, so that the record shows no failure status, e.g. an error answered
+/// with a successful response, needs a diagnostic line. A second place for the same event only adds noise, and a first-occurrence
+/// `WARNING` would flag normal client behaviour as a problem. A diagnostic line is for what the
+/// request log does not show: events without a request record, e.g. a handshake failure, data from
+/// an upstream after its exchange or a failed request log write, and details the record lacks,
+/// e.g. the stack trace of an unexpected exception, which may be a bug.
 ///
 /// Tracing is available by default: every logger is a [WithTracing] instance that asks Log4j2, so
 /// the configured level decides, at the cost of a level check per trace call. The level is set in
@@ -116,12 +125,6 @@ public interface ProxyLogger {
   /// At `WARNING`, for a problem in our own setup, see [ProxyLogger] "Levels"
   void warn(String message);
 
-  /// At `DEBUG` with the stack trace, for a request level event that is counted in a metric, see
-  /// [ProxyLogger] "Levels". Prefer
-  /// [#incrementAndWarnOnce(Counter, String[], Channel, String, Throwable)], which counts the
-  /// event and shows the first occurrence at `WARNING`.
-  void debug(Channel channel, String message, Throwable cause);
-
   /// The label values of a counter without labels
   String[] NO_LABELS = {};
 
@@ -143,17 +146,6 @@ public interface ProxyLogger {
   default void incrementAndWarnOnce(
       Counter counter, String[] labelValues, Channel channel, String message) {
     incrementAndWarnOnce(counter, labelValues, channel, message, null);
-  }
-
-  /// Logs a request level event that another place counts in `counter`, without counting it, at
-  /// `WARNING` or `DEBUG` as [#incrementAndWarnOnce(Counter, String[], Channel, String, Throwable)]
-  void warnOnce(
-      Counter counter, String[] labelValues, Channel channel, String message, Throwable cause);
-
-  /// Logs a request level event without a cause that another place counts, see
-  /// [#warnOnce(Counter, String[], Channel, String, Throwable)]
-  default void warnOnce(Counter counter, String[] labelValues, Channel channel, String message) {
-    warnOnce(counter, labelValues, channel, message, null);
   }
 
   /// The hint appended to the message of the first occurrence of an event, naming its series,
@@ -316,28 +308,11 @@ public interface ProxyLogger {
     }
 
     @Override
-    public void debug(Channel channel, String message, Throwable cause) {
-      log(
-          LogInfo.builder()
-              .level(Level.DEBUG)
-              .channel(channel)
-              .message(message)
-              .error(cause)
-              .build());
-    }
-
-    @Override
     public void incrementAndWarnOnce(
         Counter counter, String[] labelValues, Channel channel, String message, Throwable cause) {
       CounterDataPoint point = dataPoint(counter, labelValues);
       point.inc();
       warnOnce(point, counter, labelValues, channel, message, cause);
-    }
-
-    @Override
-    public void warnOnce(
-        Counter counter, String[] labelValues, Channel channel, String message, Throwable cause) {
-      warnOnce(dataPoint(counter, labelValues), counter, labelValues, channel, message, cause);
     }
 
     /// Logs at the level of the occurrence of `point`. The check for the first occurrence costs

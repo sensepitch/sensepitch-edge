@@ -1,6 +1,5 @@
 package org.sensepitch.edge;
 
-import static org.sensepitch.edge.ProxyMetrics.UpstreamErrorType.CLOSED_IN_FLIGHT;
 import static org.sensepitch.edge.ProxyMetrics.UpstreamErrorType.EXCEPTION_WITHOUT_REQUEST;
 import static org.sensepitch.edge.ProxyMetrics.UpstreamErrorType.UNEXPECTED_DATA;
 
@@ -22,12 +21,14 @@ import io.netty.util.ReferenceCountUtil;
 /// end the exchange: the upstream stays attached to the downstream for the final response.
 ///
 /// An exception during an exchange is passed to the downstream pipeline as [UpstreamException],
-/// where [ExceptionHandler] counts it and logs its first occurrence at warning, so here it is
-/// logged at debug only, with the upstream channel. The other events of a misbehaving upstream are
+/// where [ExceptionHandler] counts and logs it, so it is not logged here. The other events of a misbehaving upstream are
 /// counted in [ProxyMetrics#upstreamErrorCounter] and logged at debug, see [ProxyLogger] for the
-/// levels: a close before the response is complete (the request then ends by its timeout or abort
-/// outcome), data after the response, and an exception after the response. Their first
-/// occurrences are logged at warning, see [ProxyLogger#incrementAndWarnOnce].
+/// levels: data after the response and an exception after the response. Their first occurrences
+/// are logged at warning, see [ProxyLogger#incrementAndWarnOnce].
+///
+/// A close while the exchange is attached is passed to the client pipeline as [UpstreamClosed].
+/// Only the [DownstreamHandler] knows whether it closed the upstream itself, e.g. after a timeout
+/// or a client abort, or whether the upstream went away; it counts and answers the latter.
 ///
 /// @author Jens Wilke
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
@@ -50,20 +51,24 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     this.upstream = upstream;
   }
 
+  /// Tells the client pipeline that the upstream channel of its exchange closed. Fired after the
+  /// response parts read before, a response delimited by the close is complete by then: the HTTP
+  /// decoder emits its last content before `channelInactive` reaches this handler.
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (downstream != null) {
-      LOG.incrementAndWarnOnce(
-          metrics.upstreamErrorCounter,
-          new String[] {upstream, CLOSED_IN_FLIGHT.label},
-          ctx.channel(),
-          "upstream closed but request still in flight, downstream="
-              + downstream.id()
-              + ", upstream="
-              + ctx.channel().id());
+      Channel exchangeDownstream = downstream;
+      downstream = null;
+      exchangeDownstream.pipeline().fireUserEventTriggered(new UpstreamClosed(ctx.channel()));
     }
     super.channelInactive(ctx);
   }
+
+  /// The upstream channel closed while an exchange was attached to it, see
+  /// [DownstreamHandler#userEventTriggered]
+  ///
+  /// @param upstream the closed channel, to tell whether it still belongs to the active exchange
+  record UpstreamClosed(Channel upstream) {}
 
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object msg) {
@@ -149,9 +154,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-    String message = "upstream failure, downstream=" + LOG.channelId(downstream) + ": " + cause;
     if (downstream != null) {
-      LOG.debug(ctx.channel(), message, null);
       // cleared first: the exception handling closes the upstream, which is no close in flight
       Channel exchangeDownstream = downstream;
       downstream = null;
@@ -161,7 +164,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
           metrics.upstreamErrorCounter,
           new String[] {upstream, EXCEPTION_WITHOUT_REQUEST.label},
           ctx.channel(),
-          message);
+          "upstream failure without an exchange: " + cause);
     }
     ctx.close();
   }
