@@ -32,7 +32,11 @@ class RequestOutcomeTest {
 
   /// Values captured during the log call, the info is only valid then
   record Logged(
-      RequestOutcome outcome, int upstreamStatus, String upstreamName, String protectionOutcome) {}
+      RequestOutcome outcome,
+      ResponseSource source,
+      int upstreamStatus,
+      String upstreamName,
+      String protectionOutcome) {}
 
   final List<Logged> logged = new ArrayList<>();
   EmbeddedChannel channel;
@@ -66,6 +70,7 @@ class RequestOutcomeTest {
             logged.add(
                 new Logged(
                     info.outcome(),
+                    info.responseSource(),
                     info.upstreamStatus(),
                     info.upstreamName(),
                     info.protectionOutcome())));
@@ -81,6 +86,9 @@ class RequestOutcomeTest {
           RequestLoggingHandler.find(ctx).setUpstream(UPSTREAM);
         }
         if (msg instanceof LastHttpContent) {
+          if (withUpstream) {
+            RequestLoggingHandler.reportResponseSource(ctx, ResponseSource.UPSTREAM);
+          }
           ctx.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status));
         }
         ReferenceCountUtil.release(msg);
@@ -99,18 +107,23 @@ class RequestOutcomeTest {
     channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.OK, true));
     request();
     assertThat(logged)
-        .containsExactly(new Logged(RequestOutcome.COMPLETED, 0, "upstreams.backend", null));
+        .containsExactly(
+            new Logged(
+                RequestOutcome.COMPLETED, ResponseSource.UPSTREAM, 0, "upstreams.backend", null));
   }
 
-  /// Without an upstream, the edge answered itself
+  /// Without an upstream, the edge answered itself: the exchange is completed, the source is the
+  /// edge
   @Test
-  void noUpstreamIsEdgeResponse() {
+  void noUpstreamIsAnsweredByTheEdge() {
     channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.NOT_FOUND, false));
     request();
-    assertThat(logged).containsExactly(new Logged(RequestOutcome.EDGE_RESPONSE, 0, null, null));
+    assertThat(logged)
+        .containsExactly(new Logged(RequestOutcome.COMPLETED, ResponseSource.EDGE, 0, null, null));
   }
 
-  /// The fallback page replaces the 503 of the upstream, the original status is logged
+  /// The fallback page replaces the 503 of the upstream: the exchange is completed, the source is
+  /// the fallback, the original status is logged
   @Test
   void fallbackReportsTheUpstreamStatus() {
     channel =
@@ -121,12 +134,15 @@ class RequestOutcomeTest {
                         .unavailableResponse(ResponseConfig.builder().text("unavailable").build())
                         .errorResponse(ResponseConfig.builder().text("error").build())
                         .build(),
-                    new ConfigFiles())
+                    new ConfigFiles(),
+                    metrics)
                 .newHandler(),
             respond(HttpResponseStatus.SERVICE_UNAVAILABLE, true));
     request();
     assertThat(logged)
-        .containsExactly(new Logged(RequestOutcome.FALLBACK, 503, "upstreams.backend", null));
+        .containsExactly(
+            new Logged(
+                RequestOutcome.COMPLETED, ResponseSource.FALLBACK, 503, "upstreams.backend", null));
   }
 
   /// The connection closes before the response was sent
@@ -189,6 +205,7 @@ class RequestOutcomeTest {
     request();
     RequestLoggingHandler handler = channel.pipeline().get(RequestLoggingHandler.class);
     handler.setOutcome(RequestOutcome.EDGE_ERROR);
+    handler.setResponseSource(ResponseSource.FALLBACK);
     handler.setProtectionOutcome(ProxyMetrics.DeflectorOutcome.PASSED);
     handler.setUpstream(UPSTREAM);
     handler.setUpstreamStatus(503);
@@ -196,8 +213,19 @@ class RequestOutcomeTest {
     request();
     assertThat(logged)
         .containsExactly(
-            new Logged(RequestOutcome.EDGE_RESPONSE, 0, null, null),
-            new Logged(RequestOutcome.EDGE_RESPONSE, 0, null, null));
+            new Logged(RequestOutcome.COMPLETED, ResponseSource.EDGE, 0, null, null),
+            new Logged(RequestOutcome.COMPLETED, ResponseSource.EDGE, 0, null, null));
+  }
+
+  /// A handler tested without the logging handler, e.g. the `DownstreamHandler` alone, reports into
+  /// the void
+  @Test
+  void reportsWithoutLoggingHandlerAreIgnored() {
+    channel = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
+    ChannelHandlerContext ctx = channel.pipeline().firstContext();
+    RequestLoggingHandler.reportResponseSource(ctx, ResponseSource.UPSTREAM);
+    RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.EDGE_ERROR);
+    assertThat(logged).isEmpty();
   }
 
   @Test

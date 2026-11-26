@@ -20,6 +20,8 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
   /// head was replaced with the fallback.
   private boolean suppressing;
 
+  private static final ProxyLogger LOG = ProxyLogger.get(FallbackHandler.class);
+
   private final ResponseConfig unavailable; // fallbackConfig.unavailableResponse()
 
   private final ResponseConfig error;
@@ -28,9 +30,16 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
 
   private final byte[] errorContent;
 
+  private final ProxyMetrics metrics;
+
   /// @param unavailableContent body of the 503 page fallback, `null` if it is a redirect
   /// @param errorContent body of the 500 page fallback, `null` if it is a redirect
-  FallbackHandler(FallbackConfig fallbackConfig, byte[] unavailableContent, byte[] errorContent) {
+  FallbackHandler(
+      FallbackConfig fallbackConfig,
+      byte[] unavailableContent,
+      byte[] errorContent,
+      ProxyMetrics metrics) {
+    this.metrics = metrics;
     this.unavailable = fallbackConfig.unavailableResponse();
     this.error = fallbackConfig.errorResponse();
     this.unavailableContent = unavailableContent;
@@ -95,15 +104,33 @@ public class FallbackHandler extends ChannelOutboundHandlerAdapter {
     }
   }
 
+  /// Replaces the upstream response with the fallback. The request log gets
+  /// [ResponseSource#FALLBACK] and the replaced status; how the exchange ends for the client, e.g.
+  /// completed or aborted, is its outcome. A fallback that is not a server error hides the problem
+  /// from the status codes, so its first occurrence is logged, see [ProxyLogger] "Levels".
   private void writeFallback(
       ChannelHandlerContext ctx, HttpResponse source, ChannelPromise promise) {
+    int upstreamStatus = source.status().code();
     RequestLoggingHandler requestLog = RequestLoggingHandler.find(ctx);
     if (requestLog != null) {
-      requestLog.setOutcome(RequestOutcome.FALLBACK);
-      requestLog.setUpstreamStatus(source.status().code());
+      requestLog.setResponseSource(ResponseSource.FALLBACK);
+      requestLog.setUpstreamStatus(upstreamStatus);
     }
     FullHttpResponse fallback = buildFallback(ctx, source);
     ReferenceCountUtil.release(source);
+    String[] labels = {ProxyMetrics.ingress(ctx), String.valueOf(upstreamStatus)};
+    if (fallback.status().codeClass() == HttpStatusClass.SERVER_ERROR) {
+      metrics.fallbackResponseCounter.labelValues(labels).inc();
+    } else {
+      LOG.incrementAndWarnOnce(
+          metrics.fallbackResponseCounter,
+          labels,
+          ctx.channel(),
+          "upstream status "
+              + upstreamStatus
+              + " masked by a fallback with status "
+              + fallback.status().code());
+    }
     ctx.write(fallback, promise);
   }
 

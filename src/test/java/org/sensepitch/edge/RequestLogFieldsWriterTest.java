@@ -228,13 +228,15 @@ class RequestLogFieldsWriterTest {
   void operationalFields() {
     TestRequestLogInfo info =
         TestRequestLogInfo.of(HttpMethod.GET, 503)
-            .withOutcome(RequestOutcome.FALLBACK, 503)
+            .withOutcome(RequestOutcome.COMPLETED, 503)
+            .withResponseSource(ResponseSource.FALLBACK)
             .withRoute("/api/*")
             .withConfigId("0123456789abcdef")
             .withProtectionOutcome("passed");
     info.response().headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html");
     assertThat(fields(info).fields)
-        .containsEntry("sensepitch.request.outcome", "fallback")
+        .containsEntry("sensepitch.request.outcome", "completed")
+        .containsEntry("sensepitch.response.source", "fallback")
         .containsEntry("sensepitch.upstream.status", 503L)
         .containsEntry("http.route", "/api/*")
         .containsEntry("sensepitch.config.id", "0123456789abcdef")

@@ -174,6 +174,10 @@ public final class RequestLogFieldsWriter {
     sink.optionalString(SensepitchLogFields.UPSTREAM_NAME, info.upstreamName());
     sink.optionalString(SensepitchLogFields.UPSTREAM_TARGET, info.upstreamTarget());
     sink.optionalNumber(SensepitchLogFields.UPSTREAM_STATUS, info.upstreamStatus());
+    ResponseSource source = info.responseSource();
+    if (source != null) {
+      sink.string(SensepitchLogFields.RESPONSE_SOURCE, source.value());
+    }
     sink.optionalString(SensepitchLogFields.PROTECTION_OUTCOME, info.protectionOutcome());
     sink.optionalString(SensepitchLogFields.CONFIG_ID, info.configId());
   }

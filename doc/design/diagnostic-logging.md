@@ -56,7 +56,9 @@ a request record (a handshake failure, data from an upstream after its exchange,
 log write, a failed fingerprint or IP lookup) and details the record lacks, e.g. the stack trace of
 an unexpected exception, which may be a bug. A problem the edge masks, so that the record shows no
 failure status, e.g. an error answered with a successful response, needs a diagnostic line: an
-operator watching the status codes would not see it. Decided on 2026-11-26 after a client abort
+operator watching the status codes would not see it. The fallback page is that case: an upstream
+`500`/`503` replaced by a page with a successful status is counted in
+`sensepitch_fallback_responses_total` and its first occurrence logged, see `FallbackHandler`. Decided on 2026-11-26 after a client abort
 logged a misleading `WARN` in production.
 
 ### The bundled configurations disable the Log4j2 hook

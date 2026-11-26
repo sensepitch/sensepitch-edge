@@ -119,6 +119,7 @@ class ProxyOptionsTest {
         .isEqualTo("sites.example.com.response");
     assertThat(response.has("sensepitch.upstream.target")).isFalse();
     assertThat(response.get("sensepitch.request.outcome").asText()).isEqualTo("completed");
+    assertThat(response.get("sensepitch.response.source").asText()).isEqualTo("static");
     assertThat(response.get("http.route").asText()).as("site default route").isEqualTo("/*");
     assertThat(response.get("sensepitch.config.id").asText())
         .isEqualTo(steps.proxy.state().configId())
@@ -128,7 +129,8 @@ class ProxyOptionsTest {
     var challenge = json.readTree(steps.requestLog.lines().get(1));
     assertThat(challenge.get("server.address").asText()).isEqualTo("withprotection.com");
     assertThat(challenge.has("sensepitch.upstream.name")).as("answered by the edge").isFalse();
-    assertThat(challenge.get("sensepitch.request.outcome").asText()).isEqualTo("edge_response");
+    assertThat(challenge.get("sensepitch.request.outcome").asText()).isEqualTo("completed");
+    assertThat(challenge.get("sensepitch.response.source").asText()).isEqualTo("edge");
     assertThat(challenge.get("sensepitch.protection.outcome").asText()).isEqualTo("challenge_sent");
   }
 
@@ -174,7 +176,8 @@ class ProxyOptionsTest {
     }
     assertThat(routes).containsExactly("/api/*", "/exact", "/*", "/shop/*", null);
     var unserviced = json.readTree(steps.requestLog.lines().get(4));
-    assertThat(unserviced.get("sensepitch.request.outcome").asText()).isEqualTo("edge_response");
+    assertThat(unserviced.get("sensepitch.request.outcome").asText()).isEqualTo("completed");
+    assertThat(unserviced.get("sensepitch.response.source").asText()).isEqualTo("edge");
   }
 
   /// Timeouts from the configuration are announced to the client in the keep-alive header.

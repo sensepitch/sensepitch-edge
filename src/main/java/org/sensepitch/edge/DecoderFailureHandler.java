@@ -21,7 +21,8 @@ import io.netty.util.ReferenceCountUtil;
 /// - 400 for any other decoder failure, e.g. a malformed request line or header
 ///
 /// Both size refusals are reported as [RequestOutcome#REQUEST_TOO_LARGE]; a 400 keeps the derived
-/// outcome [RequestOutcome#EDGE_RESPONSE], like other requests the edge rejects itself. The
+/// outcome [RequestOutcome#COMPLETED] with the source [ResponseSource#EDGE], like other requests
+/// the edge rejects itself. The
 /// response has `Connection: close`, so [IngressTimeoutHandler] closes the connection after it:
 /// the codec discards everything the client sends after a failure, so the connection cannot be
 /// reused.

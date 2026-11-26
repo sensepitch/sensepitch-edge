@@ -58,7 +58,9 @@ public class FallbackStreamingTest {
   @BeforeEach
   void setUp() {
     channel =
-        new EmbeddedChannel(capture(written), new Fallback(CONFIG, new ConfigFiles()).newHandler());
+        new EmbeddedChannel(
+            capture(written),
+            new Fallback(CONFIG, new ConfigFiles(), new ProxyMetrics()).newHandler());
   }
 
   @AfterEach
@@ -131,7 +133,8 @@ public class FallbackStreamingTest {
             .build();
     List<Object> out = new ArrayList<>();
     EmbeddedChannel ch =
-        new EmbeddedChannel(capture(out), new Fallback(cfg, new ConfigFiles()).newHandler());
+        new EmbeddedChannel(
+            capture(out), new Fallback(cfg, new ConfigFiles(), new ProxyMetrics()).newHandler());
     locallyBuiltChannels.add(ch);
     ch.writeOutbound(
         new DefaultHttpResponse(HTTP_1_1, SERVICE_UNAVAILABLE),
@@ -238,7 +241,8 @@ public class FallbackStreamingTest {
     List<Object> out = new ArrayList<>();
     EmbeddedChannel ch =
         new EmbeddedChannel(
-            capture(out), new Fallback(redirectCfg, new ConfigFiles()).newHandler());
+            capture(out),
+            new Fallback(redirectCfg, new ConfigFiles(), new ProxyMetrics()).newHandler());
     locallyBuiltChannels.add(ch);
 
     DefaultHttpContent originChunk = chunk("origin-body");
@@ -272,7 +276,10 @@ public class FallbackStreamingTest {
     EmbeddedChannel ch =
         new EmbeddedChannel(
             capture(out),
-            new Fallback(FallbackConfig.DEFAULTS.merge(redirectCfg), new ConfigFiles())
+            new Fallback(
+                    FallbackConfig.DEFAULTS.merge(redirectCfg),
+                    new ConfigFiles(),
+                    new ProxyMetrics())
                 .newHandler());
     locallyBuiltChannels.add(ch);
 

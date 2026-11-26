@@ -331,6 +331,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       informationalResponse = response.status().codeClass() == HttpStatusClass.INFORMATIONAL;
       if (!informationalResponse) {
         responseStarted = true;
+        // with an upstream attached the head is its response; an error response of the
+        // ExceptionHandler passes here too, but only after the upstream was dropped
+        if (upstreamChannelFuture != null) {
+          RequestLoggingHandler.reportResponseSource(
+              ctx, upstream.target() != null ? ResponseSource.UPSTREAM : ResponseSource.STATIC);
+        }
       }
     }
     if (msg instanceof LastHttpContent) {

@@ -41,12 +41,15 @@ public interface RequestLogInfo {
   /// @return `host:port`, or `null` if no upstream was selected or it has no target
   String upstreamTarget();
 
-  /// Why the request ended, never `null`
+  /// How the exchange ended for the client, never `null`
   RequestOutcome outcome();
+
+  /// Who produced the response, `null` if none was written, e.g. the client left while waiting
+  ResponseSource responseSource();
 
   /// Status of the upstream response when the logged response differs from it: the status
   /// replaced by a fallback page, or the upstream status of a response whose delivery to the
-  /// client was aborted. `0` when no upstream status applies, see [RequestOutcome#FALLBACK] and
+  /// client was aborted. `0` when no upstream status applies, see [ResponseSource#FALLBACK] and
   /// [RequestOutcome#CLIENT_ABORTED]
   int upstreamStatus();
 

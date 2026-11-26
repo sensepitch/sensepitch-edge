@@ -171,7 +171,7 @@ class RequestLoggingHandlerTest {
                   handler.setUpstream(UPSTREAM);
                 }
                 if (msg instanceof LastHttpContent) {
-                  handler.setOutcome(RequestOutcome.FALLBACK);
+                  handler.setResponseSource(ResponseSource.FALLBACK);
                   handler.setUpstreamStatus(503);
                   ctx.writeAndFlush(
                       new DefaultFullHttpResponse(
@@ -183,7 +183,7 @@ class RequestLoggingHandlerTest {
 
     request(channel);
 
-    assertThat(logged).containsExactly(new Logged(499, 0, 503, RequestOutcome.FALLBACK));
+    assertThat(logged).containsExactly(new Logged(499, 0, 503, RequestOutcome.CLIENT_ABORTED));
     channel.finishAndReleaseAll();
   }
 

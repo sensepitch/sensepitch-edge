@@ -256,7 +256,8 @@ None of these is decided. The choices are ticked in `TODO.md`.
   Implemented on 2026-11-24 in `DecoderFailureHandler`. It sits after `RequestLoggingHandler` and
   `IngressTimeoutHandler` instead of right after the codec, so the refusal is logged and counted
   and the timeouts see the response; it is before every handler that serves the request. A 400
-  keeps the outcome `edge_response`, like the other requests the edge rejects itself.
+  keeps the outcome `completed` with the response source `edge`, like the other requests the edge
+  rejects itself.
 - [ ] Raise the defaults towards the streaming proxies (refused at: NGINX 9000 bytes, HAProxy
   16000, Caddy 32000, Envoy 70000). Large cookies and tokens exceed 8 KiB; the cost is memory per
   connection while the head is parsed.

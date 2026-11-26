@@ -133,6 +133,7 @@ the failure threshold for upstreams is under Upstream.
 ## Metrics, logging
 
 - [ ] Cleanup: Consolidate all sensepitch metrics prefixes as constants into one place including their descritpion P3
+- [ ] The name RequestLog is actually wrong also. Rename to AccessLog?
 
 ## Configuration, operations
 

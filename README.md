@@ -263,10 +263,15 @@ value of `sensepitch.request.outcome` in the request log, see [Request outcome](
 The counts match the request log: one per record. An outcome appears once it happened for the
 ingress.
 
-The share of failed requests is the rate of all outcomes except `completed`, `edge_response` and
-`fallback`, divided by the rate of all outcomes. `upstream_*` points to the upstream,
-`request_timeout`, `request_too_large`, `response_write_timeout` and `client_aborted` to the
-client.
+The share of failed requests is the rate of all outcomes except `completed`, divided by the rate
+of all outcomes. `upstream_*` points to the upstream, `request_timeout`, `request_too_large`,
+`response_write_timeout` and `client_aborted` to the client.
+
+### `sensepitch_fallback_responses_total{ingress="...",upstream_status="..."}`
+
+Upstream `500` and `503` responses replaced by a fallback page, by `ingress` and the replaced
+status. A replaced exchange counts as `completed` in the outcome metric, so this is where a failing
+upstream behind a fallback shows, see [Fallback / maintenance pages](#fallback--maintenance-pages).
 
 ### `sensepitch_ingress_request_flavor_count_total{flavor="...",country="..."}`
 
@@ -486,6 +491,16 @@ sites:
 
 See `FallbackConfig` and `ResponseConfig` for the slot semantics, the page/redirect shape, and how
 global and per-site config is layered.
+
+A replaced response is logged with `sensepitch.response.source` `fallback` and the replaced status
+in `sensepitch.upstream.status`, and counted in
+`sensepitch_fallback_responses_total{ingress,upstream_status}`. A fallback page with its own status
+that is no server error, e.g. `200` or a redirect, hides the problem from the status codes, so its
+first occurrence per ingress and upstream status is also logged at warning.
+
+Before, the replacement was the request outcome `fallback`, and an exchange the edge answered
+itself had the outcome `edge_response`. Both are `completed` now (or how the exchange ended
+otherwise, e.g. `client_aborted`), with the source in `sensepitch.response.source`.
 
 ## Upstream routing
 
@@ -988,7 +1003,8 @@ Attributes without a semantic convention:
 | Name | Content |
 |---|---|
 | `sensepitch.connection.id`, `sensepitch.connection.request_count` | groups the requests of a keep-alive connection |
-| `sensepitch.request.outcome` | why the request ended, always present, see below |
+| `sensepitch.request.outcome` | how the exchange ended for the client, always present, see below |
+| `sensepitch.response.source` | who produced the response: `upstream`, `static`, `fallback` or `edge`; absent if no response was written, see Request outcome |
 | `sensepitch.upstream.status` | status of the upstream response when the edge replaced it with a fallback page |
 | `sensepitch.config.id` | First 16 hex characters of SHA-256 over the masked configuration YAML active when the request started. Nodes running the same edge version with identical masked YAML log the same id. Secret file paths are part of the YAML. |
 | `sensepitch.protection.outcome` | deflector outcome: `passed`, `bypassed`, `method_rejected`, `challenge_sent`, `answer_accepted`, `answer_rejected`, the label values of `sensepitch_deflector_requests_total` |
@@ -1011,15 +1027,16 @@ The OTLP export also identifies the edge: the resource has `service.instance.id`
 
 ### Request outcome
 
-`sensepitch.request.outcome` tells why a request ended. The values are few, so it suits dashboards
+`sensepitch.request.outcome` tells how the exchange ended for the client: completed, or why not.
+Who produced the response is `sensepitch.response.source`: `upstream`, `static` (a configured
+response), `fallback` (a fallback page replaced the upstream's `500`/`503`) or `edge` (a challenge,
+a redirect or rejection, an error response). The outcome values are few, so they suit dashboards
 to see at a glance whether the edge, the upstream or the client is involved. The metric
 `sensepitch_ingress_request_outcomes_total` counts the same values:
 
 | Value | Meaning |
 |---|---|
-| `completed` | the upstream or a static response route answered, the response was sent |
-| `edge_response` | no upstream was selected, the edge answered itself: challenge, rejected method, unserviced host, no site matched, a malformed request (400) |
-| `fallback` | the upstream answered 500 or 503 and the fallback page was sent instead, see `sensepitch.upstream.status` |
+| `completed` | the response was sent completely, whoever produced it, see `sensepitch.response.source` |
 | `upstream_connect_failed` | the connection to the upstream failed (502) |
 | `upstream_write_failed` | forwarding the request to the upstream failed (502) |
 | `upstream_closed` | the upstream closed the connection before its response was complete (502, or the client connection is closed if the response had started). Before, the request waited for `upstream_timeout` |

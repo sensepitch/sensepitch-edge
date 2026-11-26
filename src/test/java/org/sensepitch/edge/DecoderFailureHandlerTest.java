@@ -100,7 +100,7 @@ class DecoderFailureHandlerTest {
   void malformedRequestIs400() {
     String response = send("GET / HTTX/1.1\r\nHost: example.com\r\n\r\n");
     assertThat(response).startsWith("HTTP/1.1 400 Bad Request\r\n");
-    assertRejected(response, 400, RequestOutcome.EDGE_RESPONSE);
+    assertRejected(response, 400, RequestOutcome.COMPLETED);
   }
 
   /// A header just below the limit passes, is answered by the site and keeps the connection open

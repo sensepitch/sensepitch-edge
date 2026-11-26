@@ -94,6 +94,18 @@ public class ProxyMetrics implements HasMultipleMetrics {
     ingressErrorCounter.labelValues(ingress(ctx), phase, type.label).inc();
   }
 
+  /// Upstream `500` and `503` responses replaced by a fallback page, by ingress and the replaced
+  /// status, see [FallbackHandler]. The request log has them with [ResponseSource#FALLBACK]; a
+  /// fallback whose status is not `5xx` masks the problem from the status codes, so its first
+  /// occurrence is also logged.
+  public final Counter fallbackResponseCounter =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_fallback_responses")
+              .help("Upstream 500 and 503 responses replaced by a fallback page")
+              .labelNames("ingress", "upstream_status")
+              .build());
+
   /// Requests on the plain HTTP listener by [PlainHttpOutcome], see [HttpToHttpsRedirectHandler].
   /// They are not in the request log, see `doc/design/encrypted-transport.md`.
   public final Counter plainHttpRequestCounter =

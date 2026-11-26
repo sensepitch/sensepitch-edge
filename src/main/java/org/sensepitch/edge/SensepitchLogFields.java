@@ -12,8 +12,11 @@ public final class SensepitchLogFields {
   /// Value of [OtelLogFields#EVENT_NAME] identifying a request log record
   public static final String EVENT_NAME_VALUE = "sensepitch.request";
 
-  /// Why the request ended, see [RequestOutcome]
+  /// How the exchange ended for the client, see [RequestOutcome]
   public static final String REQUEST_OUTCOME = "sensepitch.request.outcome";
+
+  /// Who produced the response, see [ResponseSource]
+  public static final String RESPONSE_SOURCE = "sensepitch.response.source";
 
   /// Status of the upstream response when the logged response differs from it: the status
   /// replaced by a fallback page, or the upstream status of an aborted delivery

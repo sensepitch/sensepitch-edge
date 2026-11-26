@@ -36,6 +36,7 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
   private String configId;
   private String protectionOutcome;
   private List<String> sampleHeaders;
+  private ResponseSource responseSource;
 
   private TestRequestLogInfo(HttpRequest request, HttpResponse response) {
     this.request = request;
@@ -90,6 +91,17 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
     this.outcome = outcome;
     this.upstreamStatus = upstreamStatus;
     return this;
+  }
+
+  /// With who produced the response, see [ResponseSource]
+  TestRequestLogInfo withResponseSource(ResponseSource source) {
+    responseSource = source;
+    return this;
+  }
+
+  @Override
+  public ResponseSource responseSource() {
+    return responseSource;
   }
 
   TestRequestLogInfo withRoute(String route) {

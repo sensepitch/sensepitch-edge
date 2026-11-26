@@ -292,11 +292,10 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
   with its response, see the [glossary](doc/glossary.md), e.g. "the request then ends by its
   timeout" in the class doc of `ForwardHandler`. Names that are part of an interface (metric
   names such as `sensepitch_ingress_requests_in_flight`, log fields, config keys) stay.
-
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without
   a visible effect for the operator, move optional work to [NOT-YET.md](NOT-YET.md), and check the
   GitHub CI actions; add an entry or fix right away if something is broken
-- [ ] Improve code according to styling rules
+- [ ] Improve code according to rules
   - Ongoing review principle; record concrete inconsistencies as separate tasks.
 - [ ] improve code coverage towards 100%
   - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.

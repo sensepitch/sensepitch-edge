@@ -2,27 +2,20 @@ package org.sensepitch.edge;
 
 import java.util.Locale;
 
-/// Why a request ended, logged as `sensepitch.request.outcome`. The values are few, so they are
-/// suited for grouping in dashboards: is it the edge, the upstream or the client? The same values
-/// are counted in the metric `sensepitch_ingress_request_outcomes_total{ingress,outcome}`, see
+/// How the exchange ended for the client, logged as `sensepitch.request.outcome`: completed, or why
+/// not. Who produced the response is the [ResponseSource]. The values are few, so they are suited
+/// for grouping in dashboards: is it the edge, the upstream or the client? The same values are
+/// counted in the metric `sensepitch_ingress_request_outcomes_total{ingress,outcome}`, see
 /// [ProxyMetrics#countRequestOutcome].
 ///
-/// [#COMPLETED] and [#EDGE_RESPONSE] are derived when nothing else was reported. The others are
-/// reported by the handler that ended the request, the first report wins.
+/// [#COMPLETED] is derived when nothing else was reported. The others are reported by the handler
+/// that ended the exchange, the first report wins.
 ///
 /// @author Jens Wilke
 public enum RequestOutcome {
 
-  /// The upstream or a static response route answered, the response was sent
+  /// The response was sent completely, whoever produced it, see [ResponseSource]
   COMPLETED,
-
-  /// No upstream was selected, the edge answered itself, e.g. with a challenge, a redirect of an
-  /// unserviced host or because no site matched
-  EDGE_RESPONSE,
-
-  /// The error response of the upstream was replaced by the fallback page, see
-  /// [RequestLogInfo#upstreamStatus()]
-  FALLBACK,
 
   /// The connection to the upstream failed
   UPSTREAM_CONNECT_FAILED,

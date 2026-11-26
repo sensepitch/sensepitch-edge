@@ -16,6 +16,7 @@ public class RequestLogCapture implements RequestLogOutput {
   // guarded by lock
   private final List<String> lines = new ArrayList<>();
   private final List<RequestOutcome> outcomes = new ArrayList<>();
+  private final List<ResponseSource> sources = new ArrayList<>();
 
   @Override
   public void writeLine(String line) {
@@ -25,12 +26,14 @@ public class RequestLogCapture implements RequestLogOutput {
   }
 
   /// Request logger writing the plain text format into this capture. It also records the outcome
-  /// of each request, which the plain text format does not show, see [#outcomes()].
+  /// and the response source of each request, which the plain text format does not show, see
+  /// [#outcomes()] and [#sources()].
   public RequestLogger plainText() {
     PlainTextRequestLogger text = new PlainTextRequestLogger(this);
     return info -> {
       synchronized (lock) {
         outcomes.add(info.outcome());
+        sources.add(info.responseSource());
       }
       text.logRequest(info);
     };
@@ -40,6 +43,14 @@ public class RequestLogCapture implements RequestLogOutput {
   public List<RequestOutcome> outcomes() {
     synchronized (lock) {
       return List.copyOf(outcomes);
+    }
+  }
+
+  /// Response sources of the requests logged via [#plainText()] so far, `null` where no response
+  /// was written
+  public List<ResponseSource> sources() {
+    synchronized (lock) {
+      return new ArrayList<>(sources);
     }
   }
 

@@ -569,6 +569,8 @@ public class FlowAndExceptionTest {
     assertThat(upstreamChannel.isOpen()).isFalse();
     assertThat(requestLogCapture.lines()).singleElement().asString().contains("Connection reset");
     assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.EDGE_ERROR);
+    // the 502 is the edge's, though it passes the DownstreamHandler on its way out
+    assertThat(requestLogCapture.sources()).containsExactly(ResponseSource.EDGE);
     assertThat(
             proxyMetrics
                 .ingressErrorCounter
@@ -695,6 +697,18 @@ public class FlowAndExceptionTest {
     assertThat(ingressChannel.isWritable()).isTrue();
     assertThat(upstreamChannel.config().isAutoRead()).isTrue();
     ingressChannel.finishAndReleaseAll();
+  }
+
+  /// The response of the upstream is forwarded and logged with the upstream as its source
+  @Test
+  public void upstreamResponseIsLoggedWithItsSource() {
+    sendGetRequest();
+    upstreamChannel.writeInbound(
+        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK),
+        new DefaultLastHttpContent());
+    rattle();
+    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.COMPLETED);
+    assertThat(requestLogCapture.sources()).containsExactly(ResponseSource.UPSTREAM);
   }
 
   /// When the client goes away, the upstream connection is closed at once: nobody takes the rest of
@@ -890,6 +904,12 @@ public class FlowAndExceptionTest {
     @Override
     public String name() {
       return "upstream";
+    }
+
+    /// A network target, so the response counts as one of an upstream, not a static response
+    @Override
+    public String target() {
+      return "upstream.test:80";
     }
 
     @Override

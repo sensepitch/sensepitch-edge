@@ -21,16 +21,20 @@ public class Fallback {
 
   private final byte[] errorContent;
 
+  private final ProxyMetrics metrics;
+
   /// @param files reads the page files
+  /// @param metrics counts the fallback responses, see [ProxyMetrics#fallbackResponseCounter]
   /// @throws UncheckedIOException if a configured page resource cannot be read
-  public Fallback(FallbackConfig config, ConfigFiles files) {
+  public Fallback(FallbackConfig config, ConfigFiles files, ProxyMetrics metrics) {
     this.config = config;
+    this.metrics = metrics;
     this.unavailableContent = pageBody(config.unavailableResponse(), files);
     this.errorContent = pageBody(config.errorResponse(), files);
   }
 
   public FallbackHandler newHandler() {
-    return new FallbackHandler(config, unavailableContent, errorContent);
+    return new FallbackHandler(config, unavailableContent, errorContent, metrics);
   }
 
   /// Build the body of the page `cfg` describes: the resource named by [ResponseConfig#file()] (see

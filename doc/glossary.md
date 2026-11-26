@@ -28,8 +28,8 @@ client connection
 the application a request is forwarded to (`upstreams` in the configuration,
 [`ForwardHandler`](../src/main/java/org/sensepitch/edge/ForwardHandler.java)).
 
-**edge**: Sensepitch Edge itself. "The edge answered" means no upstream was involved, the request
-outcome `edge_response`.
+**edge**: Sensepitch Edge itself. "The edge answered" means no upstream was involved, the response
+source `edge`.
 
 **edge header**: a request header the edge adds for the upstream, named `Sp-*`; a client cannot
 send one, see [`SensepitchHeaders`](../src/main/java/org/sensepitch/edge/SensepitchHeaders.java).
@@ -83,9 +83,14 @@ at debug, its first occurrence at warning, never at `INFO` or above, see
 **request log**: one record per exchange, to standard out or OTLP, see
 [request log](design/request-log.md). Not the diagnostic log.
 
-**request outcome**: why an exchange ended, one value per request log record, e.g. `completed`,
-`upstream_timeout`, see
-[`RequestOutcome`](../src/main/java/org/sensepitch/edge/RequestOutcome.java).
+**request outcome**: how an exchange ended for the client, one value per request log record, e.g.
+`completed`, `client_aborted`, `upstream_timeout`, see
+[`RequestOutcome`](../src/main/java/org/sensepitch/edge/RequestOutcome.java). Not who answered,
+that is the response source.
+
+**response source**: who produced the response: `upstream`, `static`, `fallback` or `edge`,
+logged as `sensepitch.response.source`, see
+[`ResponseSource`](../src/main/java/org/sensepitch/edge/ResponseSource.java).
 
 **site, route**: a site is a configured host with its upstream and protection (`sites`); a route
 is the rule that selected the upstream within it, a path pattern (`paths`), logged as `http.route`.

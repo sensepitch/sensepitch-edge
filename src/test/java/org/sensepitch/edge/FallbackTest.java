@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -54,6 +55,9 @@ public class FallbackTest {
           .errorResponse(page("global-error"))
           .build();
 
+  @RegisterExtension LogCapture logs = new LogCapture();
+
+  private final ProxyMetrics metrics = new ProxyMetrics();
   private EmbeddedChannel channel;
   private Object messageWritten;
 
@@ -82,7 +86,8 @@ public class FallbackTest {
             ctx.write(msg, promise);
           }
         };
-    channel = new EmbeddedChannel(capture, new Fallback(cfg, new ConfigFiles()).newHandler());
+    channel =
+        new EmbeddedChannel(capture, new Fallback(cfg, new ConfigFiles(), metrics).newHandler());
   }
 
   private void upstreamResponds(HttpResponseStatus status, String body) {
@@ -141,6 +146,42 @@ public class FallbackTest {
   private static FallbackConfig parse(String yaml) {
     Node root = new Yaml().compose(new StringReader(yaml));
     return RecordConstructor.construct(FallbackConfig.class, root);
+  }
+
+  /// A fallback with a server error status keeps the problem visible in the status codes, it is
+  /// only counted
+  @Test
+  public void fallbackWithServerErrorStatusIsCounted() {
+    logs.warnProblems();
+    init(merged(siteUnavailable(page("down"))));
+    upstreamResponds(HttpResponseStatus.SERVICE_UNAVAILABLE, "upstream page");
+    assertPage(HttpResponseStatus.SERVICE_UNAVAILABLE, "down");
+    assertThat(fallbacks("503")).isEqualTo(1);
+    assertThat(logs.entries()).isEmpty();
+  }
+
+  /// A fallback with a successful status masks the problem from the status codes: it is counted
+  /// and its first occurrence is logged at warning, naming the series
+  @Test
+  public void maskingFallbackWarnsOnce() {
+    logs.warnProblems();
+    init(merged(siteUnavailable(ResponseConfig.builder().text("all fine").status(200).build())));
+    upstreamResponds(HttpResponseStatus.SERVICE_UNAVAILABLE, "upstream page");
+    upstreamResponds(HttpResponseStatus.SERVICE_UNAVAILABLE, "upstream page");
+    assertPage(HttpResponseStatus.OK, "all fine");
+    assertThat(fallbacks("503")).isEqualTo(2);
+    assertThat(logs.entries())
+        .extracting(e -> e.info().level())
+        .containsExactly(System.Logger.Level.WARNING, System.Logger.Level.DEBUG);
+    assertThat(logs.entries().getFirst().message())
+        .contains("upstream status 503 masked by a fallback with status 200");
+  }
+
+  private double fallbacks(String upstreamStatus) {
+    return metrics
+        .fallbackResponseCounter
+        .labelValues(SanitizeHostHandler.NIL_HOST, upstreamStatus)
+        .get();
   }
 
   /// The one YAML test of this component, for an interaction the builder cannot show: the generic
@@ -362,7 +403,7 @@ public class FallbackTest {
                 ResponseConfig.builder()
                     .file("classpath:fallback/non_existent_page.html")
                     .build()));
-    assertThatThrownBy(() -> new Fallback(cfg, new ConfigFiles()))
+    assertThatThrownBy(() -> new Fallback(cfg, new ConfigFiles(), metrics))
         .isInstanceOf(UncheckedIOException.class)
         .hasMessageContaining("non_existent_page.html");
   }

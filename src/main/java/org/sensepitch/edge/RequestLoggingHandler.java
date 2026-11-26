@@ -95,6 +95,13 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private String route;
   private String configId;
   private ProxyMetrics.DeflectorOutcome protectionOutcome;
+
+  /// Reported by the handler that wrote the response, the last report wins, see [ResponseSource]
+  private ResponseSource responseSource;
+
+  /// A final response head was written, so the edge answered when no source was reported
+  private boolean responseWritten;
+
   private TraceContext traceContext;
   private String clientTraceparent;
 
@@ -201,6 +208,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
       informationalResponse = httpResponse.status().codeClass() == HttpStatusClass.INFORMATIONAL;
       if (!informationalResponse) {
         response = httpResponse;
+        responseWritten = true;
         contentBytes = 0;
       }
     }
@@ -291,6 +299,8 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     route = null;
     configId = null;
     protectionOutcome = null;
+    responseSource = null;
+    responseWritten = false;
     traceContext = null;
     clientTraceparent = null;
     clientHeaders = FingerprintHandler.ClientHeaders.NONE;
@@ -336,6 +346,15 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     return ctx.pipeline().get(RequestLoggingHandler.class);
   }
 
+  /// Reports who produced the response to the request logging handler of the pipeline, if any,
+  /// see [#setResponseSource]
+  static void reportResponseSource(ChannelHandlerContext ctx, ResponseSource source) {
+    RequestLoggingHandler handler = find(ctx);
+    if (handler != null) {
+      handler.setResponseSource(source);
+    }
+  }
+
   /// Reports why the request ends to the request logging handler of the pipeline, if any. Must be
   /// called before the response is written, the request may be logged when the write completes.
   static void reportOutcome(ChannelHandlerContext ctx, RequestOutcome outcome) {
@@ -352,6 +371,14 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   public void setOutcome(RequestOutcome outcome) {
     if (request != null && this.outcome == null) {
       this.outcome = outcome;
+    }
+  }
+
+  /// Reports who produced the response, the last report wins: a handler nearer the client
+  /// replaces the response of one further in, see [ResponseSource]
+  public void setResponseSource(ResponseSource source) {
+    if (request != null) {
+      this.responseSource = source;
     }
   }
 
@@ -445,7 +472,15 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     if (outcome != null) {
       return outcome;
     }
-    return upstream != null ? RequestOutcome.COMPLETED : RequestOutcome.EDGE_RESPONSE;
+    return RequestOutcome.COMPLETED;
+  }
+
+  @Override
+  public ResponseSource responseSource() {
+    if (responseSource != null) {
+      return responseSource;
+    }
+    return responseWritten ? ResponseSource.EDGE : null;
   }
 
   @Override

@@ -119,6 +119,11 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   }
 
   @Override
+  public ResponseSource responseSource() {
+    return info.responseSource();
+  }
+
+  @Override
   public int upstreamStatus() {
     return info.upstreamStatus();
   }

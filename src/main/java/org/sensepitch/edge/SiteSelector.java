@@ -81,7 +81,7 @@ public class SiteSelector {
                 throw new IllegalArgumentException("Site without settings: " + siteKey);
               }
               Supplier<ChannelHandler> fallbackSupplier =
-                  constructFallbackSupplier(config.fallback(), site.fallback());
+                  constructFallbackSupplier(config.fallback(), site.fallback(), ctx.metrics());
               ProtectionConfig protection = site.protection();
               if (protection == null) {
                 protection = config.protection();
@@ -113,8 +113,9 @@ public class SiteSelector {
   }
 
   private Supplier<ChannelHandler> constructFallbackSupplier(
-      FallbackConfig global, FallbackConfig site) {
-    Fallback fallback = new Fallback(FallbackConfig.DEFAULTS.merge(global).merge(site), files);
+      FallbackConfig global, FallbackConfig site, ProxyMetrics metrics) {
+    Fallback fallback =
+        new Fallback(FallbackConfig.DEFAULTS.merge(global).merge(site), files, metrics);
 
     return () -> fallback.newHandler();
   }
