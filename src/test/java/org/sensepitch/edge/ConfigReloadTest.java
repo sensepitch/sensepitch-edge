@@ -375,7 +375,7 @@ class ConfigReloadTest {
 
   @Test
   void sniCertificatesReloaded() {
-    var defaultContext = steps.proxy.state().sniMapping().map("other.com");
+    var defaultContext = steps.proxy.state().ssl().map("other.com");
     ProxyConfig withSni =
         CONFIG.toBuilder()
             .listen(
@@ -384,7 +384,7 @@ class ConfigReloadTest {
                     .build())
             .build();
     assertThat(reload(withSni)).isTrue();
-    var sniContext = steps.proxy.state().sniMapping().map("other.com");
+    var sniContext = steps.proxy.state().ssl().map("other.com");
     assertThat(sniContext).isNotNull().isNotSameAs(defaultContext);
     assertThat(logs.messages(Proxy.class))
         .anyMatch(
@@ -392,13 +392,13 @@ class ConfigReloadTest {
                 m.startsWith("Certificates reloaded, changes:")
                     && m.contains("added other.com: subject=")
                     && m.contains("notAfter=")
-                    && !m.contains("default:"));
+                    && !m.contains("default_host:"));
     logs.clear();
     reload(withSni);
     assertThat(logs.messages(Proxy.class))
         .contains("Configuration reloaded, no changes")
         .noneMatch(m -> m.startsWith("Certificates reloaded"));
-    assertThat(steps.proxy.state().sniMapping().map("other.com"))
+    assertThat(steps.proxy.state().ssl().map("other.com"))
         .as("an unchanged certificate keeps its context")
         .isSameAs(sniContext);
   }
@@ -522,8 +522,6 @@ class ConfigReloadTest {
         null,
         null,
         null,
-        null,
-        null,
         lookup,
         null,
         new UpstreamRegistry((name, config) -> null, null),
@@ -559,7 +557,7 @@ class ConfigReloadTest {
         .anyMatch(
             m ->
                 m.startsWith("Certificates loaded:")
-                    && m.contains("default: subject=")
+                    && m.contains("default_host: subject=")
                     && m.contains("file=classpath:ssl/test.crt"));
   }
 }

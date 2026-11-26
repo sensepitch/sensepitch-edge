@@ -50,13 +50,13 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - P1, test speed: one `./mvnw test` builds 113 contexts from the same test certificates, about
     15 ms each warm, about 1.7 s CPU in total, the largest repeated fixture cost found. Measured
     2026-11-26 on the 16 core development machine with a throwaway JUnit test (5 warm-up calls,
-    mean of 20): `Proxy.createSslContext` 15 ms, of it `SslContextBuilder.build()` with
+    mean of 20): `SslSetup.createSslContext` 15 ms, of it `SslContextBuilder.build()` with
     `SslProvider.OPENSSL` about 15 ms (JDK provider 6 ms, reading and parsing the PEM files
     1.5 ms); an EC P-256 key instead of RSA 2048 makes no difference. Counted with a temporary
     print per call: `ProxyConstructBDDTest.ExtendableSteps` builds 77 (one proxy per scenario,
     the handlers run on an `EmbeddedChannel` and never use TLS), `SslSetupTest` 8,
     `ProxyAcceptGraceTest` 7, `DecoderFailureHandlerTest` 5, the rest 1 or 2 per class. A reload
-    takes over unchanged contexts ([SslContextLoader](src/main/java/org/sensepitch/edge/SslContextLoader.java)),
+    takes over unchanged contexts ([SslSetup](src/main/java/org/sensepitch/edge/SslSetup.java)),
     which brought it down from 143.
   - TLS is mandatory in the configuration, so the tests cannot leave it out. Remaining option: a
     seam that lets a test pass the contexts of an earlier state, e.g. a `Proxy` constructor
@@ -87,7 +87,7 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported on the recent run; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
-- [ ] `Proxy.createSslContext`: a key that does not belong to the certificate is accepted
+- [ ] `SslSetup.createSslContext`: a key that does not belong to the certificate is accepted
   - P1: a reload with a renewed certificate and a not yet written key is applied, every TLS
     handshake then fails instead of the reload being rejected and the old context kept.
   - Found 2026-11-26: with `SslProvider.OPENSSL` (Netty 4.2), `SslContextBuilder.build()` does

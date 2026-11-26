@@ -6,20 +6,14 @@ import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SniHandler;
 import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslProvider;
-import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -31,7 +25,6 @@ import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
-import javax.net.ssl.SSLException;
 import org.sensepitch.edge.config.KeyInjector;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -98,7 +91,7 @@ public class Proxy implements ProxyContext {
   private final ProxyMetrics metrics = new ProxyMetrics(() -> state.knownHosts());
 
   /// Delegates to the current state, so the SNI handler picks up reloaded certificates
-  private final Mapping<String, SslContext> sniMapping = host -> state.sniMapping().map(host);
+  private final Mapping<String, SslContext> hostToContext = host -> state.ssl().map(host);
 
   /// Read once, the event loops are sized by it, see [#environment()]
   private final ProxyEnvironment environment = ProxyEnvironment.current();
@@ -206,7 +199,7 @@ public class Proxy implements ProxyContext {
     trustTraceparent = config.traceContext() != null && config.traceContext().trustTraceparent();
     ConfigFiles files = new ConfigFiles();
     EdgeState initial = EdgeState.build(this, config, null, files);
-    LOG.info("Certificates loaded:" + Certificates.list(initial.certificates()));
+    LOG.info("Certificates loaded:" + initial.ssl().certificateList());
     // the destinations share the metrics of the standard out writer, a metric name can be
     // registered only once
     requestLogMetrics =
@@ -271,7 +264,7 @@ public class Proxy implements ProxyContext {
       } else {
         LOG.info("Configuration reloaded, changes:\n" + diff);
       }
-      String certificateChanges = Certificates.changes(current.certificates(), next.certificates());
+      String certificateChanges = next.ssl().certificateChanges(current.ssl());
       // unchanged certificates are the common case, the configuration line above covers the reload
       if (!certificateChanges.isEmpty()) {
         LOG.info("Certificates reloaded, changes:" + certificateChanges);
@@ -403,86 +396,6 @@ public class Proxy implements ProxyContext {
     return metricsRegistry;
   }
 
-  static Mapping<String, SslContext> initializeSniMapping(
-      ListenConfig cfg, Set<String> servicedHosts) {
-    return initializeSniMapping(
-        cfg,
-        servicedHosts,
-        new LinkedHashMap<>(),
-        new SslContextLoader(Map.of(), new ConfigFiles()));
-  }
-
-  /// @param certificates receives a description of each loaded certificate by host, see
-  ///   [Certificates#describe(SslConfig, ConfigFiles)]
-  /// @param loader loads the contexts or takes them over from the previous state
-  static Mapping<String, SslContext> initializeSniMapping(
-      ListenConfig cfg,
-      Set<String> servicedHosts,
-      Map<String, String> certificates,
-      SslContextLoader loader) {
-    var knownHosts = new HashSet<>(servicedHosts);
-    if (cfg.hosts() != null) {
-      knownHosts.addAll(cfg.hosts());
-    }
-    var contexts = new LinkedHashMap<String, SslContext>();
-    if (cfg.letsEncrypt()) {
-      for (String host : knownHosts) {
-        SslContextLoader.Loaded loaded = loader.load(cfg.letsEncryptSsl(host));
-        contexts.put(host, loaded.context());
-        certificates.put(host, loaded.description());
-      }
-    }
-    if (cfg.snis() != null) {
-      for (SniConfig sni : cfg.snis()) {
-        SanitizeHostHandler.requireValidWildcard(sni.host());
-        SslContextLoader.Loaded loaded = loader.load(sni.ssl());
-        contexts.put(sni.host(), loaded.context());
-        certificates.put(sni.host(), loaded.description());
-      }
-    }
-    SslContext defaultContext = null;
-    if (cfg.ssl() != null) {
-      SslContextLoader.Loaded loaded = loader.load(cfg.ssl());
-      defaultContext = loaded.context();
-      certificates.put(Certificates.DEFAULT, loaded.description());
-    }
-    if (defaultContext == null && !contexts.isEmpty()) {
-      defaultContext = contexts.sequencedValues().getFirst();
-    }
-    if (defaultContext == null) {
-      throw new IllegalArgumentException("SSL setup missing");
-    }
-    // Netty normalizes exact SNI names (including IDNs). Check wildcard matches against the
-    // same DNS label rules as HTTP before returning their context.
-    SslContext fallback = defaultContext;
-    var builder = new DomainWildcardMappingBuilder<Mapping<String, SslContext>>(host -> fallback);
-    contexts.forEach(
-        (pattern, context) -> {
-          if (pattern.startsWith("*.")) {
-            builder.add(
-                pattern, host -> SanitizeHostHandler.validWildcardLabel(host) ? context : fallback);
-          } else {
-            builder.add(pattern, host -> context);
-          }
-        });
-    var mapping = builder.build();
-    return host -> mapping.map(host).map(host);
-  }
-
-  /// @param files reads the key and certificate, see [ConfigFiles#open(String)]
-  static SslContext createSslContext(SslConfig cfg, ConfigFiles files) {
-    try {
-      return SslContextBuilder.forServer(files.open(cfg.certPath()), files.open(cfg.keyPath()))
-          .clientAuth(ClientAuth.NONE)
-          .sslProvider(SslProvider.OPENSSL)
-          .build();
-    } catch (SSLException e) {
-      throw new RuntimeException(e);
-    } catch (IOException e) {
-      throw new IllegalArgumentException("IO error", e);
-    }
-  }
-
   public void start() throws Exception {
     dumpConfig(config);
     bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
@@ -506,7 +419,7 @@ public class Proxy implements ProxyContext {
                     // must see the raw ClientHello, so before TLS is terminated
                     pipeline.addLast(new Ja4Handler(metrics));
                   }
-                  pipeline.addLast(new SniHandler(sniMapping));
+                  pipeline.addLast(new SniHandler(hostToContext));
                   pipeline.addLast(new CountByteIoHandler());
                   pipeline.addLast(new HttpServerCodec());
                   addHttpHandlers(pipeline);

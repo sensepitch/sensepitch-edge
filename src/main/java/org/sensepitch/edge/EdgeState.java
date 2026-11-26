@@ -1,13 +1,9 @@
 package org.sensepitch.edge;
 
-import io.netty.handler.ssl.SslContext;
-import io.netty.util.Mapping;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
@@ -18,9 +14,8 @@ import java.util.concurrent.TimeUnit;
 /// read the current state once per request.
 ///
 /// @param config the configuration the state was built from, with map keys injected
-/// @param certificates description of the loaded certificates by host, for logging changes
-/// @param sslContexts the loaded SSL contexts, taken over by the next state if unchanged, see
-///   [SslContextLoader]
+/// @param ssl the SSL contexts by SNI host and the loaded certificates, the next state takes over
+///   the unchanged contexts
 /// @param knownHosts hosts accepted by [SanitizeHostHandler], already filtered
 /// @param upstreams the upstreams in use, handed to the next state to take over unchanged ones
 /// @param ipLookupFiles the database files of the IP lookup, it is taken over by the next state
@@ -31,9 +26,7 @@ import java.util.concurrent.TimeUnit;
 record EdgeState(
     ProxyConfig config,
     SiteSelector siteSelector,
-    Mapping<String, SslContext> sniMapping,
-    Map<String, String> certificates,
-    Map<SslConfig, SslContextLoader.Loaded> sslContexts,
+    SslSetup ssl,
     Set<String> knownHosts,
     UnservicedHost unservicedHost,
     IpTraitsLookup ipTraitsLookup,
@@ -63,11 +56,9 @@ record EdgeState(
         new UpstreamRegistry(ctx, previous != null ? previous.upstreams : null);
     SiteSelector siteSelector = new SiteSelector(ctx, config, upstreams, files);
     Set<String> servicedHosts = siteSelector.getServicedHosts();
-    Map<String, String> certificates = new HashMap<>();
-    SslContextLoader sslLoader =
-        new SslContextLoader(previous != null ? previous.sslContexts : Map.of(), files);
-    Mapping<String, SslContext> sniMapping =
-        Proxy.initializeSniMapping(config.listen(), servicedHosts, certificates, sslLoader);
+    SslSetup ssl =
+        SslSetup.build(
+            config.listen(), servicedHosts, previous != null ? previous.ssl : null, files);
     UnservicedHostConfig unservicedHostConfig =
         config.unservicedHost() != null
             ? config.unservicedHost()
@@ -98,9 +89,7 @@ record EdgeState(
     return new EdgeState(
         config,
         siteSelector,
-        sniMapping,
-        Map.copyOf(certificates),
-        sslLoader.loaded(),
+        ssl,
         SanitizeHostHandler.filterKnownHosts(knownHosts),
         unservicedHost,
         ipTraitsLookup,

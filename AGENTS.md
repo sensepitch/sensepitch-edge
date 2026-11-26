@@ -113,6 +113,20 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
   event), and no feature nobody asked for. Check what the library does before adding to it. An
   exception needs a clear justification, documented in the doc comment of the code, e.g. a
   measured hot path.
+- Known antipatterns, each with an example from this code base, are in `doc/antipatterns/`;
+  check a change against them.
+- Name maps for their key and values:
+  - `<pluralValues>By<Key>` for indexed collections, e.g. `bundlesByConfig`, `descriptionsByHost`
+  - `<key>To<Value>` for translations and associations, e.g. `countryToContinent`
+  - a domain-specific noun where the mapping is self-explanatory
+  - no suffix such as `Map`, `HashMap` or `ConcurrentMap`, unless the data structure itself is
+    relevant
+
+  A bare plural (`certificates`) hides the key and often what the values are, see
+  `doc/antipatterns/map-named-without-its-key.md`.
+- A pseudo host name, a label that stands for no real host (`unknown_host`, `default_host`),
+  contains an underscore, which is not legal in a host name, so it never collides with a real
+  one.
 - Read concurrent state once per method invocation when multiple values must come from the same snapshot.
 - Lock on a private final lock object (`private final Object lock = new Object()`), not on `this`
   or with a `synchronized` method, so no outside code can hold or contend on the lock.
