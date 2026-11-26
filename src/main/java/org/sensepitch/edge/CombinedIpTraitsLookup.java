@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 /// Combines the IP databases and the crawler IP lists. A database that throws on a lookup is a
@@ -27,29 +28,44 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
   private final IpLabelLookup ipLabelLookup;
   private final ProxyMetrics metrics;
 
-  /// Opens the configured databases and parses the shipped crawler IP lists
+  /// Opens the configured databases and parses the shipped crawler IP lists. If construction
+  /// fails, closes the readers opened so far and suppresses cleanup failures on the original.
   ///
   /// @param files records the database files, which the database readers open themselves
   public static CombinedIpTraitsLookup create(
       IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files) throws IOException {
-    List<IpTraitsCollector> collectors = new ArrayList<>();
-    if (cfg.geoIp2() != null) {
-      if (cfg.geoIp2().asnDbPath() != null) {
-        files.record(Path.of(cfg.geoIp2().asnDbPath()));
-        collectors.add(new GeoIp2AsnLookup(cfg.geoIp2().asnDbPath()));
+    return create(cfg, metrics, files, new ArrayList<>());
+  }
+
+  /// Accumulates the readers owned by this attempt until the completed lookup takes ownership.
+  static CombinedIpTraitsLookup create(
+      IpLookupConfig cfg,
+      ProxyMetrics metrics,
+      ConfigFiles files,
+      List<IpTraitsCollector> collectors)
+      throws IOException {
+    try {
+      if (cfg.geoIp2() != null) {
+        if (cfg.geoIp2().asnDbPath() != null) {
+          files.record(Path.of(cfg.geoIp2().asnDbPath()));
+          collectors.add(new GeoIp2AsnLookup(cfg.geoIp2().asnDbPath()));
+        }
+        if (cfg.geoIp2().countryDbPath() != null) {
+          files.record(Path.of(cfg.geoIp2().countryDbPath()));
+          collectors.add(new GeoIp2CountryLookup(cfg.geoIp2().countryDbPath()));
+        }
       }
-      if (cfg.geoIp2().countryDbPath() != null) {
-        files.record(Path.of(cfg.geoIp2().countryDbPath()));
-        collectors.add(new GeoIp2CountryLookup(cfg.geoIp2().countryDbPath()));
+      if (cfg.ipInfoPath() != null) {
+        files.record(Path.of(cfg.ipInfoPath()));
+        collectors.add(new IpInfoCountryAndAsnLookup(cfg.ipInfoPath()));
       }
+      TrieIpLabelLookup crawlerIpLists = readCrawlerIpLists();
+      LOG.info("IP lookup nodes: " + crawlerIpLists.getNodeCount());
+      return new CombinedIpTraitsLookup(collectors, metrics, crawlerIpLists);
+    } catch (Throwable failure) {
+      closeAfterFailure(collectors.iterator(), failure);
+      throw failure;
     }
-    if (cfg.ipInfoPath() != null) {
-      files.record(Path.of(cfg.ipInfoPath()));
-      collectors.add(new IpInfoCountryAndAsnLookup(cfg.ipInfoPath()));
-    }
-    TrieIpLabelLookup crawlerIpLists = readCrawlerIpLists();
-    LOG.info("IP lookup nodes: " + crawlerIpLists.getNodeCount());
-    return new CombinedIpTraitsLookup(collectors, metrics, crawlerIpLists);
   }
 
   /// @param collectors queried in order for each address, a later one overwrites what an earlier
@@ -136,20 +152,27 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
   /// closed even if one fails; the first failure is thrown, later ones are suppressed in it.
   @Override
   public void close() throws Exception {
-    Exception failure = null;
-    for (IpTraitsCollector collector : collectors) {
+    var remaining = collectors.iterator();
+    try {
+      while (remaining.hasNext()) {
+        remaining.next().close();
+      }
+    } catch (Throwable failure) {
+      closeAfterFailure(remaining, failure);
+      throw failure;
+    }
+  }
+
+  /// Releases every remaining reader while preserving the failure that triggered cleanup.
+  private static void closeAfterFailure(Iterator<IpTraitsCollector> remaining, Throwable failure) {
+    while (remaining.hasNext()) {
       try {
-        collector.close();
-      } catch (Exception e) {
-        if (failure == null) {
-          failure = e;
-        } else {
-          failure.addSuppressed(e);
+        remaining.next().close();
+      } catch (Throwable cleanup) {
+        if (cleanup != failure) {
+          failure.addSuppressed(cleanup);
         }
       }
-    }
-    if (failure != null) {
-      throw failure;
     }
   }
 }

@@ -81,12 +81,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     never queued; the writer thread (not a daemon) blocks in `queue.take()` forever and the
     queued records are not written. Interrupt the writer thread as in the full queue case, then
     test it in `AsyncRequestLogWriterTest` (the catch is uncovered now).
-- [ ] `CombinedIpTraitsLookup.create`: a failing database open leaves the readers opened before
-  it open
-  - P2: e.g. a GeoIP2 ASN database opened and then a corrupt country database: the reload is
-    rejected, the ASN reader is never closed. Repeated attempts leak one reader each. Close the
-    collectors opened so far before rethrowing, and test it with a valid and a broken database
-    in `CombinedIpTraitsLookupTest`.
 - [ ] `KeyInjector`: a map key that is not a string leaves the record's `key` unset
   - P3: `getMethod("key", key.getClass())` finds no `key(Integer)` for a YAML key like `123:`,
     the `NoSuchMethodException` is ignored. Inferred from the code, not verified with YAML. Use
