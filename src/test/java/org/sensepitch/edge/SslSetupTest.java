@@ -13,16 +13,23 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("unchecked")
 class SslSetupTest {
 
+  /// A certificate of its own per entry, an equal [SslConfig] shares its context, see
+  /// [SslContextLoader]
   @Test
   void exactSniOverridesWildcardAndMissesUseDefault() {
-    SslConfig ssl = ConfigReloadTest.TEST_SSL;
+    SslConfig wildcardSsl =
+        SslConfig.builder()
+            .certPath("classpath:ssl/wildcard.crt")
+            .keyPath("classpath:ssl/test.key")
+            .build();
     var mapping =
         Proxy.initializeSniMapping(
             ListenConfig.builder()
-                .ssl(ssl)
+                .ssl(ConfigReloadTest.TEST_SSL)
                 .snis(
                     List.of(
-                        new SniConfig("*.example.org", ssl), new SniConfig("api.example.org", ssl)))
+                        new SniConfig("*.example.org", wildcardSsl),
+                        new SniConfig("api.example.org", ConfigReloadTest.OTHER_SSL)))
                 .build(),
             Set.of());
     var fallback = mapping.map(null);

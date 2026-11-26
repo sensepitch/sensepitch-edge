@@ -32,6 +32,13 @@ class ConfigReloadTest {
           .certPath("classpath:ssl/test.crt")
           .build();
 
+  /// A second certificate, for a context of its own: an equal [SslConfig] shares the context
+  static final SslConfig OTHER_SSL =
+      SslConfig.builder()
+          .certPath("classpath:letsencrypt/live/example.org/fullchain.pem")
+          .keyPath("classpath:letsencrypt/live/example.org/privkey.pem")
+          .build();
+
   static final ProxyConfig CONFIG =
       ProxyConfig.builder()
           .listen(ListenConfig.builder().ssl(TEST_SSL).build())
@@ -373,13 +380,12 @@ class ConfigReloadTest {
         CONFIG.toBuilder()
             .listen(
                 CONFIG.listen().toBuilder()
-                    .snis(List.of(SniConfig.builder().host("other.com").ssl(TEST_SSL).build()))
+                    .snis(List.of(SniConfig.builder().host("other.com").ssl(OTHER_SSL).build()))
                     .build())
             .build();
     assertThat(reload(withSni)).isTrue();
-    assertThat(steps.proxy.state().sniMapping().map("other.com"))
-        .isNotNull()
-        .isNotSameAs(defaultContext);
+    var sniContext = steps.proxy.state().sniMapping().map("other.com");
+    assertThat(sniContext).isNotNull().isNotSameAs(defaultContext);
     assertThat(logs.messages(Proxy.class))
         .anyMatch(
             m ->
@@ -392,6 +398,9 @@ class ConfigReloadTest {
     assertThat(logs.messages(Proxy.class))
         .contains("Configuration reloaded, no changes")
         .noneMatch(m -> m.startsWith("Certificates reloaded"));
+    assertThat(steps.proxy.state().sniMapping().map("other.com"))
+        .as("an unchanged certificate keeps its context")
+        .isSameAs(sniContext);
   }
 
   /// The files the active configuration read are reported for the [ConfigFileWatcher]
@@ -509,6 +518,7 @@ class ConfigReloadTest {
   private static EdgeState stateWithIpTraitsLookup(IpTraitsLookup lookup) {
     return new EdgeState(
         CONFIG,
+        null,
         null,
         null,
         null,

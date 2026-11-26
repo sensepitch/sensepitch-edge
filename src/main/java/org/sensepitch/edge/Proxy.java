@@ -405,17 +405,21 @@ public class Proxy implements ProxyContext {
 
   static Mapping<String, SslContext> initializeSniMapping(
       ListenConfig cfg, Set<String> servicedHosts) {
-    return initializeSniMapping(cfg, servicedHosts, new LinkedHashMap<>(), new ConfigFiles());
+    return initializeSniMapping(
+        cfg,
+        servicedHosts,
+        new LinkedHashMap<>(),
+        new SslContextLoader(Map.of(), new ConfigFiles()));
   }
 
   /// @param certificates receives a description of each loaded certificate by host, see
   ///   [Certificates#describe(SslConfig, ConfigFiles)]
-  /// @param files reads the key and certificate files
+  /// @param loader loads the contexts or takes them over from the previous state
   static Mapping<String, SslContext> initializeSniMapping(
       ListenConfig cfg,
       Set<String> servicedHosts,
       Map<String, String> certificates,
-      ConfigFiles files) {
+      SslContextLoader loader) {
     var knownHosts = new HashSet<>(servicedHosts);
     if (cfg.hosts() != null) {
       knownHosts.addAll(cfg.hosts());
@@ -423,22 +427,24 @@ public class Proxy implements ProxyContext {
     var contexts = new LinkedHashMap<String, SslContext>();
     if (cfg.letsEncrypt()) {
       for (String host : knownHosts) {
-        final SslConfig sslCfg = cfg.letsEncryptSsl(host);
-        contexts.put(host, createSslContext(sslCfg, files));
-        certificates.put(host, Certificates.describe(sslCfg, files));
+        SslContextLoader.Loaded loaded = loader.load(cfg.letsEncryptSsl(host));
+        contexts.put(host, loaded.context());
+        certificates.put(host, loaded.description());
       }
     }
     if (cfg.snis() != null) {
       for (SniConfig sni : cfg.snis()) {
         SanitizeHostHandler.requireValidWildcard(sni.host());
-        contexts.put(sni.host(), createSslContext(sni.ssl(), files));
-        certificates.put(sni.host(), Certificates.describe(sni.ssl(), files));
+        SslContextLoader.Loaded loaded = loader.load(sni.ssl());
+        contexts.put(sni.host(), loaded.context());
+        certificates.put(sni.host(), loaded.description());
       }
     }
     SslContext defaultContext = null;
     if (cfg.ssl() != null) {
-      defaultContext = createSslContext(cfg.ssl(), files);
-      certificates.put(Certificates.DEFAULT, Certificates.describe(cfg.ssl(), files));
+      SslContextLoader.Loaded loaded = loader.load(cfg.ssl());
+      defaultContext = loaded.context();
+      certificates.put(Certificates.DEFAULT, loaded.description());
     }
     if (defaultContext == null && !contexts.isEmpty()) {
       defaultContext = contexts.sequencedValues().getFirst();

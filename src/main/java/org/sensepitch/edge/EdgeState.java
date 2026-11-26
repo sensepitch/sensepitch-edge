@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
 ///
 /// @param config the configuration the state was built from, with map keys injected
 /// @param certificates description of the loaded certificates by host, for logging changes
+/// @param sslContexts the loaded SSL contexts, taken over by the next state if unchanged, see
+///   [SslContextLoader]
 /// @param knownHosts hosts accepted by [SanitizeHostHandler], already filtered
 /// @param upstreams the upstreams in use, handed to the next state to take over unchanged ones
 /// @param ipLookupFiles the database files of the IP lookup, it is taken over by the next state
@@ -31,6 +33,7 @@ record EdgeState(
     SiteSelector siteSelector,
     Mapping<String, SslContext> sniMapping,
     Map<String, String> certificates,
+    Map<SslConfig, SslContextLoader.Loaded> sslContexts,
     Set<String> knownHosts,
     UnservicedHost unservicedHost,
     IpTraitsLookup ipTraitsLookup,
@@ -50,8 +53,8 @@ record EdgeState(
   /// Builds and validates a complete state. Nothing of the previous state is modified or closed,
   /// so on an exception the previous state can stay active.
   ///
-  /// @param previous the active state, or `null` at startup. Unchanged upstreams and an
-  ///   unchanged IP lookup are taken over from it.
+  /// @param previous the active state, or `null` at startup. Unchanged upstreams, SSL contexts
+  ///   and an unchanged IP lookup are taken over from it.
   /// @param files reads the referenced files and records them, also those of a taken over IP
   ///   lookup
   static EdgeState build(
@@ -61,8 +64,10 @@ record EdgeState(
     SiteSelector siteSelector = new SiteSelector(ctx, config, upstreams, files);
     Set<String> servicedHosts = siteSelector.getServicedHosts();
     Map<String, String> certificates = new HashMap<>();
+    SslContextLoader sslLoader =
+        new SslContextLoader(previous != null ? previous.sslContexts : Map.of(), files);
     Mapping<String, SslContext> sniMapping =
-        Proxy.initializeSniMapping(config.listen(), servicedHosts, certificates, files);
+        Proxy.initializeSniMapping(config.listen(), servicedHosts, certificates, sslLoader);
     UnservicedHostConfig unservicedHostConfig =
         config.unservicedHost() != null
             ? config.unservicedHost()
@@ -95,6 +100,7 @@ record EdgeState(
         siteSelector,
         sniMapping,
         Map.copyOf(certificates),
+        sslLoader.loaded(),
         SanitizeHostHandler.filterKnownHosts(knownHosts),
         unservicedHost,
         ipTraitsLookup,

@@ -46,6 +46,31 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     involved: a test log server that signals each post with a `Semaphore` or queue, a latch in the
     reload callback.
     `TestingParameters.await` stays where no hook exists.
+- [ ] Tests build an OpenSSL server context for every proxy
+  - P1, test speed: one `./mvnw test` builds 113 contexts from the same test certificates, about
+    15 ms each warm, about 1.7 s CPU in total, the largest repeated fixture cost found. Measured
+    2026-11-26 on the 16 core development machine with a throwaway JUnit test (5 warm-up calls,
+    mean of 20): `Proxy.createSslContext` 15 ms, of it `SslContextBuilder.build()` with
+    `SslProvider.OPENSSL` about 15 ms (JDK provider 6 ms, reading and parsing the PEM files
+    1.5 ms); an EC P-256 key instead of RSA 2048 makes no difference. Counted with a temporary
+    print per call: `ProxyConstructBDDTest.ExtendableSteps` builds 77 (one proxy per scenario,
+    the handlers run on an `EmbeddedChannel` and never use TLS), `SslSetupTest` 8,
+    `ProxyAcceptGraceTest` 7, `DecoderFailureHandlerTest` 5, the rest 1 or 2 per class. A reload
+    takes over unchanged contexts ([SslContextLoader](src/main/java/org/sensepitch/edge/SslContextLoader.java)),
+    which brought it down from 143.
+  - TLS is mandatory in the configuration, so the tests cannot leave it out. Remaining option: a
+    seam that lets a test pass the contexts of an earlier state, e.g. a `Proxy` constructor
+    taking the loaded contexts, built once per test class (no static cache in production code,
+    see `AGENTS.md`).
+- [ ] Smaller repeated fixtures, checked 2026-11-26, not worth a change alone
+  - The crawler IP lists (13.5 ms per parse) are parsed 8 times per run now: 5 in
+    `ConfigReloadTest` (each rebuilt IP lookup), 3 in `CombinedIpTraitsLookupTest`. A rebuilt IP
+    lookup could take the lists over from the previous state, like the SSL contexts.
+  - `OtlpLogDestinationTest` starts a JDK `HttpServer` before each of its 28 tests, also those
+    that use the simulated transport only; a few ms each. Start it only in the tests that post
+    to it, when the class is touched anyway. Its slowest test, `limitDropsTheNewestRecords`
+    (1.45 s), spends the time in logging enough records to exceed the buffer limit, not in setup.
+  - `DetectCrawler` (0.4 ms) and `PublicIpv4Finder` (0.3 ms) per deflector: negligible.
 
 ## Bugs
 
