@@ -4,6 +4,10 @@ The terms used in the code, the configuration and the documents, so that one wor
 An entry defines the term and says where it shows up; the behaviour is described in the linked
 class docs and design documents. A word that turns out to be ambiguous gets an entry here.
 
+**access log**: what NGINX, Envoy and other proxies call it; here it is the request log, see
+there. Not renamed: the record carries more than the access (outcome, response source,
+protection, fingerprints), and the name is in configuration keys and metric names.
+
 **admission**: the proof that a client passed the protection: a signed token in a cookie, issued
 for an accepted challenge answer. See
 [`AdmissionTokenGenerator`](../src/main/java/org/sensepitch/edge/AdmissionTokenGenerator.java),

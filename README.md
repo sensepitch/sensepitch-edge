@@ -96,7 +96,7 @@ Status Codes  [code:count]                      200:328821
 Error Set:
 ````
 
-The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the access log requests to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. I assume a probable cause is the fact that downstream and upstream operations run in two different threads.
+The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the request log to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. I assume a probable cause is the fact that downstream and upstream operations run in two different threads.
 
 Lets have a second look with a non saturating request rate of 10K:
 
@@ -813,7 +813,7 @@ cover that time. It works with any image, no `preStop` hook with a shell and `sl
 it cannot guarantee that every client has stopped by then. Fit the whole `shutdownTimeoutMillis`
 into the grace period of the platform, e.g. `terminationGracePeriodSeconds`, with some margin.
 
-## Request log
+## Request log (access log)
 
 Each request is logged with its fields named after the
 [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/) (checked
