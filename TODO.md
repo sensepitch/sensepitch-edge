@@ -221,6 +221,9 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     - [ ] migration policy for the current unsigned challenge and token format
   - Stays here as a security issue until implemented. With Option A, replaying an answer on
     any node or site returns the same token, so replay no longer mints new admissions.
+- [ ] pass the browser traits of the challenge answer (`webdriver`, timezone) on with the
+  admission, so later requests and the upstream see them; see
+  [browser fingerprinting](doc/design/browser-fingerprinting.md)
 
 ## Ingress, HTTP
 

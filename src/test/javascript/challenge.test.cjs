@@ -29,6 +29,15 @@ function prefixSolvedAt(challenge, nonce) {
     return prefix;
 }
 
+// The browser's time zone in the harness, fixed so the host's setting cannot leak into a test.
+const TIME_ZONE = 'Europe/Berlin';
+const TZ_OFFSET = -60;
+
+// An `Intl` stub whose `DateTimeFormat` resolves to `timeZone`.
+function intlWithZone(timeZone) {
+    return { DateTimeFormat() { return { resolvedOptions() { return { timeZone }; } }; } };
+}
+
 // Execute the shipped IIFE without exporting its internals or needing a browser dependency.
 // Timers and clocks are controlled so failures cannot leave a PoW loop running in the background.
 function browser(options = {}) {
@@ -79,9 +88,14 @@ function browser(options = {}) {
         STEP: '/.sensepitch.challenge.step',
         XMLHttpRequest: XHR,
         Image: class { set src(url) { images.push(url); } },
-        navigator: { cookieEnabled: options.cookieEnabled ?? true },
+        navigator: { cookieEnabled: options.cookieEnabled ?? true, webdriver: options.webdriver },
         location: { reload() { reloads++; } },
-        Date: class extends Date { constructor() { super(wall); } },
+        Date: class extends Date {
+            constructor() { super(wall); }
+            getTimezoneOffset() { return options.tzOffset ?? TZ_OFFSET; }
+        },
+        // `intl: undefined` stands for a browser without `Intl`, the host's would leak in otherwise
+        Intl: 'intl' in options ? options.intl : intlWithZone(TIME_ZONE),
         performance: options.noPerformance ? undefined : { now() { return monotonic; } },
         setTimeout(callback, delay) {
             scheduledTimeouts++;
@@ -338,5 +352,36 @@ for (const elapsed of [35, -35]) {
         const params = completion(page);
         assert.equal(params.get('completedAt'), String(1700000000000 + elapsed));
         assert.equal(params.get('durationMs'), String(Math.max(0, elapsed)));
+    });
+}
+
+test('reports the time zone and its offset', () => {
+    const page = browser();
+    page.drain();
+    const params = completion(page);
+    assert.equal(params.get('tz'), TIME_ZONE);
+    assert.equal(params.get('tzOffset'), String(TZ_OFFSET));
+});
+
+const WITHOUT_ZONE = {
+    'no Intl': undefined,
+    'a throwing Intl': { DateTimeFormat() { throw new Error('unsupported'); } },
+    'no resolved zone': intlWithZone(undefined),
+};
+for (const [name, intl] of Object.entries(WITHOUT_ZONE)) {
+    test(`omits the time zone name with ${name}, reports the offset`, () => {
+        const page = browser({ intl, tzOffset: 300 });
+        page.drain();
+        const params = completion(page);
+        assert.equal(params.has('tz'), false);
+        assert.equal(params.get('tzOffset'), '300');
+    });
+}
+
+for (const [webdriver, expected] of [[true, '1'], [false, '0'], [undefined, null], ['true', null]]) {
+    test(`reports webdriver ${String(webdriver)} as ${expected}`, () => {
+        const page = browser({ webdriver });
+        page.drain();
+        assert.equal(completion(page).get('webdriver'), expected);
     });
 }

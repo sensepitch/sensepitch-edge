@@ -921,7 +921,7 @@ Attributes, semantic convention names:
 | `client.address`, `client.port` | client, subject to `anonymizeClientIp` |
 | `server.address`, `server.port` | requested host (sanitized `Host` header) and local port |
 | `http.request.method` | method, `_OTHER` for unknown methods, then `http.request.method_original` holds it |
-| `url.scheme`, `url.path`, `url.query` | `https` with TLS; the request target split at `?` |
+| `url.scheme`, `url.path`, `url.query` | `https` with TLS; the request target split at `?`. For a challenge answer, the query holds the browser's telemetry, including its timezone and `navigator.webdriver`, see the [challenge test README](src/test/javascript/README.md) and [browser fingerprinting](doc/design/browser-fingerprinting.md) |
 | `http.route` | the matched route: the path pattern of a path route, e.g. `/api/*`, else the `uri` pattern of the site, `/*` if it has none. Absent if no site matched |
 | `network.protocol.name`, `network.protocol.version`, `network.transport` | `http`, `1.1`, `tcp` |
 | `tls.protocol.name`, `tls.protocol.version`, `tls.cipher` | e.g. `tls`, `1.3`, `TLS_AES_128_GCM_SHA256` |

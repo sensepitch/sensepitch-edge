@@ -224,6 +224,21 @@
         }, { once: true });
     }
 
+    // Browser traits for the answer, to spot a client that impersonates a browser by its
+    // User-Agent, never to tell users apart; see doc/design/browser-fingerprinting.md.
+    // Returns query parameters with a leading '&'; a value the browser lacks is left out,
+    // since its absence is a trait as well.
+    function browserTraits() {
+        var qs = '&tzOffset=' + encodeURIComponent(new Date().getTimezoneOffset());
+        try {
+            var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (typeof tz === 'string' && tz) qs += '&tz=' + encodeURIComponent(tz);
+        } catch (_e) {}
+        var webdriver = self.navigator && self.navigator.webdriver;
+        if (typeof webdriver === 'boolean') qs += '&webdriver=' + (webdriver ? 1 : 0);
+        return qs;
+    }
+
     var started = false;
     function startFlow() {
         if (started) return;
@@ -251,7 +266,8 @@
                 + '&nonce=' + encodeURIComponent(nonce)
                 + '&completedAt=' + encodeURIComponent(completedAt)
                 + '&durationMs=' + encodeURIComponent(durationMs)
-                + '&method=' + encodeURIComponent(METHOD);
+                + '&method=' + encodeURIComponent(METHOD)
+                + browserTraits();
             httpGetWithCreds(ENDPOINT + '?' + qs, function (_err, ok) {
                 if (!ok) {
                     status.textContent = 'Verification failed. Please refresh or return to the tab and try again.';

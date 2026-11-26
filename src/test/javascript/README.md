@@ -19,5 +19,10 @@ The completion GET to `/.sensepitch.challenge.complete` retains `challenge` and 
 | `completedAt` | Client wall-clock timestamp in Unix epoch milliseconds when the proof is solved. |
 | `durationMs` | Elapsed milliseconds from calculation start through the matching digest, including async hashing and cooperative yields. Uses `performance.now()` when available, otherwise the wall clock, clamped to zero if it moves backwards. Excludes waiting for the visibility gate and the completion HTTP request. |
 | `method` | `shim` for the pure JavaScript SHA-256 implementation, `native` for WebCrypto or legacy `msCrypto`. Identifies the implementation that produced the matching digest, including synchronous native failure followed by shim fallback. |
+| `tzOffset` | `Date.getTimezoneOffset()`: minutes to add to local time to get UTC, e.g. `-60` for Central European Time. Always sent. |
+| `tz` | IANA timezone name from `Intl.DateTimeFormat().resolvedOptions().timeZone`, e.g. `Europe/Berlin`. Left out when `Intl` is missing, throws or resolves no name. |
+| `webdriver` | `1` or `0` for `navigator.webdriver`. Left out when the property is not a boolean, e.g. in old browsers. |
 
 These fields are client-reported telemetry; the server continues validating the challenge and nonce.
+`tzOffset`, `tz` and `webdriver` serve to detect a falsely claimed `User-Agent`, see
+[browser fingerprinting](../../../doc/design/browser-fingerprinting.md).
