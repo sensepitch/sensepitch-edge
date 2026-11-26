@@ -19,6 +19,8 @@ Sensepitch Edge is a reverse proxy that improves the availability of web apps by
 - "Waiting room": Ensure healthy applications and consistent UX for users in high load situations and provide a sensible message to users that cannot be served at the moment 
 - high concurrent and low latency operation, performance level similar to proven high RPS server like NGINX
 - Sensible defaults for good OOTB experience
+- Secure by design: only encrypted client traffic is routed, plain HTTP is redirected to HTTPS,
+  see [encrypted transport](doc/design/encrypted-transport.md)
 
 ## Non Goals
 

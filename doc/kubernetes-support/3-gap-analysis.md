@@ -34,7 +34,7 @@ same loader can read JSON snapshots.
 | Upstream connections | No pooling (pool code disabled in `DefaultUpstream`), DNS via Netty `Bootstrap` | Endpoint selection by weight; pooling optional |
 | Health | Done: admin endpoint (`AdminServer`, opt-in, loopback by default) with `/healthz`, `/readyz` and `POST /reload`; `/readyz` probes each distinct network upstream with a short-timeout plain TCP connect and answers `200` when at least one accepts, short-circuiting on the first success | Done |
 | Shutdown | Done: SIGTERM keeps accepting for `shutdownAcceptGraceMillis`, then closes the listener, drains the connections, then the request log, within `shutdownTimeoutMillis` (see README) | Done: `/readyz` answers 503 from the start of the shutdown |
-| Client IP | TCP peer, `X-Forwarded-For` set; no PROXY protocol | PROXY protocol v1/v2 per listener; incoming `X-Forwarded-For` / `-Proto` accepted only from trusted proxy CIDRs (load balancer terminating TLS) |
+| Client IP | TCP peer, `X-Forwarded-For` set; no PROXY protocol | PROXY protocol v1/v2 per listener, behind a layer 4 load balancer. A load balancer terminating TLS is not supported, so `X-Forwarded-Proto` is never trusted, see [encrypted transport](../design/encrypted-transport.md) |
 | Bind address | One `listen.address` for all listeners | Bind address per listener, so one node can serve several IPs (one IP per Gateway in HostNetwork mode) |
 | Gateway merging | One listen configuration | Listeners from several Gateways merged by port in a shared fleet; hostname and SNI keep them apart |
 | Reserved paths | Only the deflector's `/.sensepitch.challenge.*` paths | Block `/.well-known/sensepitch-edge/*` from external requests (profile exposure) |

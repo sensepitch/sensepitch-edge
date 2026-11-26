@@ -1,7 +1,10 @@
 # Gateway API Scope
 
 The first release targets the **Core** support level of the pinned Gateway API version for
-Gateway and HTTPRoute (conformance profile `GATEWAY-HTTP`).
+Gateway and HTTPRoute (conformance profile `GATEWAY-HTTP`), restricted to encrypted transport:
+an `HTTP` listener only redirects to HTTPS, and routes that would forward plaintext are
+rejected, see [encrypted transport](../design/encrypted-transport.md). Conformance tests that
+route over an `HTTP` listener are expected to fail.
 
 ## Kubernetes resources
 
@@ -18,7 +21,8 @@ Gateway and HTTPRoute (conformance profile `GATEWAY-HTTP`).
 
 ## Gateway
 
-- HTTP and HTTPS listeners, multiple listeners and ports.
+- HTTPS listeners, multiple listeners and ports. `HTTP` listeners redirect to HTTPS only, an
+  `HTTPRoute` attached to one that does more than that gets `Accepted: False`.
 - Listener hostname matching, including wildcard hostnames.
 - TLS termination with SNI, certificates from Secrets, certificate updates without restart.
 - Route attachment via `parentRefs` (including `sectionName` and `port`).

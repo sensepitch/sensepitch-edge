@@ -180,7 +180,9 @@ Both together allow a consistency check: an IANA name whose offset at that momen
   stacks exist.
 - Only the answer request carries the browser traits. Later requests of the same client do not
   carry them, and the upstream never sees them.
-- JA4 needs TLS; plain HTTP requests have no fingerprint.
+- JA4 needs the TLS handshake at the edge. Every routed request has one, plain HTTP only gets
+  a redirect, see [encrypted transport](encrypted-transport.md); a load balancer that
+  terminated TLS before the edge would hide it.
 - The HTTP fingerprint differs per kind of request: a browser sends other headers and another
   `Accept` for a navigation than for a script, an image or a `fetch`. One browser build has a
   handful of fingerprints, not one. Which header is invariant is inferred from how Chromium and

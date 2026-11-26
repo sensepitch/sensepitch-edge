@@ -225,6 +225,27 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   admission, so later requests and the upstream see them; see
   [browser fingerprinting](doc/design/browser-fingerprinting.md)
 
+## Transport encryption
+
+Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md).
+
+- [ ] fail closed in the request pipeline when a request has no TLS session, instead of logging
+  `url.scheme` `http`; needs a test seam that stands in for the TLS session of the
+  `EmbeddedChannel` tests
+- [ ] a TLS policy of the edge instead of the library defaults: pin and test the minimum
+  TLS 1.2, decide on the suites without forward secrecy and with CBC/SHA-1
+- [ ] send `Strict-Transport-Security: max-age=31536000` on every response the upstream sends
+  without one, not configurable
+- [ ] redirect only served hosts on port 80: `HttpToHttpsRedirectHandler` redirects any
+  syntactically valid `Host` today. Match it like `SanitizeHostHandler` does, with the reloadable
+  known hosts, and answer an unknown host like the TLS side does (unserviced host)
+- [ ] counters for the plain HTTP listener, which is not logged by design: a request counter
+  labelled with the outcome of the redirect handler (`redirect`, `unknown_host`,
+  `bad_request`), and connection counters that tell the two listeners apart; no host or path
+  as label
+- [ ] HTTP/2 over TLS via ALPN
+- [ ] TLS to the upstream, a decision of its own
+
 ## Ingress, HTTP
 
 - [ ] Request size limits: decide the options below, then implement the chosen ones. Research,

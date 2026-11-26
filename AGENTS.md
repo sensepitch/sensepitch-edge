@@ -22,6 +22,9 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 - Keep the semantics and defaults of the existing configuration unless the task changes them,
   and report every change that makes users update their setups (see the plan summary under
   "Agent Workflow Reminders").
+- Only encrypted client traffic enters the request pipeline (`Proxy#addHttpHandlers`): the plain
+  HTTP listener only redirects, no option, route or listener lets plaintext into routing, and
+  code relying on TLS fails closed without it. See `doc/design/encrypted-transport.md`.
 - Build once, ship what was verified: a deliverable (fat JAR, image, chart) packages the artifact
   that the test gate checked in the same environment, never a second build without the tests
   (e.g. a Maven stage in the `Dockerfile`). Its version is the one in that JAR's manifest, from
