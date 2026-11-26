@@ -282,6 +282,11 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
 
 ## Evergreen / Cleanups
 
+- [ ] Use *exchange* where docs, comments and internal names say "request" but mean the request
+  with its response, see the [glossary](doc/glossary.md), e.g. "the request then ends by its
+  timeout" in the class doc of `ForwardHandler`. Names that are part of an interface (metric
+  names such as `sensepitch_ingress_requests_in_flight`, log fields, config keys) stay.
+
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without
   a visible effect for the operator, move optional work to [NOT-YET.md](NOT-YET.md), and check the
   GitHub CI actions; add an entry or fix right away if something is broken

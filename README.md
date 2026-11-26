@@ -8,6 +8,8 @@
 
 Sensepitch Edge is a reverse proxy that improves the availability of web apps by absorbing malicious or excessive traffic, ensuring continuous, low‑latency service.
 
+The terms used in this README and the code are defined in the [glossary](doc/glossary.md).
+
 ## Goals
 
 - Ingress / reverse proxy for public facing web applications
