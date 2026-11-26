@@ -105,6 +105,9 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
   `effective*` getters and no `0` meaning default; the dumped config, loaded again, gives an
   equal record.
 - Use named reusable constants for no-op implementations and immutable empty values.
+- No static fields for singletons, caches or other shared state; loggers and immutable constants
+  are the exception. Production state lives as long as the proxy and is replaced by a reload, so
+  the proxy or a state build creates it and passes it on.
 - Write no code that is not needed: no cache, wrapper or optimization in front of a library that
   already does it (e.g. the Prometheus `Counter` keeps its data points, call `labelValues` per
   event), and no feature nobody asked for. Check what the library does before adding to it. An
@@ -156,6 +159,12 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 - Tests that mainly exercise the JDK, Netty or other libraries rather than our code (e.g. real TLS
   handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast. An `*IT` may
   repeat what a unit test covers against the real thing, it does not replace the unit test.
+- Build a database or other expensive fixture once per test class, not per test or per
+  assertion: one fixture with several records covers several cases (see
+  `IpInfoCountryAndAsnLookupTest`). Share it through the test setup (`@BeforeAll`, a fixture
+  passed to a test seam), not through a static cache in production code. A test that is not
+  about shipped data (e.g. the crawler lists) passes a small fixture of its own instead of
+  loading it.
 - Before adding a test, find the one that covers the behaviour. Test a boundary or input case in
   the class that owns the rule (e.g. the backoff cap in `BackoffTest`); a caller's test adds one
   representative path, for an interaction the lower level cannot see. A long setup to reach a

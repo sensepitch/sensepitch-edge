@@ -31,31 +31,36 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
   /// @param files records the database files, which the database readers open themselves
   public CombinedIpTraitsLookup(
       IpLookupConfig ipLookupConfig, ProxyMetrics metrics, ConfigFiles files) throws IOException {
-    this(databaseLookups(ipLookupConfig, files), metrics);
+    this(databaseLookups(ipLookupConfig, files), metrics, readCrawlerIpLists());
   }
 
   /// @param ipAttributesLookups queried in order for each address, a later one overwrites what an
   ///   earlier one found. Tests pass fakes here instead of databases, so there is nothing to close.
-  CombinedIpTraitsLookup(List<IpTraitsCollector> ipAttributesLookups, ProxyMetrics metrics)
-      throws IOException {
-    this(ipAttributesLookups, List.of(), metrics);
+  /// @param crawlerIpLists the labels of the crawler addresses, tests pass their own, so they do
+  ///   not parse the shipped lists each time
+  CombinedIpTraitsLookup(
+      List<IpTraitsCollector> ipAttributesLookups,
+      ProxyMetrics metrics,
+      IpLabelLookup crawlerIpLists) {
+    this(ipAttributesLookups, List.of(), metrics, crawlerIpLists);
   }
 
-  private CombinedIpTraitsLookup(DatabaseLookups lookups, ProxyMetrics metrics) throws IOException {
-    this(lookups.collectors(), lookups.closeables(), metrics);
+  private CombinedIpTraitsLookup(
+      DatabaseLookups lookups, ProxyMetrics metrics, TrieIpLabelLookup crawlerIpLists) {
+    this(lookups.collectors(), lookups.closeables(), metrics, crawlerIpLists);
+    LOG.info("IP lookup nodes: " + crawlerIpLists.getNodeCount());
   }
 
   /// @param closeables closed by [#close()], tests pass fakes to check the close
   CombinedIpTraitsLookup(
       List<IpTraitsCollector> ipAttributesLookups,
       List<AutoCloseable> closeables,
-      ProxyMetrics metrics)
-      throws IOException {
+      ProxyMetrics metrics,
+      IpLabelLookup crawlerIpLists) {
     this.ipAttributesLookups = List.copyOf(ipAttributesLookups);
     this.closeables = List.copyOf(closeables);
     this.metrics = metrics;
-    ipLabelLookup = readCrawlerIpLists();
-    LOG.info("IP lookup nodes: " + ((TrieIpLabelLookup) ipLabelLookup).getNodeCount());
+    ipLabelLookup = crawlerIpLists;
   }
 
   /// The database readers opened for a configuration, and the collectors that query them

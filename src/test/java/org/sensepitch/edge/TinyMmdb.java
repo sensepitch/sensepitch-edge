@@ -5,27 +5,28 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 /// Writes minimal IPv4 databases in the MaxMind DB format. For tests that need a database file
 /// without shipping one and without a writer library.
 ///
-/// The layout follows the MaxMind DB format specification 2.0: a search tree of one node with
-/// 24-bit records both pointing to the data record, 16 zero bytes, the data section, the metadata
-/// marker and the metadata map.
+/// The layout follows the MaxMind DB format specification 2.0: a search tree of 24-bit records,
+/// 16 zero bytes, the data section, the metadata marker and the metadata map. The tree is one node
+/// for a database that maps every address to one record, or three nodes for one record per
+/// quarter of the address space.
 ///
 /// @see <a href="https://maxmind.github.io/MaxMind-DB/">MaxMind DB File Format Specification</a>
 /// @author Jens Wilke
 final class TinyMmdb {
 
-  private static final int NODE_COUNT = 1;
   private static final int RECORD_SIZE = 24;
 
-  /// A record value above the node count points into the data section, at value - nodes - 16
-  private static final int DATA_RECORD = NODE_COUNT + 16;
+  /// Bytes between the search tree and the data section
+  private static final int DATA_SECTION_SEPARATOR = 16;
 
-  /// A record value equal to the node count means the network has no data
-  private static final int NO_DATA_RECORD = NODE_COUNT;
+  /// The quarters of the IPv4 space, selected by the first two address bits
+  static final int QUARTERS = 4;
 
   private static final byte[] METADATA_MARKER = {
     (byte) 0xAB, (byte) 0xCD, (byte) 0xEF, 'M', 'a', 'x', 'M', 'i', 'n', 'd', '.', 'c', 'o', 'm'
@@ -45,32 +46,48 @@ final class TinyMmdb {
 
   /// Writes an IPinfo database that maps every IPv4 address to a flat `country_code`.
   static void writeCountry(Path file, String countryCode) throws IOException {
-    write(file, ipInfoRecord(countryCode), "ipinfo");
+    writeEverywhere(file, ipInfoRecord(Map.of("country_code", countryCode)), "ipinfo");
   }
 
-  /// Writes an IPinfo database that maps the lower half of the IPv4 space (`0.0.0.0/1`) to a flat
-  /// record of `fields`, in their iteration order. The upper half (`128.0.0.0/1`) has no data.
-  static void writeIpInfoLowerHalf(Path file, Map<String, String> fields) throws IOException {
-    ByteArrayOutputStream record = new ByteArrayOutputStream();
-    control(record, MAP, fields.size());
-    fields.forEach(
-        (key, value) -> {
-          string(record, key);
-          string(record, value);
-        });
-    write(file, DATA_RECORD, NO_DATA_RECORD, record.toByteArray(), "ipinfo");
+  /// Writes an IPinfo database with one flat record of string fields per quarter of the IPv4
+  /// space: entry `i` for the addresses whose first two bits are `i`, i.e. `0.0.0.0/2`,
+  /// `64.0.0.0/2`, `128.0.0.0/2` and `192.0.0.0/2`. A `null` entry means no data, the lookup
+  /// finds nothing.
+  static void writeIpInfoQuarters(Path file, List<Map<String, String>> quarters)
+      throws IOException {
+    if (quarters.size() != QUARTERS) {
+      throw new IllegalArgumentException("one entry per quarter expected: " + quarters);
+    }
+    // the root splits on the first bit into node 1 and 2, those split on the second bit
+    int nodeCount = 3;
+    int[] tree = {1, 2, 0, 0, 0, 0};
+    ByteArrayOutputStream data = new ByteArrayOutputStream();
+    for (int i = 0; i < QUARTERS; i++) {
+      Map<String, String> fields = quarters.get(i);
+      if (fields == null) {
+        tree[2 + i] = noData(nodeCount);
+      } else {
+        tree[2 + i] = dataPointer(nodeCount, data.size());
+        data.writeBytes(ipInfoRecord(fields));
+      }
+    }
+    write(file, nodeCount, tree, data.toByteArray(), "ipinfo");
   }
 
   /// Writes a GeoLite2-Country database that maps every IPv4 address to `country.iso_code`.
   static void writeGeoLite2Country(Path file, String countryCode) throws IOException {
-    write(file, geoLite2Record(countryCode), "GeoLite2-Country");
+    writeEverywhere(file, geoLite2Record(countryCode), "GeoLite2-Country");
   }
 
-  private static byte[] ipInfoRecord(String countryCode) {
+  /// A flat map of strings, the record layout of IPinfo
+  private static byte[] ipInfoRecord(Map<String, String> fields) {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    control(out, MAP, 1);
-    string(out, "country_code");
-    string(out, countryCode);
+    control(out, MAP, fields.size());
+    fields.forEach(
+        (key, value) -> {
+          string(out, key);
+          string(out, value);
+        });
     return out.toByteArray();
   }
 
@@ -84,24 +101,39 @@ final class TinyMmdb {
     return out.toByteArray();
   }
 
-  private static void write(Path file, byte[] record, String databaseType) throws IOException {
-    write(file, DATA_RECORD, DATA_RECORD, record, databaseType);
+  /// Writes a database of one node whose both records point to the only data record
+  private static void writeEverywhere(Path file, byte[] record, String databaseType)
+      throws IOException {
+    int nodeCount = 1;
+    int pointer = dataPointer(nodeCount, 0);
+    write(file, nodeCount, new int[] {pointer, pointer}, record, databaseType);
   }
 
-  /// Writes a database with one data record; `left` and `right` are the records of the only node,
-  /// for the addresses with the first bit 0 and 1, pointing to the data record or to no data
-  private static void write(Path file, int left, int right, byte[] record, String databaseType)
+  /// The record value pointing to `offset` in the data section
+  private static int dataPointer(int nodeCount, int offset) {
+    return nodeCount + DATA_SECTION_SEPARATOR + offset;
+  }
+
+  /// The record value for a network without data
+  private static int noData(int nodeCount) {
+    return nodeCount;
+  }
+
+  /// @param tree the left and right record of each node, a value below `nodeCount` is the next
+  ///   node, see [#dataPointer] and [#noData] for the others
+  private static void write(Path file, int nodeCount, int[] tree, byte[] data, String databaseType)
       throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    record24(out, left);
-    record24(out, right);
-    out.write(new byte[16]);
-    out.writeBytes(record);
+    for (int record : tree) {
+      record24(out, record);
+    }
+    out.write(new byte[DATA_SECTION_SEPARATOR]);
+    out.writeBytes(data);
     out.write(METADATA_MARKER);
     control(out, MAP, 9);
     string(out, "node_count");
     control(out, UINT32, 1);
-    out.write(NODE_COUNT);
+    out.write(nodeCount);
     string(out, "record_size");
     control(out, UINT16, 1);
     out.write(RECORD_SIZE);

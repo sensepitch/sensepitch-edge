@@ -18,12 +18,8 @@ public class CombinedIpTraitsLookupTest {
 
   ProxyMetrics metrics = new ProxyMetrics();
 
-  @Test
-  public void test() throws IOException {
-    var x =
-        new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
-  }
-
+  /// The shipped crawler lists, IPv4 and IPv6. The only test of the lists, the others pass
+  /// [#crawlerIpLists()], so the lists are not parsed for each of them.
   @Test
   public void crawlerName() throws IOException {
     var lookup =
@@ -35,14 +31,20 @@ public class CombinedIpTraitsLookupTest {
     IpTraits other = lookup(lookup, "1.2.3.4");
     assertThat(other.isCrawler()).isFalse();
     assertThat(other.crawlerName()).isNull();
-  }
-
-  @Test
-  public void crawlerNameIpv6() throws IOException {
-    var lookup =
-        new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
     assertThat(lookup(lookup, "2001:4860:4801:10::1").crawlerName()).isEqualTo("google:googlebot");
     assertThat(lookup(lookup, "2001:db8::1").isCrawler()).isFalse();
+  }
+
+  /// A crawler address of the test lists from [#crawlerIpLists()]
+  static final String CRAWLER_ADDRESS = "192.0.2.1";
+
+  static final String CRAWLER_NAME = "test:bot";
+
+  /// Crawler lists with one network, [#CRAWLER_ADDRESS] is in it
+  static IpLabelLookup crawlerIpLists() {
+    TrieIpLabelLookup lists = new TrieIpLabelLookup();
+    lists.insertIpv4("192.0.2.0/24", CombinedIpTraitsLookup.CRAWLER_LABEL_PREFIX + CRAWLER_NAME);
+    return lists;
   }
 
   @Test
@@ -60,11 +62,12 @@ public class CombinedIpTraitsLookupTest {
             List.of(
                 CombinedIpTraitsLookup.asnTraits(addr -> 15169),
                 CombinedIpTraitsLookup.countryTraits(addr -> "US")),
-            metrics);
-    IpTraits traits = lookup(lookup, "192.178.4.1");
+            metrics,
+            crawlerIpLists());
+    IpTraits traits = lookup(lookup, CRAWLER_ADDRESS);
     assertThat(traits.asn()).isEqualTo(15169);
     assertThat(traits.isoCountry()).isEqualTo("US");
-    assertThat(traits.crawlerName()).isEqualTo("google:googlebot");
+    assertThat(traits.crawlerName()).isEqualTo(CRAWLER_NAME);
   }
 
   /// Addresses not in a database, e.g. private ranges, leave the traits unset.
@@ -75,7 +78,8 @@ public class CombinedIpTraitsLookupTest {
             List.of(
                 CombinedIpTraitsLookup.asnTraits(addr -> -1),
                 CombinedIpTraitsLookup.countryTraits(addr -> null)),
-            metrics);
+            metrics,
+            crawlerIpLists());
     IpTraits traits = lookup(lookup, "10.0.0.1");
     assertThat(traits.isAsnKnown()).isFalse();
     assertThat(traits.isoCountry()).isNull();
@@ -89,7 +93,8 @@ public class CombinedIpTraitsLookupTest {
             List.of(
                 CombinedIpTraitsLookup.countryTraits(addr -> "DE"),
                 CombinedIpTraitsLookup.countryTraits(addr -> "AT")),
-            metrics);
+            metrics,
+            crawlerIpLists());
     assertThat(lookup(lookup, "1.2.3.4").isoCountry()).isEqualTo("AT");
   }
 
@@ -105,11 +110,12 @@ public class CombinedIpTraitsLookupTest {
                       throw new IOException("database corrupt");
                     }),
                 CombinedIpTraitsLookup.countryTraits(addr -> "US")),
-            metrics);
-    IpTraits traits = lookup(lookup, "192.178.4.1");
+            metrics,
+            crawlerIpLists());
+    IpTraits traits = lookup(lookup, CRAWLER_ADDRESS);
     assertThat(traits.isAsnKnown()).isFalse();
     assertThat(traits.isoCountry()).isEqualTo("US");
-    assertThat(traits.crawlerName()).isEqualTo("google:googlebot");
+    assertThat(traits.crawlerName()).isEqualTo(CRAWLER_NAME);
     assertThat(metrics.ipLookupErrorCounter.collect().getDataPoints().getFirst().getValue())
         .isOne();
     assertThat(logs.errors()).isEmpty();
@@ -126,7 +132,7 @@ public class CombinedIpTraitsLookupTest {
   /// A lookup built without databases has nothing to close
   @Test
   public void closeWithoutDatabasesDoesNothing() throws Exception {
-    var lookup = new CombinedIpTraitsLookup(List.of(), metrics);
+    var lookup = new CombinedIpTraitsLookup(List.of(), metrics, crawlerIpLists());
     lookup.close();
   }
 
@@ -148,7 +154,8 @@ public class CombinedIpTraitsLookupTest {
                   closed.add("c");
                   throw new IOException("c failed");
                 }),
-            metrics);
+            metrics,
+            crawlerIpLists());
     assertThatThrownBy(lookup::close)
         .hasMessage("a failed")
         .satisfies(
