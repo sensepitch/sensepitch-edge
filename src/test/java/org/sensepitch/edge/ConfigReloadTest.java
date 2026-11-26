@@ -1,6 +1,7 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -415,6 +416,29 @@ class ConfigReloadTest {
     assertThat(steps.proxy.state().ssl().map("other.com"))
         .as("an unchanged certificate keeps its context")
         .isSameAs(sniContext);
+  }
+
+  /// A renewed certificate whose key is not written yet: the reload is rejected, TLS goes on
+  /// with the active context
+  @Test
+  void keyOfAnotherCertificateKeepsActiveContext(@TempDir Path dir) throws Exception {
+    var activeContext = steps.proxy.state().ssl().map("a.com");
+    Path key = SslSetupTest.writeNewKey("RSA", dir);
+    ProxyConfig mismatched =
+        CONFIG.toBuilder()
+            .listen(
+                CONFIG.listen().toBuilder()
+                    .ssl(TEST_SSL.toBuilder().keyPath(key.toString()).build())
+                    .build())
+            .build();
+    assertThat(reload(mismatched)).isFalse();
+    assertThat(logs.errors())
+        .extracting(LogCapture.Entry::message)
+        .singleElement(STRING)
+        .startsWith("Configuration rejected")
+        .contains(key.toString());
+    assertThat(steps.proxy.state().ssl().map("a.com")).isSameAs(activeContext);
+    steps.when_requesting("a.com", "/").then_expect_content("A");
   }
 
   /// The files the active configuration read are reported for the [ConfigFileWatcher]

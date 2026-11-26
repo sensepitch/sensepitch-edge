@@ -63,8 +63,10 @@ touching the configuration file. The candidate files are dropped with the next a
 
 As for the configuration content, the fingerprints of the referenced files count as known once a
 reload was tried, not only once it was applied. A renewal that writes the key before the
-certificate gives a rejected reload, and the next write triggers the retry. Advancing only on
-success would retry on every unrelated event in a watched directory while a file stays broken.
+certificate gives a rejected reload (each newly loaded TLS context must pass a handshake in
+memory, see [`SslContextCheck`](../../src/main/java/org/sensepitch/edge/SslContextCheck.java)),
+and the next write triggers the retry. Advancing only on success would retry on every unrelated
+event in a watched directory while a file stays broken.
 After an applied reload the watcher replaces its set with the files of the new build.
 
 ### Reuse needs equal configuration and unchanged files

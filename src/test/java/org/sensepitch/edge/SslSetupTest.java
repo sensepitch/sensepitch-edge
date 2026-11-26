@@ -6,17 +6,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /// The SNI selection, the takeover of unchanged contexts and the certificate log of [SslSetup].
-/// The reload of the proxy is tested in `ConfigReloadTest.sniCertificatesReloaded`.
+/// [SslSetupIT] checks different key algorithms with OpenSSL. [ConfigReloadTest] covers reloads.
 ///
 /// @author Jens Wilke
 class SslSetupTest {
@@ -115,6 +120,19 @@ class SslSetupTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Cannot read classpath:nope")
         .hasCauseInstanceOf(FileNotFoundException.class);
+  }
+
+  /// Writes a newly generated private key as PKCS#8 PEM, the format of `ssl/test.key`, for a key
+  /// that belongs to no certificate
+  static Path writeNewKey(String algorithm, Path dir) throws IOException, NoSuchAlgorithmException {
+    byte[] encoded =
+        KeyPairGenerator.getInstance(algorithm).generateKeyPair().getPrivate().getEncoded();
+    String pem =
+        "-----BEGIN PRIVATE KEY-----\n"
+            + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+                .encodeToString(encoded)
+            + "\n-----END PRIVATE KEY-----\n";
+    return Files.writeString(dir.resolve(algorithm.toLowerCase(Locale.ROOT) + ".key"), pem);
   }
 
   // takeover of unchanged contexts

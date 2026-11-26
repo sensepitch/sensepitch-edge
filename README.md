@@ -617,7 +617,8 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
 - **Invalid configuration:** the error is logged and the active configuration stays. The files
   the rejected configuration tried to read are watched as well, a missing one too, so fixing or
   creating such a file, e.g. a certificate written in two steps, retries the reload without
-  touching the configuration file.
+  touching the configuration file. A key that does not belong to its certificate is invalid
+  too: each newly loaded TLS key and certificate pair must pass a handshake in memory.
 - **Log:** a reload logs the configuration changes as a diff, and added, changed or removed
   certificates with subject, serial and expiry.
 

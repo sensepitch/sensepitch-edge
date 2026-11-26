@@ -71,13 +71,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported on the recent run; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
-- [ ] `SslSetup.createSslContext`: a key that does not belong to the certificate is accepted
-  - P1: a reload with a renewed certificate and a not yet written key is applied, every TLS
-    handshake then fails instead of the reload being rejected and the old context kept.
-  - Found 2026-11-26: with `SslProvider.OPENSSL` (Netty 4.2), `SslContextBuilder.build()` does
-    not throw for an RSA key generated in the test and `ssl/test.crt`. Check the pair when the
-    context is built, then the `SSLException` catch is reachable and gets a test in
-    `SslSetupTest`.
 - [ ] `AsyncRequestLogWriter.close()`: an interrupted close leaves the writer thread running
   - P2: with the interrupt flag set, `queue.offer(END, ...)` throws at once, so the end marker is
     never queued; the writer thread (not a daemon) blocks in `queue.take()` forever and the

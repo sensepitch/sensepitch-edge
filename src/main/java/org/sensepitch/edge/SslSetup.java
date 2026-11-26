@@ -28,9 +28,9 @@ import javax.net.ssl.SSLException;
 ///
 /// A build takes over a context of the previous setup if its [SslConfig] is equal and its key and
 /// certificate files are unchanged, see [ConfigFiles.Snapshot#unchanged()], like the IP lookup in
-/// [EdgeState#build]: building an OpenSSL context costs about 15 ms, and most reloads do not touch
-/// the certificates. A changed file, e.g. a renewed certificate, is loaded again. Within one build,
-/// an equal [SslConfig] shares its context.
+/// [EdgeState#build]: building an OpenSSL context costs about 15 ms, its check by [SslContextCheck]
+/// about 2 ms more, and most reloads do not touch the certificates. A changed file, e.g. a renewed
+/// certificate, is loaded again. Within one build, an equal [SslConfig] shares its context.
 ///
 /// @author Jens Wilke
 final class SslSetup implements Mapping<String, SslContext> {
@@ -298,16 +298,21 @@ final class SslSetup implements Mapping<String, SslContext> {
     }
   }
 
-  /// Builds an OpenSSL server context, for [#loadBundle(SslConfig, ConfigFiles)]
+  /// Builds an OpenSSL server context and checks it with a TLS handshake in memory, for
+  /// [#loadBundle(SslConfig, ConfigFiles)]. OpenSSL accepts a key of another certificate when
+  /// building, see [SslContextCheck]; a context taken over was checked when it was loaded.
   ///
-  /// @throws IllegalArgumentException if OpenSSL rejects the key or certificate
+  /// @throws IllegalArgumentException if OpenSSL rejects the key or certificate, or the key does
+  ///   not belong to the certificate
   private static SslContext createSslContext(SslConfig cfg, byte[] cert, byte[] key) {
     try {
-      return SslContextBuilder.forServer(
-              new ByteArrayInputStream(cert), new ByteArrayInputStream(key))
-          .clientAuth(ClientAuth.NONE)
-          .sslProvider(SslProvider.OPENSSL)
-          .build();
+      SslContext context =
+          SslContextBuilder.forServer(new ByteArrayInputStream(cert), new ByteArrayInputStream(key))
+              .clientAuth(ClientAuth.NONE)
+              .sslProvider(SslProvider.OPENSSL)
+              .build();
+      SslContextCheck.requireHandshake(context);
+      return context;
     } catch (SSLException e) {
       throw new IllegalArgumentException(
           "Cannot build the TLS context from " + cfg.certPath() + " and " + cfg.keyPath(), e);
