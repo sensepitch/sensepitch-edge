@@ -30,9 +30,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     system; the test stays in the unit scope meanwhile, see the coverage rule in `AGENTS.md`. One
     line and one branch of `ConfigFileWatcher` are covered only in some runs, so the JaCoCo floor
     in `pom.xml` has to sit below the best run.
-  - `AsyncRequestLogWriter.reportError`: the branch for an error that was already reported is
-    covered only when a test happens to produce a second write error, so the floor sits below
-    the best run for it too. Cover it deterministically in `AsyncRequestLogWriterTest`.
   - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
     `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
     `AsyncRequestLogWriterTest` has no timer to simulate, it waits on latches only.

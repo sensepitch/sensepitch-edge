@@ -268,8 +268,9 @@ public class AsyncRequestLogWriterTest {
       sink.write(b, off, len);
     }
 
+    /// Declares the exception for subclasses that let the flush fail after the signal
     @Override
-    public void flush() {
+    public void flush() throws IOException {
       flushes.release();
       release.acquireUninterruptibly();
     }
@@ -315,6 +316,36 @@ public class AsyncRequestLogWriterTest {
       writer.writeLine("line " + i);
     }
     writer.close();
+    assertThat(logs.messages(AsyncRequestLogWriter.class))
+        .singleElement()
+        .asString()
+        .contains("Error writing request log");
+  }
+
+  /// An output that stays broken fails on every flush. Only the first error is logged, the second
+  /// one is suppressed, and neither reaches the caller. Each record is written after the flush of
+  /// the previous one, so the writer flushes once per record.
+  @Test
+  public void repeatedOutputErrorIsSuppressed() throws Exception {
+    FlushBlockingOutput output =
+        new FlushBlockingOutput() {
+          @Override
+          public void flush() throws IOException {
+            super.flush();
+            throw new IOException("broken pipe");
+          }
+        };
+    // two records and the end marker, so no flush blocks
+    output.release.release(3);
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(output, 4);
+    writer.writeLine("first");
+    output.awaitFlushes(1);
+    writer.writeLine("second");
+    output.awaitFlushes(2);
+    // waits for the writer thread, so the second error is handled when close returns
+    writer.close();
+    assertThat(output.written()).isEqualTo("first\nsecond\n");
+    assertThat(writer.droppedCount()).isZero();
     assertThat(logs.messages(AsyncRequestLogWriter.class))
         .singleElement()
         .asString()

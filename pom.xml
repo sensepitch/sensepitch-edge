@@ -456,9 +456,8 @@
           <execution>
             <!-- coverage floor, slightly below the actual coverage, raise it when coverage improves.
                  Set to the lowest of repeated runs: one line and one branch of ConfigFileWatcher
-                 (its test waits on the file system) and one branch of AsyncRequestLogWriter are
-                 covered only in some runs, and Deflector.deriveServerIpv4Address varies by host
-                 NICs; lines stay at 0.9950 for public-IPv4 host headroom, branches raised after
+                 (its test waits on the file system) are covered only in some runs, and
+                 Deflector.deriveServerIpv4Address varies by host NICs; lines stay at 0.9950 for public-IPv4 host headroom, branches raised after
                  deterministic PublicIpv4Finder tests (2026-11-26: 0.95985 loopback), see TODO.md -->
             <id>jacoco-check</id>
             <phase>verify</phase>
