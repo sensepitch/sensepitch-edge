@@ -256,6 +256,20 @@ class ConfigReloadTest {
     assertThat(steps.proxy.state().ipTraitsLookup()).isSameAs(lookup);
   }
 
+  /// A reload rejected for a missing IP database records the file, so the watcher retries the
+  /// reload when the database appears
+  @Test
+  void missingIpDatabaseIsWatched(@TempDir Path dir) {
+    Path database = dir.resolve("missing.mmdb");
+    ProxyConfig withDatabase =
+        CONFIG.toBuilder()
+            .ipLookup(IpLookupConfig.builder().ipInfoPath(database.toString()).build())
+            .build();
+    assertThat(reload(withDatabase)).isFalse();
+    assertThat(steps.proxy.referencedFiles())
+        .containsEntry(database.toAbsolutePath(), ConfigFiles.Fingerprint.ABSENT);
+  }
+
   /// A database rotated at the same path is opened again, although `ipLookup` is unchanged; an
   /// unchanged database is kept
   @Test

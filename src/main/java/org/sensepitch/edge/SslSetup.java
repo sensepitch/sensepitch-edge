@@ -253,9 +253,9 @@ final class SslSetup implements Mapping<String, SslContext> {
     }
 
     /// The bundle for a configuration: already loaded in this build, taken over from the
-    /// previous setup, shared from [#CLASS_PATH_BUNDLES], or loaded now. Records the files of the bundle on every path, also the
-    /// files a failed load read or missed, so a rejected configuration is tried again when they
-    /// change, see [Proxy#referencedFiles()].
+    /// previous setup, shared from [#CLASS_PATH_BUNDLES], or loaded now. The files of the bundle
+    /// end up in the build's files on every path: a taken over bundle records its snapshot, a new
+    /// one reads through a [ConfigFiles#component()] of the build.
     CertificateBundle bundleFor(SslConfig cfg) {
       CertificateBundle bundle = bundlesByConfig.get(cfg);
       if (bundle != null) {
@@ -268,12 +268,7 @@ final class SslSetup implements Mapping<String, SslContext> {
         // class path resources are not recorded, there is nothing to record
         bundle = CLASS_PATH_BUNDLES.computeIfAbsent(cfg, c -> loadBundle(c, new ConfigFiles()));
       } else {
-        ConfigFiles read = new ConfigFiles();
-        try {
-          bundle = loadBundle(cfg, read);
-        } finally {
-          files.recordAll(read.snapshot());
-        }
+        bundle = loadBundle(cfg, files.component());
       }
       bundlesByConfig.put(cfg, bundle);
       return bundle;
@@ -283,7 +278,8 @@ final class SslSetup implements Mapping<String, SslContext> {
   /// Reads key and certificate once and builds the bundle's context and description from the same
   /// bytes, for [Loader#bundleFor(SslConfig)]. Records nothing itself.
   ///
-  /// @param read collects the files read, so the next build can tell whether they changed
+  /// @param read collects the files read for the bundle's snapshot, so the next build can tell
+  ///   whether they changed
   private static CertificateBundle loadBundle(SslConfig cfg, ConfigFiles read) {
     byte[] cert = readFully(read, cfg.certPath());
     byte[] key = readFully(read, cfg.keyPath());

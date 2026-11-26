@@ -33,27 +33,24 @@ Whether each path records exactly once can only be seen by reading both methods.
 
 ## Instead
 
-- The helper returns what it did, here what it read, in a collector of its own. The caller does
-  all bookkeeping in one place, on every path:
+- The helper works on what it is given and returns what it did; the caller decides, in one
+  place, what happens on every path. Here the helper reads through a collector that belongs to
+  the caller's build and forwards each file at the moment it is read, so the helper records
+  nothing itself and the caller has nothing to merge:
 
   ```java
   Loaded contextFor(SslConfig cfg) {
     Loaded context = previous.get(cfg);
     if (context != null && context.files().unchanged()) {
-      dependencies.recordAll(context.files());
+      dependencies.recordAll(context.files());              // taken over, not read
     } else {
-      ConfigFiles read = new ConfigFiles();
-      try {
-        context = loadContext(cfg, read);   // static, touches nothing of the caller
-      } finally {
-        dependencies.recordAll(read.snapshot());
-      }
+      context = loadContext(cfg, dependencies.component()); // reads, recorded as it reads
     }
     return context;
   }
   ```
 
-- Each branch records once, visibly.
+- Each branch records once, visibly, also when loading fails.
 
 ## Related
 

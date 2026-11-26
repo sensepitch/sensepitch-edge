@@ -32,3 +32,5 @@ what to do instead, and the related rules in [AGENTS.md](../../AGENTS.md).
   index, `<key>To<Value>` for a translation, no bare plural.
 - [A special entry under a magic key](special-entry-under-a-magic-key.md): a field of its own
   for the special entry, the map holds only domain keys.
+- [One step split between caller and callee](step-split-between-caller-and-callee.md): one side
+  owns the step; the callee returns its result, the caller does not repeat it.

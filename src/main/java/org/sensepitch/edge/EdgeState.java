@@ -79,13 +79,13 @@ record EdgeState(
         && previous.ipLookupFiles.unchanged()) {
       ipTraitsLookup = previous.ipTraitsLookup;
       ipLookupFiles = previous.ipLookupFiles;
+      files.recordAll(ipLookupFiles);
     } else {
-      // separately, so the next state can tell whether the databases changed
-      ConfigFiles ipFiles = new ConfigFiles();
+      // a component, so the next state can tell whether the databases changed
+      ConfigFiles ipFiles = files.component();
       ipTraitsLookup = buildIpTraitsLookup(config.ipLookup(), ctx.metrics(), ipFiles);
       ipLookupFiles = ipFiles.snapshot();
     }
-    files.recordAll(ipLookupFiles);
     return new EdgeState(
         config,
         siteSelector,

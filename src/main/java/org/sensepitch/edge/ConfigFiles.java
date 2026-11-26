@@ -43,6 +43,28 @@ public final class ConfigFiles {
   /// two reads of the same build, the older fingerprint lets the watcher see the change
   private final Map<Path, Fingerprint> files = new LinkedHashMap<>();
 
+  /// The collector of the build this one is a component of, see [#component()], `null` for the
+  /// build's own collector
+  private final ConfigFiles build;
+
+  /// The collector of one build of the configuration
+  public ConfigFiles() {
+    this(null);
+  }
+
+  private ConfigFiles(ConfigFiles build) {
+    this.build = build;
+  }
+
+  /// The files of one component of this build, e.g. one certificate bundle or one IP database.
+  /// Each file read through it is recorded in its [#snapshot()] and in this collector at the same
+  /// time: the next build can tell from the component's snapshot whether it can take the
+  /// component over, and a failed read is recorded in the build as well, so a rejected
+  /// configuration is tried again when the missing file appears.
+  ConfigFiles component() {
+    return new ConfigFiles(this);
+  }
+
   /// Files read by a build or one of its components, see [#snapshot()]
   ///
   /// @param files absolute path to the fingerprint taken when the file was read
@@ -162,7 +184,11 @@ public final class ConfigFiles {
   ///
   /// @return the recorded fingerprint
   private Fingerprint recordAbsolute(Path absolute) {
-    return files.computeIfAbsent(absolute, Fingerprint::of);
+    Fingerprint fingerprint = files.computeIfAbsent(absolute, Fingerprint::of);
+    if (build != null) {
+      build.files.putIfAbsent(absolute, fingerprint);
+    }
+    return fingerprint;
   }
 
   /// Records the files of a component taken over from the previous build, see [Snapshot#unchanged()]

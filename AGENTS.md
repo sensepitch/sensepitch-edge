@@ -268,6 +268,10 @@ delay.
   `doc/design/`. Prefer the smallest change that solves the stated problem, and decide which
   observable behaviour and compatibility must stay unchanged. Do not refactor for novelty: a
   refactoring names its concrete improvement and its tradeoff, see below.
+- **Fix the siblings too**: when you fix a defect or rewrite a problematic shape, search the code
+  base for the same shape (grep for the pattern, not the name) and fix the other instances in the
+  same change or list them in `TODO.md`. A fix of one instance that leaves its siblings is not
+  done.
 - **Check upstream before working around a library bug**, or before calling it unreported: look
   up the newest release on Maven Central and diff the relevant sources against the version in
   use, and search the project's issues and pull requests with

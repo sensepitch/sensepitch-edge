@@ -124,6 +124,25 @@ class ConfigFilesTest {
     assertThat(files.snapshot().unchanged()).isFalse();
   }
 
+  /// A file read through a component is recorded in the component and in the build at the same
+  /// time, also a missing file whose read fails; the build's other files stay out of the
+  /// component
+  @Test
+  void componentRecordsInTheBuild() throws IOException {
+    Path own = Files.writeString(dir.resolve("own.pem"), "own");
+    files.read(own);
+    ConfigFiles component = files.component();
+    Path read = Files.writeString(dir.resolve("x.pem"), "x");
+    Path missing = dir.resolve("missing.pem");
+    component.read(read);
+    assertThatThrownBy(() -> component.read(missing)).isInstanceOf(NoSuchFileException.class);
+    assertThat(component.snapshot().files())
+        .containsOnlyKeys(read.toAbsolutePath(), missing.toAbsolutePath());
+    assertThat(files.snapshot().files())
+        .containsOnlyKeys(own.toAbsolutePath(), read.toAbsolutePath(), missing.toAbsolutePath())
+        .containsEntry(missing.toAbsolutePath(), ConfigFiles.Fingerprint.ABSENT);
+  }
+
   /// Files of a component taken over from the previous build are added, a file this build read
   /// itself keeps its own fingerprint
   @Test

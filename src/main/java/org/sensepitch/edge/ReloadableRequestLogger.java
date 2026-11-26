@@ -120,9 +120,11 @@ public final class ReloadableRequestLogger implements RequestLogger {
           continue;
         }
         Destination destination = find(current, names.get(i), destinationConfig);
-        if (destination == null) {
-          // separately, so a later reload can tell whether the files of this destination changed
-          ConfigFiles destinationFiles = new ConfigFiles();
+        if (destination != null) {
+          files.recordAll(destination.files());
+        } else {
+          // a component, so a later reload can tell whether the files of this destination changed
+          ConfigFiles destinationFiles = files.component();
           RequestLogger logger =
               RequestLoggerFactory.createDestination(
                   names.get(i), destinationConfig, stdout, metrics, destinationFiles, seams);
@@ -130,7 +132,6 @@ public final class ReloadableRequestLogger implements RequestLogger {
               new Destination(names.get(i), destinationConfig, destinationFiles.snapshot(), logger);
           created.add(destination);
         }
-        files.recordAll(destination.files());
         next.add(destination);
       }
     } catch (RuntimeException e) {
