@@ -9,6 +9,8 @@ import lombok.Builder;
 /// @param requestLog request log destinations and format, see [RequestLogConfig]. Always set in a
 ///   built record, with the derived [RequestLogConfig#drainTimeoutMillis()].
 /// @param traceContext handling of the W3C trace context, see [TraceContextConfig]
+/// @param fingerprint client fingerprints and header samples, see [FingerprintConfig]. Always
+///   set in a built record.
 /// @param shutdownTimeoutMillis upper limit of the time a shutdown takes, e.g. after `SIGTERM`.
 ///   The shutdown first keeps accepting for `shutdownAcceptGraceMillis`, then stops accepting
 ///   connections, waits for the requests in flight, then sends the request log, and ends as soon
@@ -28,7 +30,7 @@ public record ProxyConfig(
     ListenConfig listen,
     UnservicedHostConfig unservicedHost,
     IpLookupConfig ipLookup,
-    Ja4Config ja4,
+    FingerprintConfig fingerprint,
     FallbackConfig fallback,
     UpstreamConfig upstream,
     Map<String, UpstreamConfig> upstreams,
@@ -86,6 +88,8 @@ public record ProxyConfig(
     /// records, so it is set here and not by the [RequestLogConfig.Builder].
     public ProxyConfig build() {
       RequestLogConfig log = requestLog != null ? requestLog : RequestLogConfig.DEFAULT;
+      FingerprintConfig fingerprints =
+          fingerprint != null ? fingerprint : FingerprintConfig.DEFAULT;
       if (log.drainTimeoutMillis() == null) {
         log = log.toBuilder().drainTimeoutMillis(Math.max(1, shutdownTimeoutMillis / 3)).build();
       }
@@ -95,7 +99,7 @@ public record ProxyConfig(
           listen,
           unservicedHost,
           ipLookup,
-          ja4,
+          fingerprints,
           fallback,
           upstream,
           upstreams,

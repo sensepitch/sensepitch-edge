@@ -524,18 +524,6 @@
               <version>${lombok.version}</version>
             </path>
           </annotationProcessorPaths>
-          <!-- TEMPORARY: work in progress that does not compile yet. Drop both blocks once
-               Ja4Fingerprint exists and the JMH dependencies are declared.
-               HttpFingerprint calls the missing class Ja4Fingerprint, Ja4Benchmark needs
-               jmh-core and jmh-generator-annprocess. Nothing in src/main references the
-               HttpFingerprint classes, so leaving them out is safe. -->
-          <excludes>
-            <exclude>**/HttpFingerprint*.java</exclude>
-          </excludes>
-          <testExcludes>
-            <exclude>**/HttpFingerprint*.java</exclude>
-            <exclude>**/Ja4Benchmark.java</exclude>
-          </testExcludes>
         </configuration>
         <executions>
           <execution>

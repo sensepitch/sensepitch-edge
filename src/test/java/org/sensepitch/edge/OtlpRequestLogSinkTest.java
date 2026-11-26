@@ -7,6 +7,7 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.opentelemetry.proto.common.v1.AnyValue;
 import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.logs.v1.LogRecord;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /// The OTLP encoding of one request log record by [OtlpRequestLogSink], parsed with the official
@@ -35,15 +36,16 @@ class OtlpRequestLogSinkTest {
   /// The sampled headers are encoded as a string array attribute
   @Test
   void sampleHeaders() throws Exception {
-    TestRequestLogInfo info = TestRequestLogInfo.of(HttpMethod.GET, 200);
-    info.request().headers().add("Accept", "*/*");
+    TestRequestLogInfo info =
+        TestRequestLogInfo.of(HttpMethod.GET, 200)
+            .withSampleHeaders(List.of("Host: example.com", "Accept: */*"));
     ProtobufWriter out = new ProtobufWriter(1024);
-    new OtlpRequestLogSink(1).encode(out, info);
+    new OtlpRequestLogSink().encode(out, info);
     LogRecord record = LogRecord.parseFrom(out.toByteArray());
     AnyValue sampled =
         attributes(record.getAttributesList()).get("sensepitch.request.sample_headers");
     assertThat(sampled.getArrayValue().getValuesList())
         .extracting(AnyValue::getStringValue)
-        .containsExactly("host: example.com", "Accept: */*");
+        .containsExactly("Host: example.com", "Accept: */*");
   }
 }

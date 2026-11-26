@@ -199,13 +199,7 @@ class OtlpOutageBDDTest {
     Steps givenDestination(OtlpConfig config) {
       destination =
           new OtlpLogDestination(
-              NAME,
-              config,
-              new RequestLogMetrics(),
-              0,
-              clock,
-              clock.scheduler()::schedule,
-              logServer);
+              NAME, config, new RequestLogMetrics(), clock, clock.scheduler()::schedule, logServer);
       logger = new OtlpRequestLogger(destination);
       return this;
     }

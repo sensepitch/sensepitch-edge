@@ -28,20 +28,12 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
   /// Name of the instrumentation scope of the records
   public static final String SCOPE = "org.sensepitch.edge";
 
-  private final int sampleHeadersInterval;
-
   public OtlpLogDestination(String name, OtlpConfig config) {
     this(name, config, new RequestLogMetrics());
   }
 
   public OtlpLogDestination(String name, OtlpConfig config, RequestLogMetrics metrics) {
-    this(name, config, metrics, 0);
-  }
-
-  /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
-  public OtlpLogDestination(
-      String name, OtlpConfig config, RequestLogMetrics metrics, int sampleHeadersInterval) {
-    this(name, config, metrics, sampleHeadersInterval, Ticker.systemTicker(), null, null);
+    this(name, config, metrics, Ticker.systemTicker(), null, null);
   }
 
   /// With the test seams of [HttpBatchSender], for deterministic tests
@@ -49,18 +41,16 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
       String name,
       OtlpConfig config,
       RequestLogMetrics metrics,
-      int sampleHeadersInterval,
       Ticker clock,
       Timer timer,
       Transport transport) {
     super(
         settings(name, config),
-        new OtlpBatchPayload(config.resourceAttributes(), sampleHeadersInterval, clock),
+        new OtlpBatchPayload(config.resourceAttributes(), clock),
         metrics,
         clock,
         timer,
         transport);
-    this.sampleHeadersInterval = sampleHeadersInterval;
   }
 
   /// Validates the configuration and derives the settings of the sender
@@ -202,10 +192,5 @@ public class OtlpLogDestination extends HttpBatchSender<OtlpBatch> {
     } catch (IOException e) {
       return null;
     }
-  }
-
-  /// See [RequestLogDestinationConfig#sampleHeadersInterval()]
-  int sampleHeadersInterval() {
-    return sampleHeadersInterval;
   }
 }

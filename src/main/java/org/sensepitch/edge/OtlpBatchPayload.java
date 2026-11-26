@@ -26,8 +26,6 @@ final class OtlpBatchPayload implements BatchPayload<OtlpBatch> {
 
   static final String CONTENT_TYPE = "application/x-protobuf";
 
-  private final int sampleHeadersInterval;
-
   /// `ResourceLogs.resource` field, constant
   private final byte[] resourceField;
 
@@ -43,15 +41,12 @@ final class OtlpBatchPayload implements BatchPayload<OtlpBatch> {
   private final Ticker clock;
 
   /// @param resourceAttributes configured attributes, see [OtlpLogDestination#encodeResource(Map)]
-  /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
-  OtlpBatchPayload(Map<String, String> resourceAttributes, int sampleHeadersInterval) {
-    this(resourceAttributes, sampleHeadersInterval, null);
+  OtlpBatchPayload(Map<String, String> resourceAttributes) {
+    this(resourceAttributes, null);
   }
 
   /// With the clock that stamps the age of a batch, for tests
-  OtlpBatchPayload(
-      Map<String, String> resourceAttributes, int sampleHeadersInterval, Ticker clock) {
-    this.sampleHeadersInterval = sampleHeadersInterval;
+  OtlpBatchPayload(Map<String, String> resourceAttributes, Ticker clock) {
     this.clock = clock == null ? Ticker.systemTicker() : clock;
     resourceField =
         new ProtobufWriter()
@@ -79,7 +74,7 @@ final class OtlpBatchPayload implements BatchPayload<OtlpBatch> {
   /// Frames each record as a `ScopeLogs.log_records` entry
   @Override
   public RecordEncoder<OtlpBatch> newEncoder() {
-    OtlpRequestLogSink sink = new OtlpRequestLogSink(sampleHeadersInterval);
+    OtlpRequestLogSink sink = new OtlpRequestLogSink();
     return (batch, info) -> {
       ProtobufWriter out = batch.writer;
       int mark = out.size();

@@ -8,6 +8,7 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.List;
 
 /// Request log data with an anonymized client address, everything else is passed through.
 ///
@@ -233,6 +234,11 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   }
 
   @Override
+  public String fingerprintSp1() {
+    return info.fingerprintSp1();
+  }
+
+  @Override
   public String admissionToken() {
     return info.admissionToken();
   }
@@ -260,6 +266,16 @@ public class AnonymizedClientRequestLogInfo implements RequestLogInfo {
   @Override
   public HttpHeaders clientHeaders() {
     return info.clientHeaders();
+  }
+
+  @Override
+  public List<CharSequence> clientHeaderNames() {
+    return info.clientHeaderNames();
+  }
+
+  @Override
+  public List<String> sampleHeaders() {
+    return info.sampleHeaders();
   }
 
   @Override

@@ -99,16 +99,12 @@ class OtlpConfigTest {
     }
   }
 
-  /// An https endpoint is accepted, the timeout and the header sampling reach the destination
+  /// An https endpoint is accepted, the timeout reaches the destination
   @Test
   void valuesReachTheDestination() {
     new OtlpLogDestination("otlp", config().endpoint("https://127.0.0.1:1/v1/logs").build())
         .finish();
     assertThat(OtlpLogDestination.settings("otlp", config().timeoutMillis(1234).build()).timeout())
         .isEqualTo(Duration.ofMillis(1234));
-    OtlpLogDestination destination =
-        new OtlpLogDestination("otlp", config().build(), new RequestLogMetrics(), 27);
-    assertThat(destination.sampleHeadersInterval()).isEqualTo(27);
-    destination.finish();
   }
 }

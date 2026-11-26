@@ -37,16 +37,9 @@ public class JsonRequestLogger implements RequestLogger {
 
   private final JsonFactory jsonFactory = new JsonFactory();
   private final RequestLogOutput output;
-  private final int sampleHeadersInterval;
 
   public JsonRequestLogger(RequestLogOutput output) {
-    this(output, 0);
-  }
-
-  /// @param sampleHeadersInterval see [RequestLogDestinationConfig#sampleHeadersInterval()]
-  public JsonRequestLogger(RequestLogOutput output, int sampleHeadersInterval) {
     this.output = output;
-    this.sampleHeadersInterval = sampleHeadersInterval;
   }
 
   @Override
@@ -55,7 +48,7 @@ public class JsonRequestLogger implements RequestLogger {
     try (JsonGenerator json = jsonFactory.createGenerator(buffer)) {
       json.writeStartObject();
       Sink sink = new Sink(json);
-      RequestLogFieldsWriter.write(info, sink, sampleHeadersInterval);
+      RequestLogFieldsWriter.write(info, sink);
       sink.writeTrailer();
       json.writeEndObject();
     } catch (IOException e) {

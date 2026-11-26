@@ -4,7 +4,12 @@ This document covers the client traits the proxy collects: the passive JA4 TLS f
 [`Ja4Handler`](../../src/main/java/org/sensepitch/edge/Ja4Handler.java),
 [`ClientHelloParser`](../../src/main/java/org/sensepitch/edge/ClientHelloParser.java),
 [`Ja4Fingerprint`](../../src/main/java/org/sensepitch/edge/Ja4Fingerprint.java) and
-[`Ja4HeaderHandler`](../../src/main/java/org/sensepitch/edge/Ja4HeaderHandler.java), and the
+[`Ja4HeaderHandler`](../../src/main/java/org/sensepitch/edge/Ja4HeaderHandler.java), the
+fingerprint of the request headers in
+[`Sp1Fingerprint`](../../src/main/java/org/sensepitch/edge/Sp1Fingerprint.java) and
+[`FingerprintHandler`](../../src/main/java/org/sensepitch/edge/FingerprintHandler.java), the
+configuration of both and of the header samples in
+[`FingerprintConfig`](../../src/main/java/org/sensepitch/edge/FingerprintConfig.java), and the
 browser traits that the challenge script
 [`script.js`](../../src/main/resources/challenge/files/script.js) reports with its answer. The
 class docs and the [challenge test README](../../src/test/javascript/README.md) describe what is
@@ -46,13 +51,18 @@ strictly needs (ePrivacy Directive Art. 5(3)). The scope gives these rules:
 | Signal | Source | Contradiction it can reveal | Variant or context |
 |---|---|---|---|
 | JA4 | TLS ClientHello, every TLS connection | TLS stack does not belong to the claimed browser family | variant |
+| header names | every request, as the client sent them | set, order or spelling of the headers is not that of the claimed browser, e.g. a Chrome `User-Agent` without `sec-ch-ua` | variant |
+| sp1 | hash of the header names and the invariant header values | the same, as one value to count and compare | variant |
 | `webdriver` | `navigator.webdriver` in the challenge | `1`: the browser is under automation (WebDriver, CDP based tools) | variant |
 | `tz` present or absent | `Intl.DateTimeFormat().resolvedOptions().timeZone` | absent although the claimed browser version has `Intl`: a stripped or non-browser engine | variant |
 | `tz`, `tzOffset` | the same, and `Date.getTimezoneOffset()` | do not fit the country of the client address; `tz` and `tzOffset` do not fit each other | context |
 
 The JA4 fingerprint is sent to the upstream (`Sp-Ja4`) and written to the request log
-(`sensepitch.tls.client.ja4`). The challenge traits reach the request log as part of the
-`url.query` of the answer request `/.sensepitch.challenge.complete`.
+(`sensepitch.tls.client.ja4`), as is the sp1 fingerprint (`Sp-Fingerprint-Sp1`,
+`sensepitch.request.fingerprint.sp1`). The header names are written to the request log on every
+request (`sensepitch.request.header_names`), all headers of a sample of requests
+(`sensepitch.request.sample_headers`). The challenge traits reach the request log as part
+of the `url.query` of the answer request `/.sensepitch.challenge.complete`.
 
 The country of the client address is a weak reference: VPNs, corporate proxies and travel
 produce legitimate mismatches. A headless browser in a data centre often runs with `UTC`, which
@@ -83,6 +93,61 @@ build yields the same value, so it names a browser, not a person. A hash that in
 timezone or device traits would split users of one browser into small groups and come close to
 identifying them, so it is not built.
 
+### Header names as sent, before the edge touches them
+
+The edge changes the request headers before the request is logged: Netty's `HttpHeaders.set`
+removes a header and appends it again, so the sanitized `Host` moved to the end in lower case,
+a replaced `traceparent` moved as well, and the edge's own headers were listed. Measured with
+Netty 4.2.21 on 2026-11-26, a request `Host, User-Agent, traceparent, Accept` was logged as
+`User-Agent, Accept, host, traceparent, X-Forwarded-Proto`. The order and the spelling are the
+signal, `Host` first in this spelling is typical for browsers, so the
+[`FingerprintHandler`](../../src/main/java/org/sensepitch/edge/FingerprintHandler.java)
+takes the names right after the client's edge headers are stripped, before any other handler.
+It keeps references to the header names, the text is not copied. The sampled headers had the same
+defect and are taken there as well.
+
+### Own header hash instead of JA4H
+
+JA4H, the HTTP part of the JA4+ suite, hashes the header names, but its readable part has the
+first four letters of `Accept-Language` and two of its parts hash the cookie names and values.
+Language and cookies belong to the person, so JA4H would split the users of one browser build
+into small groups, against the rule in [Purpose and scope](#purpose-and-scope). The
+[`Sp1Fingerprint`](../../src/main/java/org/sensepitch/edge/Sp1Fingerprint.java) hashes:
+
+- the header names in order and spelling, without the headers whose presence depends on the
+  request or the person: `Cookie`, `Referer`, `Authorization`, `Origin`, `Range`, `If-*`,
+  `Cache-Control`, `Pragma`, `Content-Length`, `Content-Type`. A reload sends `Cache-Control`,
+  a revisit `If-None-Match`, neither says anything about the browser.
+- the values of headers that are fixed by the browser build: `Accept`, `Accept-Encoding`,
+  `sec-ch-ua`, `sec-ch-ua-mobile`, `sec-ch-ua-platform`, `Upgrade-Insecure-Requests`. The
+  `User-Agent` value is the claim under test and stays out, so the fingerprint can be compared
+  with it.
+
+The hash is the truncated SHA-256 of JA4, 12 hex digits. Like JA4 it is off by default
+(`fingerprint.sp1.enable`), it costs one hash per request. The header names are logged in any
+case.
+
+### The version is in the name
+
+The inputs of `sp1` are a judgement that will change: a header turns out to vary within a
+browser build, or a new client hint appears. A fingerprint value is only comparable with values
+of the same algorithm, so the algorithm carries a version, and the version is part of every name:
+the log field `sensepitch.request.fingerprint.sp1`, the header `Sp-Fingerprint-Sp1` and the
+configuration `fingerprint.sp1`. A change makes `sp2` with names of its own, `sp1` stays as it
+is. During a migration both can be switched on, so the log has both values for the same requests
+and a mapping can be built. A version inside the value (`v1_…`) was considered: it keeps one
+field, but a query over that field mixes the versions unless every query filters on the prefix.
+
+### One configuration block
+
+JA4, `sp1` and the header samples serve the same study, so they are configured together in
+`fingerprint`. The sampling was a setting of each request log destination before, each
+destination drew its own random numbers, so two destinations sampled different requests. Now
+the [`FingerprintHandler`](../../src/main/java/org/sensepitch/edge/FingerprintHandler.java)
+decides once per request, and every destination logs the sample of the same requests. The block
+is read per connection (JA4) and per request (the rest), so a reload applies it; before, `ja4`
+needed a restart.
+
 ### Tri-state `webdriver`
 
 `webdriver=1` and `webdriver=0` report the boolean. The parameter is left out when the property
@@ -102,6 +167,8 @@ Both together allow a consistency check: an IANA name whose offset at that momen
   entropy because they vary with hardware, drivers and installation, which is exactly what makes
   them identify devices. That is out of scope and a privacy risk, and they add little to
   checking a `User-Agent` claim.
+- **JA4H.** Rejected, it hashes language and cookies, see
+  [Own header hash instead of JA4H](#own-header-hash-instead-of-ja4h).
 - **A hash over all collected traits.** Rejected, because it would include the timezone, see
   [Fingerprints identify UA variants, not clients](#fingerprints-identify-ua-variants-not-clients).
 
@@ -114,8 +181,15 @@ Both together allow a consistency check: an IANA name whose offset at that momen
 - Only the answer request carries the browser traits. Later requests of the same client do not
   carry them, and the upstream never sees them.
 - JA4 needs TLS; plain HTTP requests have no fingerprint.
+- The HTTP fingerprint differs per kind of request: a browser sends other headers and another
+  `Accept` for a navigation than for a script, an image or a `fetch`. One browser build has a
+  handful of fingerprints, not one. Which header is invariant is inferred from how Chromium and
+  Firefox behave, not measured on our traffic.
+- Only HTTP/1.1 is served, browsers fall back to it. With HTTP/2 the header names are lower case
+  and the pseudo headers and frame settings would be the signal, see JA4H and the Akamai HTTP/2
+  fingerprint.
 
 ## Planned improvements
 
-Listed in [`TODO.md`](../../TODO.md) under "Protection, admission": checking JA4 against the
-claimed browser family, and passing the challenge traits on with the admission.
+Listed in [`TODO.md`](../../TODO.md) under "Protection, admission": passing the challenge traits
+on with the admission.

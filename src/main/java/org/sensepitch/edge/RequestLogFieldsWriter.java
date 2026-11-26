@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
-import java.util.concurrent.ThreadLocalRandom;
 
 /// Writes the fields of a request into a [RequestLogSink], the single mapping of a request to the
 /// request log fields. It is used for both output formats, with a different sink implementation
@@ -54,27 +52,6 @@ public final class RequestLogFieldsWriter {
           SEC_CH_UA_MOBILE,
           SIGNATURE_AGENT);
 
-  /// Request headers left out of the sampled headers, see
-  /// [#write(RequestLogInfo, RequestLogSink, int)]: secrets and values that change per request,
-  /// and the forwarding headers the edge adds itself, which tell nothing about the client.
-  /// `X-Forwarded-For` would also leak the client address past
-  /// [RequestLogDestinationConfig#anonymizeClientIp()]. The `Sp-*` headers of the edge are left out
-  /// as well, see [SensepitchHeaders#isEdgeHeader]. Case insensitive.
-  static final Set<String> SAMPLE_HEADERS_EXCLUDED = sampleHeadersExcluded();
-
-  private static Set<String> sampleHeadersExcluded() {
-    Set<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-    names.addAll(
-        List.of(
-            HttpHeaderNames.COOKIE.toString(),
-            HttpHeaderNames.AUTHORIZATION.toString(),
-            HttpHeaderNames.PROXY_AUTHORIZATION.toString(),
-            TraceContext.TRACEPARENT,
-            "X-Forwarded-For",
-            "X-Forwarded-Proto"));
-    return names;
-  }
-
   /// Keys of [#LOGGED_HEADERS], computed once
   private static final String[] LOGGED_HEADER_KEYS =
       LOGGED_HEADERS.stream().map(OtelLogFields::requestHeader).toArray(String[]::new);
@@ -118,20 +95,10 @@ public final class RequestLogFieldsWriter {
     }
   }
 
-  /// Emits all fields of the request into the sink, without sampled headers
-  public static <E extends Exception> void write(RequestLogInfo info, RequestLogSink<E> sink)
-      throws E {
-    write(info, sink, 0);
-  }
-
   /// Emits all fields of the request into the sink. The order is for reading a JSON line: what was
   /// requested, the result and its cost, who asked, how it was routed, then the details.
-  ///
-  /// @param sampleHeadersInterval if positive, about one in this many requests, picked at random,
-  ///   also gets [SensepitchLogFields#REQUEST_SAMPLE_HEADERS], see
-  ///   [RequestLogDestinationConfig#sampleHeadersInterval()]
-  public static <E extends Exception> void write(
-      RequestLogInfo info, RequestLogSink<E> sink, int sampleHeadersInterval) throws E {
+  public static <E extends Exception> void write(RequestLogInfo info, RequestLogSink<E> sink)
+      throws E {
     HttpHeaders headers = info.clientHeaders();
     int status = info.responseStatus().code();
     sink.record(
@@ -169,7 +136,7 @@ public final class RequestLogFieldsWriter {
       sink.arrayValue(info.clientTraceparent());
       sink.endArray();
     }
-    writeDetails(info, headers, sink, sampleHeadersInterval);
+    writeDetails(info, headers, sink);
   }
 
   /// The client, its user agent and the logged request headers
@@ -302,12 +269,12 @@ public final class RequestLogFieldsWriter {
 
   /// The remaining Sensepitch fields: connection, fingerprints, header names, partial durations
   private static <E extends Exception> void writeDetails(
-      RequestLogInfo info, HttpHeaders headers, RequestLogSink<E> sink, int sampleHeadersInterval)
-      throws E {
+      RequestLogInfo info, HttpHeaders headers, RequestLogSink<E> sink) throws E {
     sink.string(SensepitchLogFields.CONNECTION_ID, info.connectionId());
     sink.number(SensepitchLogFields.CONNECTION_REQUEST_COUNT, info.connectionRequestCount());
     sink.optionalString(SensepitchLogFields.IP_TRAITS, info.ipTraits());
     sink.optionalString(SensepitchLogFields.TLS_CLIENT_JA4, info.ja4());
+    sink.optionalString(SensepitchLogFields.REQUEST_FINGERPRINT_SP1, info.fingerprintSp1());
     sink.optionalString(SensepitchLogFields.ADMISSION_TOKEN, info.admissionToken());
     String originalToken = info.admissionOriginalToken();
     if (originalToken != null) {
@@ -318,32 +285,19 @@ public final class RequestLogFieldsWriter {
     sink.optionalString(SensepitchLogFields.TRAFFIC_TYPE, info.trafficType());
     sink.bool(SensepitchLogFields.REQUEST_COOKIE_PRESENT, headers.contains(HttpHeaderNames.COOKIE));
     sink.startArray(SensepitchLogFields.REQUEST_HEADER_NAMES);
-    Iterator<Map.Entry<CharSequence, CharSequence>> entries = headers.iteratorCharSequence();
-    while (entries.hasNext()) {
-      sink.arrayValue(entries.next().getKey());
+    for (CharSequence name : info.clientHeaderNames()) {
+      sink.arrayValue(name);
     }
     sink.endArray();
-    if (sampleHeadersInterval > 0
-        && ThreadLocalRandom.current().nextInt(sampleHeadersInterval) == 0) {
-      writeSampleHeaders(headers, sink);
+    List<String> sample = info.sampleHeaders();
+    if (sample != null) {
+      sink.startArray(SensepitchLogFields.REQUEST_SAMPLE_HEADERS);
+      for (String header : sample) {
+        sink.arrayValue(header);
+      }
+      sink.endArray();
     }
     sink.number(SensepitchLogFields.DURATION_RECEIVE_NS, info.receiveDurationNanos());
     sink.number(SensepitchLogFields.DURATION_RESPONSE_NS, info.responseTimeNanos());
-  }
-
-  /// All request headers as `Name: value` in the order received, except
-  /// [#SAMPLE_HEADERS_EXCLUDED] and the headers of the edge, see [SensepitchHeaders]. Allocates, but only for the sampled requests.
-  private static <E extends Exception> void writeSampleHeaders(
-      HttpHeaders headers, RequestLogSink<E> sink) throws E {
-    sink.startArray(SensepitchLogFields.REQUEST_SAMPLE_HEADERS);
-    Iterator<Map.Entry<CharSequence, CharSequence>> entries = headers.iteratorCharSequence();
-    while (entries.hasNext()) {
-      Map.Entry<CharSequence, CharSequence> entry = entries.next();
-      String name = entry.getKey().toString();
-      if (!SAMPLE_HEADERS_EXCLUDED.contains(name) && !SensepitchHeaders.isEdgeHeader(name)) {
-        sink.arrayValue(name + ": " + entry.getValue());
-      }
-    }
-    sink.endArray();
   }
 }

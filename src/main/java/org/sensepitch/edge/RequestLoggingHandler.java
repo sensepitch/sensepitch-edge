@@ -18,6 +18,7 @@ import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Ticker;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 import javax.net.ssl.SSLSession;
@@ -97,6 +98,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   private TraceContext traceContext;
   private String clientTraceparent;
 
+  /// Headers as the client sent them, from the [FingerprintHandler] before this handler
+  private FingerprintHandler.ClientHeaders clientHeaders = FingerprintHandler.ClientHeaders.NONE;
+
   /// TLS session data, read once per connection, when the first request is logged
   private boolean tlsResolved;
 
@@ -147,6 +151,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest) {
       request = (HttpRequest) msg;
+      clientHeaders = FingerprintHandler.takeClientHeaders(ctx.channel());
       metrics.countRequestStarted(request);
       requestStartTime = System.currentTimeMillis();
       requestStartTimeNanos = ticker.nanoTime();
@@ -288,6 +293,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     protectionOutcome = null;
     traceContext = null;
     clientTraceparent = null;
+    clientHeaders = FingerprintHandler.ClientHeaders.NONE;
   }
 
   /// The SNI handler replaces itself by the SSL handler, so it is looked up when the handshake is
@@ -515,6 +521,16 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   @Override
   public HttpRequest request() {
     return request;
+  }
+
+  @Override
+  public List<CharSequence> clientHeaderNames() {
+    return clientHeaders.names();
+  }
+
+  @Override
+  public List<String> sampleHeaders() {
+    return clientHeaders.sample();
   }
 
   @Override

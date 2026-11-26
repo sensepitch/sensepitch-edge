@@ -81,6 +81,11 @@ interface RequestBackedLogInfo extends RequestLogInfo {
   }
 
   @Override
+  default String fingerprintSp1() {
+    return request().headers().get(FingerprintHandler.SP1_HEADER);
+  }
+
+  @Override
   default String admissionToken() {
     return request().headers().get(Deflector.ADMISSION_TOKEN_HEADER);
   }

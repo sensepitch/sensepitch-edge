@@ -10,6 +10,8 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 
 /// A [RequestLogInfo] for testing request loggers and metrics without a pipeline. Byte counts,
 /// durations and the trace context are fixed values. The `with…` methods set a value and return
@@ -33,6 +35,7 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
   private String route;
   private String configId;
   private String protectionOutcome;
+  private List<String> sampleHeaders;
 
   private TestRequestLogInfo(HttpRequest request, HttpResponse response) {
     this.request = request;
@@ -252,5 +255,33 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
   @Override
   public long totalDurationNanos() {
     return 3_000;
+  }
+
+  /// The names of the request headers without the edge headers, like the [FingerprintHandler]
+  /// takes them before the edge adds its own
+  @Override
+  public List<CharSequence> clientHeaderNames() {
+    List<CharSequence> names = new ArrayList<>();
+    request
+        .headers()
+        .iteratorCharSequence()
+        .forEachRemaining(
+            entry -> {
+              if (!SensepitchHeaders.isEdgeHeader(entry.getKey())) {
+                names.add(entry.getKey());
+              }
+            });
+    return names;
+  }
+
+  /// With sampled headers, as the [FingerprintHandler] takes them
+  TestRequestLogInfo withSampleHeaders(List<String> sample) {
+    sampleHeaders = sample;
+    return this;
+  }
+
+  @Override
+  public List<String> sampleHeaders() {
+    return sampleHeaders;
   }
 }

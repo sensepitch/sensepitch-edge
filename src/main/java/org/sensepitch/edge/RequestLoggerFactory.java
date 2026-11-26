@@ -122,14 +122,13 @@ public final class RequestLoggerFactory {
           case RequestLogDestinationConfig.TYPE_STDOUT ->
               destination.plainText()
                   ? new PlainTextRequestLogger(stdout)
-                  : new JsonRequestLogger(stdout, destination.sampleHeadersInterval());
+                  : new JsonRequestLogger(stdout);
           case RequestLogDestinationConfig.TYPE_OTLP ->
               new OtlpRequestLogger(
                   new OtlpLogDestination(
                       name,
                       resolveSecretHeaders(name, destination.otlp(), files),
                       metrics,
-                      destination.sampleHeadersInterval(),
                       seams.clock(),
                       seams.timer(),
                       seams.transport()));
@@ -162,8 +161,8 @@ public final class RequestLoggerFactory {
 
   /// Names of the destinations, defaulting to the type, with the index appended for the second
   /// and further `stdout` destinations. Several `otlp` destinations must be named explicitly. Also
-  /// validates the type, the presence of the `otlp` settings exactly for `otlp` destinations, that
-  /// `sampleHeadersInterval` is not negative, and checks names are unique.
+  /// validates the type, the presence of the `otlp` settings exactly for `otlp` destinations, and
+  /// checks names are unique.
   static List<String> names(List<RequestLogDestinationConfig> destinations) {
     // the name identifies an otlp destination across a reload, a positional default would shift
     // when a destination is inserted and replace unchanged destinations, with their metrics
@@ -195,10 +194,6 @@ public final class RequestLoggerFactory {
       if (!otlp && destination.otlp() != null) {
         throw new IllegalArgumentException(
             "requestLog.destinations[" + i + "]: otlp settings on a " + type + " destination");
-      }
-      if (destination.sampleHeadersInterval() < 0) {
-        throw new IllegalArgumentException(
-            "requestLog.destinations[" + i + "]: sampleHeadersInterval must not be negative");
       }
       String name = destination.name();
       if (otlp && severalOtlp && (name == null || name.isBlank())) {

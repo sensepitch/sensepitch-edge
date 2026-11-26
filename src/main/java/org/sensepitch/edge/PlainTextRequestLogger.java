@@ -59,14 +59,12 @@ public class PlainTextRequestLogger implements RequestLogger {
     }
     String signatureAgent = sanitize(info.clientHeaders().get("Signature-Agent"));
     StringBuilder sb = new StringBuilder();
-    info.clientHeaders()
-        .forEach(
-            kv -> {
-              if (sb.length() > 0) {
-                sb.append(", ");
-              }
-              sb.append(sanitize(kv.getKey()));
-            });
+    for (CharSequence name : info.clientHeaderNames()) {
+      if (sb.length() > 0) {
+        sb.append(", ");
+      }
+      sb.append(sanitize(name.toString()));
+    }
     String headerNames = sb.toString();
     output.writeLine(
         "RQ0 "

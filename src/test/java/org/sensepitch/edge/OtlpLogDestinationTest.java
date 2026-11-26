@@ -243,7 +243,6 @@ class OtlpLogDestinationTest {
             "otlp",
             config.build(),
             new RequestLogMetrics(),
-            0,
             clock,
             clock.scheduler()::schedule,
             logServer);
@@ -623,13 +622,7 @@ class OtlpLogDestinationTest {
     OtlpConfig built = config.compression(OtlpConfig.NONE).flushIntervalMillis(500).build();
     OtlpLogDestination destination =
         new OtlpLogDestination(
-            "otlp",
-            built,
-            new RequestLogMetrics(),
-            0,
-            clock,
-            clock.scheduler()::schedule,
-            logServer);
+            "otlp", built, new RequestLogMetrics(), clock, clock.scheduler()::schedule, logServer);
     OtlpRequestLogger logger = new OtlpRequestLogger(destination);
     CountDownLatch logged = new CountDownLatch(threads);
     CountDownLatch release = new CountDownLatch(1);

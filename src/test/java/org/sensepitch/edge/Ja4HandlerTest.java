@@ -196,7 +196,9 @@ public class Ja4HandlerTest {
     final EmbeddedChannel http;
 
     EmbeddedChannelWithAttribute(EmbeddedChannel source, Ja4Config config) {
-      http = new EmbeddedChannel(new Ja4HeaderHandler(config));
+      http =
+          new EmbeddedChannel(
+              new Ja4HeaderHandler(() -> FingerprintConfig.builder().ja4(config).build()));
       http.attr(Ja4Handler.ATTRIBUTE).set(Ja4Handler.lookup(source));
     }
 

@@ -5,6 +5,7 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import java.net.InetAddress;
+import java.util.List;
 
 /// Data of one completed request, passed to a [RequestLogger].
 ///
@@ -127,6 +128,9 @@ public interface RequestLogInfo {
   /// The JA4 fingerprint of the TLS connection, `null` if not enabled or not taken
   String ja4();
 
+  /// The request header fingerprint, version 1, `null` if not enabled, see [Sp1Fingerprint]
+  String fingerprintSp1();
+
   /// The admission token the deflector accepted or issued, `null` if none
   String admissionToken();
 
@@ -142,10 +146,21 @@ public interface RequestLogInfo {
   /// Traffic type the deflector determined, e.g. human or bot, `null` if none
   String trafficType();
 
-  /// The request headers in the order received, for the header based fields: the user agent, the
-  /// logged and the sampled headers, and the header names. They include the headers the edge added;
-  /// read those values through their accessors above.
+  /// The request headers, for the header based fields: the user agent, the logged and the sampled
+  /// headers. They include the headers the edge added, and the edge may have changed their order;
+  /// read the edge's values through their accessors above, the names through
+  /// [#clientHeaderNames()].
   HttpHeaders clientHeaders();
+
+  /// Names of the request headers in the order and spelling the client sent them, before the edge
+  /// changed any, see [FingerprintHandler]. Empty if no request was received.
+  List<CharSequence> clientHeaderNames();
+
+  /// The request headers as `Name: value` in the order and spelling the client sent them, without
+  /// secrets, for a sampled request, see [FingerprintConfig#sampleHeadersInterval()]
+  ///
+  /// @return the headers, `null` if the request is not sampled
+  List<String> sampleHeaders();
 
   /// Convenience method to retrieve the host from the host request header field. The host header
   /// will be sanitized early on. It is never null and only contains known values. If the request

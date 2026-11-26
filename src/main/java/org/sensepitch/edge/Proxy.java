@@ -124,8 +124,12 @@ public class Proxy implements ProxyContext {
 
   private final SanitizeHostHandler sanitizeHostHandler =
       new SanitizeHostHandler(() -> state.knownHosts());
-  private final Ja4Config ja4Config;
+
+  /// Read per connection and request, so a reload applies, see [FingerprintConfig]
+  private final Supplier<FingerprintConfig> fingerprintConfigs = () -> state.config().fingerprint();
+
   private final Ja4HeaderHandler ja4HeaderHandler;
+  private final FingerprintHandler fingerprintHandler;
   private final RequestLogOutput requestLogOutput;
   private final boolean trustTraceparent;
 
@@ -190,9 +194,9 @@ public class Proxy implements ProxyContext {
     eventLoopGroup =
         new MultiThreadIoEventLoopGroup(environment.eventLoopThreads(), NioIoHandler.newFactory());
     this.config = config;
-    ja4Config = config.ja4() != null ? config.ja4() : Ja4Config.DEFAULT;
     // added unconditionally, so a client can never spoof the fingerprint headers
-    ja4HeaderHandler = new Ja4HeaderHandler(ja4Config);
+    ja4HeaderHandler = new Ja4HeaderHandler(fingerprintConfigs);
+    fingerprintHandler = new FingerprintHandler(fingerprintConfigs);
     expose(metrics);
     trackIngressConnectionsHandler = expose(new TrackIngressConnectionsHandler());
     expose(new NettyAllocatorMetrics());
@@ -284,7 +288,6 @@ public class Proxy implements ProxyContext {
     warnIfChanged("listen.httpPort", was.httpPort(), now.httpPort());
     warnIfChanged("listen.connection", was.connection(), now.connection());
     warnIfChanged("metrics", config.metrics(), cfg.metrics());
-    warnIfChanged("ja4", config.ja4(), cfg.ja4());
     warnIfChanged("traceContext", config.traceContext(), cfg.traceContext());
     warnIfChanged("admin", config.admin(), cfg.admin());
   }
@@ -415,7 +418,7 @@ public class Proxy implements ProxyContext {
                 protected void initChannel(SocketChannel ch) {
                   final ChannelPipeline pipeline = ch.pipeline();
                   pipeline.addLast(trackIngressConnectionsHandler);
-                  if (ja4Config.enable()) {
+                  if (fingerprintConfigs.get().ja4().enable()) {
                     // must see the raw ClientHello, so before TLS is terminated
                     pipeline.addLast(new Ja4Handler(metrics));
                   }
@@ -632,6 +635,8 @@ public class Proxy implements ProxyContext {
   /// `EmbeddedChannel`, see `ProxyConstructBDDTest`.
   void addHttpHandlers(ChannelPipeline pipeline) {
     pipeline.addLast(STRIP_EDGE_HEADERS_HANDLER);
+    // takes the headers before any handler below changes their order
+    pipeline.addLast(fingerprintHandler);
     pipeline.addLast(sanitizeHostHandler);
     // logger sits between codec and rest so it sees header modifications
     // from the timeout and keep-alive handling below

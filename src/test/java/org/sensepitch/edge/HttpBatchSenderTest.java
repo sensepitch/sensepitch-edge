@@ -308,13 +308,13 @@ class HttpBatchSenderTest {
   /// stamps batches with the clock it is given otherwise
   @Test
   void otlpPayloadClockDefaultsToTheSystemTicker() {
-    OtlpBatchPayload defaultPayload = new OtlpBatchPayload(Map.of(), 0);
+    OtlpBatchPayload defaultPayload = new OtlpBatchPayload(Map.of());
     OtlpBatch defaultBatch = defaultPayload.newBatch(4_096);
     defaultBatch.added();
     assertThat(defaultBatch.firstRecordNanos).isPositive();
 
     FakeTime clock = new FakeTime();
-    OtlpBatchPayload deterministicPayload = new OtlpBatchPayload(Map.of(), 0, clock);
+    OtlpBatchPayload deterministicPayload = new OtlpBatchPayload(Map.of(), clock);
     OtlpBatch deterministicBatch = deterministicPayload.newBatch(4_096);
     deterministicBatch.added();
     assertThat(deterministicBatch.firstRecordNanos).isEqualTo(clock.nanoTime());

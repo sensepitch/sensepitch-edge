@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.HttpRequest;
+import java.util.function.Supplier;
 
 /// Sends the JA4 fingerprint of the connection to the upstream, in the same way {@link
 /// IpTraitsHandler} sends the traits of the client address.
@@ -15,10 +16,11 @@ public class Ja4HeaderHandler extends ChannelInboundHandlerAdapter {
   public static final String JA4_HEADER = SensepitchHeaders.PREFIX + "Ja4";
   public static final String JA4_RAW_HEADER = SensepitchHeaders.PREFIX + "Ja4-Raw";
 
-  private final boolean sendRaw;
+  private final Supplier<FingerprintConfig> configs;
 
-  public Ja4HeaderHandler(Ja4Config config) {
-    this.sendRaw = config.raw();
+  /// @param configs supplies the active configuration, read per request so a reload applies
+  public Ja4HeaderHandler(Supplier<FingerprintConfig> configs) {
+    this.configs = configs;
   }
 
   public static String extract(HttpRequest request) {
@@ -34,7 +36,7 @@ public class Ja4HeaderHandler extends ChannelInboundHandlerAdapter {
       Ja4Fingerprint fingerprint = Ja4Handler.lookup(ctx.channel());
       if (fingerprint != null) {
         request.headers().set(JA4_HEADER, fingerprint.value());
-        if (sendRaw) {
+        if (configs.get().ja4().raw()) {
           request.headers().set(JA4_RAW_HEADER, fingerprint.raw());
         }
       }

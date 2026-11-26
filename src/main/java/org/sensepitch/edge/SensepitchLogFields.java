@@ -51,6 +51,9 @@ public final class SensepitchLogFields {
   /// JA4 TLS fingerprint, the conventions only define JA3
   public static final String TLS_CLIENT_JA4 = "sensepitch.tls.client.ja4";
 
+  /// HTTP header fingerprint of the request, see [Sp1Fingerprint]
+  public static final String REQUEST_FINGERPRINT_SP1 = "sensepitch.request.fingerprint.sp1";
+
   /// Admission token of the protection: the token of a valid admission cookie, or the token issued
   /// for an accepted challenge answer
   public static final String ADMISSION_TOKEN = "sensepitch.protection.admission_token";
@@ -74,12 +77,13 @@ public final class SensepitchLogFields {
   /// Whether a cookie header was sent, its content is not logged
   public static final String REQUEST_COOKIE_PRESENT = "sensepitch.request.cookie_present";
 
-  /// Names of the request headers in order, they identify a client without personal data
+  /// Names of the request headers in the order and spelling the client sent them, they identify a
+  /// client software without personal data, see [RequestLogInfo#clientHeaderNames()]
   public static final String REQUEST_HEADER_NAMES = "sensepitch.request.header_names";
 
   /// Request headers of a sample of requests, `Name: value` in the order received, for studying
   /// client fingerprints. Secrets and headers the edge adds are left out, see
-  /// [RequestLogDestinationConfig#sampleHeadersInterval()]
+  /// [FingerprintConfig#sampleHeadersInterval()]
   public static final String REQUEST_SAMPLE_HEADERS = "sensepitch.request.sample_headers";
 
   /// Durations in nanoseconds, OpenTelemetry defines durations as metrics only, see

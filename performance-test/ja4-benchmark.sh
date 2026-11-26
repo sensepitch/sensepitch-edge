@@ -64,7 +64,7 @@ waitForPort() {
   exit 1
 }
 
-# $1: value of ja4.enable. Everything else comes from the template, so it is identical
+# $1: value of fingerprint.ja4.enable. Everything else comes from the template, so it is identical
 # between the two runs. Main only reads the environment when it gets no config file
 # argument, so the flag has to be substituted into the config instead of exported.
 run() {

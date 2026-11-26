@@ -392,6 +392,7 @@ a client cannot pretend to be a crawler or human traffic.
 | `Sp-Protection-Bypass` | reason the protection was bypassed, see `sensepitch.protection.bypass` |
 | `Sp-Ip-Traits`, `Sp-Country`, `Sp-Asn` | traits of the client address, if the IP lookup knows it |
 | `Sp-Ja4`, `Sp-Ja4-Raw` | JA4 TLS fingerprint, if enabled, the raw one only if configured |
+| `Sp-Fingerprint-Sp1`, `Sp-Fingerprint-Sp1-Raw` | fingerprint of the request headers, version 1, if `fingerprint.sp1.enable` is set, the raw one only with `fingerprint.sp1.raw`, see [Fingerprinting](#fingerprinting) |
 
 `Sp-Ip-Traits` is a comma-and-space-separated list of `key=value` pairs. Known built-in traits
 appear first in the order `asn`, `country`, `crawler`; unknown traits are omitted. Custom labels
@@ -410,6 +411,39 @@ Before, these headers were named `X-Sensepitch-Ja4`, `X-Sensepitch-Ja4-Raw`,
 `X-Sensepitch-Ip-Traits`, `X-Sensepitch-Country`, `X-Sensepitch-Asn`,
 `X-Senseptich-Admission-Bypass` and `sensepitch-token`. `Sp-Traffic-Type` replaces
 `sensepitch-flavor` (`user`, `crawler`, `deflect`).
+
+## Fingerprinting
+
+Client fingerprints help to detect a client that claims to be a browser it is not. They are not
+meant to tell users apart, see [browser fingerprinting](doc/design/browser-fingerprinting.md).
+All settings are in one block, off by default; a reload applies them, JA4 to new connections:
+
+```yaml
+fingerprint:
+  ja4:
+    enable: true     # JA4 TLS fingerprint: Sp-Ja4, sensepitch.tls.client.ja4
+    raw: false       # also Sp-Ja4-Raw
+  sp1:
+    enable: true     # request header fingerprint, version 1: Sp-Fingerprint-Sp1,
+                     # sensepitch.request.fingerprint.sp1
+    raw: false       # also Sp-Fingerprint-Sp1-Raw, the unhashed input
+  sampleHeadersInterval: 0
+```
+
+- **`sp1`:** a hash over the request header names in the order and spelling the client sent them
+  and the values of headers that a browser build always sends the same, without cookies, language
+  or the `User-Agent` value. The version is in the name: a changed algorithm gets new names
+  (`sp2`), so values of different versions are never mixed.
+- **`sampleHeadersInterval`:** `0` (off) by default. If positive, about one in this many requests,
+  picked at random, also logs its request headers as `sensepitch.request.sample_headers`,
+  `Name: value` in the order and spelling the client sent them, to study what identifies a
+  client. `Cookie`, `Authorization`, `Proxy-Authorization`, `traceparent` and `X-Forwarded-*`
+  are left out. All JSON and OTLP destinations log the sample of the same requests, the plain
+  text format none. Must not be negative.
+
+Before, these were `ja4.enable`, `ja4.raw` and the per destination
+`requestLog.destinations[].sampleHeadersInterval`; a configuration with the old keys is rejected
+at startup.
 
 ## Fallback / maintenance pages
 
@@ -612,8 +646,8 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
   into it after the switch, so a record logged just before the switch is sent as well. It ends
   when everything is sent, or dropped after `otlp.maximumUnsentLogAgeMillis` during an outage.
 - **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.httpPort`,
-  `listen.connection`, `metrics`, `ja4` and `traceContext` are logged as a warning and
-  ignored.
+  `listen.connection`, `metrics` and `traceContext` are logged as a warning and ignored. A
+  changed `fingerprint` applies, JA4 to new connections.
 - **Invalid configuration:** the error is logged and the active configuration stays. The files
   the rejected configuration tried to read are watched as well, a missing one too, so fixing or
   creating such a file, e.g. a certificate written in two steps, retries the reload without
@@ -819,12 +853,8 @@ Everything specific to OTLP is in the `otlp` object, which is rejected on a `std
 - **`anonymizeClientIp`:** per destination. The client address is truncated to its network, `/24`
   for IPv4 (`192.0.2.7` becomes `192.0.2.0`) and `/48` for IPv6, and the client port is left out.
   The country and ASN are still derived from the full address.
-- **`sampleHeadersInterval`:** per destination, `0` (off) by default. If positive, about one in
-  this many requests, picked at random, also logs its request headers as
-  `sensepitch.request.sample_headers`, `Name: value` in the order received with the original
-  casing, to study what identifies a client. `Cookie`, `Authorization`, `Proxy-Authorization`,
-  `traceparent` and the headers the edge adds itself (`X-Forwarded-*`, `Sp-*`) are left out. The
-  plain text format ignores it.
+- **Header samples:** `sensepitch.request.sample_headers` is configured once for all
+  destinations, see `fingerprint.sampleHeadersInterval` in [Fingerprinting](#fingerprinting).
 - **Batching:** each event loop encodes its records into a buffer of its own, so logging a request
   allocates nothing and needs no shared queue. A buffer is handed to the sender when it reaches
   `otlp.batchBytes` or after `otlp.flushIntervalMillis`, and the event loop continues with an
@@ -948,12 +978,13 @@ Attributes without a semantic convention:
 | `sensepitch.client.asn` | autonomous system number of the client address |
 | `sensepitch.ip_traits` | traits of the client address, e.g. `asn=64496, country=DE, crawler=...` |
 | `sensepitch.tls.client.ja4` | JA4 TLS fingerprint, if enabled |
+| `sensepitch.request.fingerprint.sp1` | fingerprint of the request headers, version 1, if enabled, see [Fingerprinting](#fingerprinting) |
 | `sensepitch.protection.admission_token` | admission token of the protection: of a valid admission cookie, or the token issued for an accepted challenge answer |
 | `sensepitch.protection.admission_original_token`, `sensepitch.protection.admission_revisits` | the original admission token and number of expired admissions from verified `admission0` history, or the values issued with the response. Present in JSON and OTLP logs when history is available |
 | `sensepitch.traffic.type` | `human`, `bot` or `unknown`, see the `Sp-Traffic-Type` header |
 | `sensepitch.protection.bypass` | reason the protection was bypassed: `config-ip-match`, `config-uri-match` (a configured `bypass.remotes` or `bypass.uris`), `crawler-agent-match`, `crawler-fragment-agent-match`, `crawler-ip-match` |
 | `sensepitch.request.cookie_present` | whether a cookie header was sent, not its content |
-| `sensepitch.request.header_names` | names of the request headers, in order |
+| `sensepitch.request.header_names` | names of the request headers in the order and spelling the client sent them, without the headers the edge added or changed. Before, `host` came last in lower case and the edge's headers were listed |
 | `sensepitch.duration.receive_ns`, `…response_ns`, `…total_ns` | durations, see `RequestLogInfo` |
 
 The OTLP export also identifies the edge: the resource has `service.instance.id`, the

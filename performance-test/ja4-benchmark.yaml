@@ -15,8 +15,9 @@ listen:
     certPath: ssl/nginx.crt
     keyPath: ssl/nginx.key
 
-ja4:
-  enable: __JA4_ENABLE__
+fingerprint:
+  ja4:
+    enable: __JA4_ENABLE__
 
 metrics:
   enable: false

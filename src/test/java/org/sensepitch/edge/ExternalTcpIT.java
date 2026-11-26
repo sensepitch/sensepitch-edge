@@ -113,7 +113,8 @@ class ExternalTcpIT {
                         .build()))
             .metrics(MetricsConfig.builder().enable(false).build())
             // the only place the fingerprint is taken from a real ClientHello in the pipeline
-            .ja4(Ja4Config.builder().enable(true).build())
+            .fingerprint(
+                FingerprintConfig.builder().ja4(Ja4Config.builder().enable(true).build()).build())
             .build();
 
     proxy = new Proxy(config, requestLog);
