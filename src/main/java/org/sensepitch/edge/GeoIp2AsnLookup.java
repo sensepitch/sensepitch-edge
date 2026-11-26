@@ -8,7 +8,7 @@ import java.net.InetAddress;
 
 /// @author Jens Wilke
 /// @see <a href="https://github.com/maxmind/GeoIP2-java">GeoIP2-java</a>
-public class GeoIp2AsnLookup implements AsnLookup, AutoCloseable {
+public class GeoIp2AsnLookup implements IpTraitsCollector {
 
   private final DatabaseReader reader;
 
@@ -17,12 +17,13 @@ public class GeoIp2AsnLookup implements AsnLookup, AutoCloseable {
     reader = new DatabaseReader.Builder(database).build();
   }
 
+  /// Sets the ASN, if the address is in the database
   @Override
-  public long lookupAsn(InetAddress addr) throws Exception {
+  public void collect(IpTraits.Builder builder, InetAddress address) throws Exception {
     try {
-      return reader.asn(addr).getAutonomousSystemNumber();
+      builder.asn(reader.asn(address).getAutonomousSystemNumber());
     } catch (AddressNotFoundException ex) {
-      return -1;
+      // not in the database, e.g. a private range: the ASN stays unset
     }
   }
 

@@ -109,7 +109,7 @@ record EdgeState(
       return IpTraitsLookup.NONE;
     }
     try {
-      return new CombinedIpTraitsLookup(cfg, metrics, files);
+      return CombinedIpTraitsLookup.create(cfg, metrics, files);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }

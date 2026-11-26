@@ -23,7 +23,7 @@ public class CombinedIpTraitsLookupTest {
   @Test
   public void crawlerName() throws IOException {
     var lookup =
-        new CombinedIpTraitsLookup(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
+        CombinedIpTraitsLookup.create(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
     IpTraits amazonbot = lookup(lookup, "3.210.223.61");
     assertThat(amazonbot.crawlerName()).isEqualTo("amazon:amazonbot");
     IpTraits googlebot = lookup(lookup, "192.178.4.1");
@@ -60,8 +60,8 @@ public class CombinedIpTraitsLookupTest {
     var lookup =
         new CombinedIpTraitsLookup(
             List.of(
-                CombinedIpTraitsLookup.asnTraits(addr -> 15169),
-                CombinedIpTraitsLookup.countryTraits(addr -> "US")),
+                (builder, address) -> builder.asn(15169),
+                (builder, address) -> builder.isoCountry("US")),
             metrics,
             crawlerIpLists());
     IpTraits traits = lookup(lookup, CRAWLER_ADDRESS);
@@ -70,29 +70,14 @@ public class CombinedIpTraitsLookupTest {
     assertThat(traits.crawlerName()).isEqualTo(CRAWLER_NAME);
   }
 
-  /// Addresses not in a database, e.g. private ranges, leave the traits unset.
-  @Test
-  public void notFoundLeavesTraitsUnset() throws IOException {
-    var lookup =
-        new CombinedIpTraitsLookup(
-            List.of(
-                CombinedIpTraitsLookup.asnTraits(addr -> -1),
-                CombinedIpTraitsLookup.countryTraits(addr -> null)),
-            metrics,
-            crawlerIpLists());
-    IpTraits traits = lookup(lookup, "10.0.0.1");
-    assertThat(traits.isAsnKnown()).isFalse();
-    assertThat(traits.isoCountry()).isNull();
-  }
-
   /// A later database overwrites what an earlier one found, the configuration order decides.
   @Test
   public void laterLookupWins() throws IOException {
     var lookup =
         new CombinedIpTraitsLookup(
             List.of(
-                CombinedIpTraitsLookup.countryTraits(addr -> "DE"),
-                CombinedIpTraitsLookup.countryTraits(addr -> "AT")),
+                (builder, address) -> builder.isoCountry("DE"),
+                (builder, address) -> builder.isoCountry("AT")),
             metrics,
             crawlerIpLists());
     assertThat(lookup(lookup, "1.2.3.4").isoCountry()).isEqualTo("AT");
@@ -105,11 +90,10 @@ public class CombinedIpTraitsLookupTest {
     var lookup =
         new CombinedIpTraitsLookup(
             List.of(
-                CombinedIpTraitsLookup.asnTraits(
-                    addr -> {
-                      throw new IOException("database corrupt");
-                    }),
-                CombinedIpTraitsLookup.countryTraits(addr -> "US")),
+                (builder, address) -> {
+                  throw new IOException("database corrupt");
+                },
+                (builder, address) -> builder.isoCountry("US")),
             metrics,
             crawlerIpLists());
     IpTraits traits = lookup(lookup, CRAWLER_ADDRESS);
@@ -129,11 +113,14 @@ public class CombinedIpTraitsLookupTest {
             });
   }
 
-  /// A lookup built without databases has nothing to close
+  /// A collector without resources has nothing to close, its default close does nothing
   @Test
   public void closeWithoutDatabasesDoesNothing() throws Exception {
-    var lookup = new CombinedIpTraitsLookup(List.of(), metrics, crawlerIpLists());
+    var lookup =
+        new CombinedIpTraitsLookup(
+            List.of((builder, address) -> builder.isoCountry("DE")), metrics, crawlerIpLists());
     lookup.close();
+    assertThat(lookup(lookup, "1.2.3.4").isoCountry()).isEqualTo("DE");
   }
 
   /// A failing reader does not keep the others open: all are closed, the first failure is thrown
@@ -143,17 +130,10 @@ public class CombinedIpTraitsLookupTest {
     List<String> closed = new ArrayList<>();
     var lookup =
         new CombinedIpTraitsLookup(
-            List.of(),
             List.of(
-                () -> {
-                  closed.add("a");
-                  throw new IOException("a failed");
-                },
-                () -> closed.add("b"),
-                () -> {
-                  closed.add("c");
-                  throw new IOException("c failed");
-                }),
+                new ClosingCollector("a", closed, true),
+                new ClosingCollector("b", closed, false),
+                new ClosingCollector("c", closed, true)),
             metrics,
             crawlerIpLists());
     assertThatThrownBy(lookup::close)
@@ -165,6 +145,22 @@ public class CombinedIpTraitsLookupTest {
                     .extracting(Throwable::getMessage)
                     .isEqualTo("c failed"));
     assertThat(closed).containsExactly("a", "b", "c");
+  }
+
+  /// A collector that finds nothing and records its close, optionally failing it
+  record ClosingCollector(String name, List<String> closed, boolean fail)
+      implements IpTraitsCollector {
+
+    @Override
+    public void collect(IpTraits.Builder builder, InetAddress address) {}
+
+    @Override
+    public void close() throws IOException {
+      closed.add(name);
+      if (fail) {
+        throw new IOException(name + " failed");
+      }
+    }
   }
 
   private static IpTraits lookup(CombinedIpTraitsLookup lookup, String address) throws IOException {
@@ -186,7 +182,7 @@ public class CombinedIpTraitsLookupTest {
     Path asn = maxmindDatabase("GeoLite2-ASN-Test.mmdb");
     ConfigFiles files = new ConfigFiles();
     var lookup =
-        new CombinedIpTraitsLookup(
+        CombinedIpTraitsLookup.create(
             IpLookupConfig.builder()
                 .geoIp2(
                     GeoIp2Config.builder()
@@ -220,7 +216,7 @@ public class CombinedIpTraitsLookupTest {
     Path asn = maxmindDatabase("GeoLite2-ASN-Test.mmdb");
     ConfigFiles files = new ConfigFiles();
     var lookup =
-        new CombinedIpTraitsLookup(
+        CombinedIpTraitsLookup.create(
             IpLookupConfig.builder()
                 .geoIp2(GeoIp2Config.builder().asnDbPath(asn.toString()).build())
                 .build(),

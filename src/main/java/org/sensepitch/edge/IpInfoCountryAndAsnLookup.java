@@ -11,7 +11,7 @@ import java.net.InetAddress;
 ///
 /// @author Jens Wilke
 /// @see <a href="https://ipinfo.io/lite">IP info lite</a>
-public class IpInfoCountryAndAsnLookup implements IpTraitsCollector, AutoCloseable {
+public class IpInfoCountryAndAsnLookup implements IpTraitsCollector {
 
   private static final ProxyLogger LOG = ProxyLogger.get(IpInfoCountryAndAsnLookup.class);
 

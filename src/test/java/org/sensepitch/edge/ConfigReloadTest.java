@@ -308,7 +308,7 @@ class ConfigReloadTest {
     TinyMmdb.writeCountry(database, "DE");
     ProxyMetrics metrics = new ProxyMetrics();
     var lookup =
-        new CombinedIpTraitsLookup(
+        CombinedIpTraitsLookup.create(
             IpLookupConfig.builder().ipInfoPath(database.toString()).build(),
             metrics,
             new ConfigFiles());
