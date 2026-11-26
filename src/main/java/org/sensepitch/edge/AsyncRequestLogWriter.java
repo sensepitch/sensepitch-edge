@@ -166,15 +166,19 @@ public class AsyncRequestLogWriter
   ///   interrupted, so it ends once the output unblocks instead of waiting for records forever.
   /// - The writer thread does not finish in time: it writes the records queued before the end
   ///   marker and ends, if the output ever unblocks.
+  /// - The calling thread is interrupted: close returns at once and keeps the interrupt flag set.
+  ///   The end marker is still queued if there is room, so the writer writes the queued records
+  ///   and ends, like after a timeout. Without room, the records are given up as above.
   @Override
   public void close() {
     if (!closed.compareAndSet(false, true)) {
       return;
     }
+    boolean endQueued = false;
     try {
-      if (!queue.offer(END, closeTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
-        LOG.error("Request log writer is blocked, closing without writing out pending records");
-        thread.interrupt();
+      endQueued = queue.offer(END, closeTimeout.toMillis(), TimeUnit.MILLISECONDS);
+      if (!endQueued) {
+        giveUpPendingRecords();
         return;
       }
       // the Duration variant, a zero timeout does not wait, unlike join(0)
@@ -182,8 +186,22 @@ public class AsyncRequestLogWriter
         LOG.error("Request log writer is blocked, closing before pending records are written");
       }
     } catch (InterruptedException e) {
+      // the offer without timeout ignores the interrupt flag
+      if (!endQueued && !queue.offer(END)) {
+        giveUpPendingRecords();
+      }
       Thread.currentThread().interrupt();
     }
+  }
+
+  private void giveUpPendingRecords() {
+    LOG.error("Request log writer is blocked, closing without writing out pending records");
+    thread.interrupt();
+  }
+
+  /// The writer thread, so tests can wait for it to end
+  Thread writerThread() {
+    return thread;
   }
 
   private void run() {

@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -169,6 +170,84 @@ public class AsyncRequestLogWriterTest {
     output.release.release(2);
     output.awaitFlushes(2);
     assertThat(output.written()).isEqualTo("taken\nqueued\n");
+  }
+
+  /// Close from an interrupted thread, e.g. a shutdown hook that was interrupted: close returns
+  /// at once and keeps the interrupt flag. The end marker is still queued, so the writer writes the
+  /// queued record and ends instead of waiting for records forever.
+  @Test
+  public void interruptedCloseWritesOutQueuedRecordsAndEndsWriter() throws Exception {
+    FlushBlockingOutput output = new FlushBlockingOutput();
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(output, 4);
+    writer.writeLine("taken");
+    output.awaitFlushes(1);
+    writer.writeLine("queued");
+    Thread.currentThread().interrupt();
+    writer.close();
+    assertThat(Thread.interrupted()).as("interrupt flag kept").isTrue();
+    output.release.release(2);
+    assertThat(writer.writerThread().join(Duration.ofSeconds(EVENT_TIMEOUT_SECONDS)))
+        .as("writer thread ended")
+        .isTrue();
+    assertThat(output.written()).isEqualTo("taken\nqueued\n");
+    assertThat(logs.errors()).isEmpty();
+  }
+
+  /// Interrupted close and no room for the end marker: the queued record is given up and the
+  /// writer thread is interrupted, so it ends once the output unblocks.
+  @Test
+  public void interruptedCloseWithFullQueueGivesUpQueuedRecordsAndEndsWriter() throws Exception {
+    FlushBlockingOutput output = new FlushBlockingOutput();
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(output, 1);
+    writer.writeLine("taken");
+    output.awaitFlushes(1);
+    writer.writeLine("queued");
+    Thread.currentThread().interrupt();
+    writer.close();
+    assertThat(Thread.interrupted()).as("interrupt flag kept").isTrue();
+    assertThat(logs.messages(AsyncRequestLogWriter.class))
+        .singleElement()
+        .asString()
+        .contains("closing without writing out pending records");
+    output.release.release(2);
+    assertThat(writer.writerThread().join(Duration.ofSeconds(EVENT_TIMEOUT_SECONDS)))
+        .as("writer thread ended")
+        .isTrue();
+    assertThat(output.written()).isEqualTo("taken\n");
+  }
+
+  /// Interrupted while waiting for the writer, after the end marker is queued: close returns and
+  /// keeps the interrupt flag, the writer still writes the queued record and ends.
+  @Test
+  public void closeInterruptedWhileWaitingForWriterLetsItFinish() throws Exception {
+    FlushBlockingOutput output = new FlushBlockingOutput();
+    AsyncRequestLogWriter writer = new AsyncRequestLogWriter(output, 4);
+    writer.writeLine("taken");
+    output.awaitFlushes(1);
+    writer.writeLine("queued");
+    AtomicBoolean interruptKept = new AtomicBoolean();
+    Thread closer =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  writer.close();
+                  interruptKept.set(Thread.currentThread().isInterrupted());
+                });
+    // the record and the end marker, close is now waiting for the writer thread
+    while (writer.queueSize() < 2) {
+      Thread.onSpinWait();
+    }
+    closer.interrupt();
+    assertThat(closer.join(Duration.ofSeconds(EVENT_TIMEOUT_SECONDS)))
+        .as("close returned")
+        .isTrue();
+    assertThat(interruptKept).isTrue();
+    output.release.release(2);
+    assertThat(writer.writerThread().join(Duration.ofSeconds(EVENT_TIMEOUT_SECONDS)))
+        .as("writer thread ended")
+        .isTrue();
+    assertThat(output.written()).isEqualTo("taken\nqueued\n");
+    assertThat(logs.errors()).isEmpty();
   }
 
   /// Output whose flush blocks until the test releases it, ignoring interrupts like a blocked

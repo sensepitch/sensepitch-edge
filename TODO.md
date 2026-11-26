@@ -76,11 +76,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported on the recent run; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
-- [ ] `AsyncRequestLogWriter.close()`: an interrupted close leaves the writer thread running
-  - P2: with the interrupt flag set, `queue.offer(END, ...)` throws at once, so the end marker is
-    never queued; the writer thread (not a daemon) blocks in `queue.take()` forever and the
-    queued records are not written. Interrupt the writer thread as in the full queue case, then
-    test it in `AsyncRequestLogWriterTest` (the catch is uncovered now).
 - [ ] `KeyInjector`: a map key that is not a string leaves the record's `key` unset
   - P3: `getMethod("key", key.getClass())` finds no `key(Integer)` for a YAML key like `123:`,
     the `NoSuchMethodException` is ignored. Inferred from the code, not verified with YAML. Use
