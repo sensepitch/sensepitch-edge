@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import javax.net.ssl.SSLException;
 
 /// The TLS setup of one [EdgeState]: the SSL context for each SNI host name, built from the
@@ -220,6 +222,24 @@ final class SslSetup implements Mapping<String, SslContext> {
   private record CertificateBundle(
       SslContext context, String description, ConfigFiles.Snapshot files) {}
 
+  /// Bundles whose key and certificate are both class path resources, shared by all setups of
+  /// the JVM. Exception to the rule against static caches in `AGENTS.md`, justified because:
+  /// - a class path resource cannot change while the process runs, and [ConfigFiles] does not
+  ///   record or watch it, so the bundle stays valid for the life of the JVM
+  /// - the tests configure their certificates from the class path and build about 110 TLS
+  ///   contexts per `./mvnw test`, about 15 ms each (measured 2026-11-26)
+  /// - production configures certificate files, which are never cached here
+  ///
+  /// Bounded by the number of distinct class path certificates in the jar.
+  private static final ConcurrentMap<SslConfig, CertificateBundle> CLASS_PATH_BUNDLES =
+      new ConcurrentHashMap<>();
+
+  /// Whether key and certificate are both class path resources, for [#CLASS_PATH_BUNDLES]
+  private static boolean isClassPath(SslConfig cfg) {
+    return cfg.certPath().startsWith(ConfigFiles.CLASSPATH_PREFIX)
+        && cfg.keyPath().startsWith(ConfigFiles.CLASSPATH_PREFIX);
+  }
+
   /// Finds the contexts of one build and records their files in the build's files
   private static final class Loader {
 
@@ -233,7 +253,7 @@ final class SslSetup implements Mapping<String, SslContext> {
     }
 
     /// The bundle for a configuration: already loaded in this build, taken over from the
-    /// previous setup, or loaded now. Records the files of the bundle on every path, also the
+    /// previous setup, shared from [#CLASS_PATH_BUNDLES], or loaded now. Records the files of the bundle on every path, also the
     /// files a failed load read or missed, so a rejected configuration is tried again when they
     /// change, see [Proxy#referencedFiles()].
     CertificateBundle bundleFor(SslConfig cfg) {
@@ -244,6 +264,9 @@ final class SslSetup implements Mapping<String, SslContext> {
       bundle = previous.get(cfg);
       if (bundle != null && bundle.files().unchanged()) {
         files.recordAll(bundle.files());
+      } else if (isClassPath(cfg)) {
+        // class path resources are not recorded, there is nothing to record
+        bundle = CLASS_PATH_BUNDLES.computeIfAbsent(cfg, c -> loadBundle(c, new ConfigFiles()));
       } else {
         ConfigFiles read = new ConfigFiles();
         try {

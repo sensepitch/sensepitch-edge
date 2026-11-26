@@ -113,6 +113,8 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
   event), and no feature nobody asked for. Check what the library does before adding to it. An
   exception needs a clear justification, documented in the doc comment of the code, e.g. a
   measured hot path.
+- An exception to a rule or convention of this file is documented where it is made, in the doc
+  comment of the code, with its justification (e.g. a measurement); not here.
 - Known antipatterns, each with an example from this code base, are in `doc/antipatterns/`;
   check a change against them.
 - Name maps for their key and values:

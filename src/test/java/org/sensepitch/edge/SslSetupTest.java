@@ -133,6 +133,27 @@ class SslSetupTest {
     assertThat(setup.map("a.com")).isSameAs(setup.map(null));
   }
 
+  /// A class path certificate cannot change, its bundle is shared by all builds of the JVM, also
+  /// without a previous setup
+  @Test
+  void classPathBundleIsSharedAcrossBuilds() {
+    ListenConfig listen = ListenConfig.builder().ssl(ConfigReloadTest.TEST_SSL).build();
+    assertThat(build(listen).map(null)).isSameAs(build(listen).map(null));
+  }
+
+  /// A file can change, its bundle is only taken over from the previous setup, never shared;
+  /// also when only the key is a file
+  @Test
+  void fileBundleIsNotSharedWithoutPrevious() throws IOException {
+    SslFiles ssl = copyKeyAndCertificate();
+    assertThat(build(ssl.listen()).map(null)).isNotSameAs(build(ssl.listen()).map(null));
+    ListenConfig fileKey =
+        ListenConfig.builder()
+            .ssl(ConfigReloadTest.TEST_SSL.toBuilder().keyPath(ssl.key().toString()).build())
+            .build();
+    assertThat(build(fileKey).map(null)).isNotSameAs(build(fileKey).map(null));
+  }
+
   /// The files of a context taken over are recorded in the next build, so the watcher keeps
   /// watching them
   @Test
