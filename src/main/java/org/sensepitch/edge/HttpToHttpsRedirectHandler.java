@@ -13,47 +13,74 @@ import io.netty.handler.codec.http.HttpVersion;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
+import org.sensepitch.edge.ProxyMetrics.PlainHttpOutcome;
 
 /// Answers every request on the plain HTTP listener with a permanent redirect (308) to the same
 /// resource on HTTPS. The redirect target is `https://<host>[:<httpsPort>]<path[?query]>`; the
 /// host is the client `Host` header normalized like [SanitizeHostHandler#normalizeHost] (port and
 /// trailing dot removed, lower case). The port is omitted when it is `443`.
 ///
-/// A request without a usable host is rejected with `400 Bad Request`, see RFC 9112, section 3.2.
+/// Only a host the edge serves is redirected, matched against the known hosts like
+/// [SanitizeHostHandler] does; an unknown host is rejected with `400 Bad Request`, as on the TLS
+/// side. A request without a usable host is rejected the same way, see RFC 9112, section 3.2.
 /// Every response sets `Connection: close` and the connection is closed after it was flushed: the
 /// redirect is the only exchange on a plain HTTP connection.
+///
+/// The requests are not written to the request log, only counted by outcome in
+/// [ProxyMetrics#plainHttpRequestCounter], see `doc/design/encrypted-transport.md`.
 ///
 /// @author Jens Wilke
 public class HttpToHttpsRedirectHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
   private static final int STANDARD_HTTPS_PORT = 443;
   private final int httpsPort;
+  private final Supplier<Set<String>> knownHosts;
+  private final ProxyMetrics metrics;
 
-  public HttpToHttpsRedirectHandler(int httpsPort) {
+  /// @param knownHosts supplies the current known hosts, read per request so a reload applies,
+  ///   see [SanitizeHostHandler#filterKnownHosts]
+  public HttpToHttpsRedirectHandler(
+      int httpsPort, Supplier<Set<String>> knownHosts, ProxyMetrics metrics) {
     this.httpsPort = httpsPort;
+    this.knownHosts = knownHosts;
+    this.metrics = metrics;
   }
 
   @Override
   protected void channelRead0(ChannelHandlerContext ctx, HttpRequest request) {
     List<String> hosts = request.headers().getAll(HttpHeaderNames.HOST);
     String host = hosts.size() == 1 ? SanitizeHostHandler.normalizeHost(hosts.getFirst()) : null;
-    URI authority = redirectAuthority(host);
-    if (authority == null || !request.decoderResult().isSuccess()) {
-      writeAndClose(
-          ctx, new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST));
+    if (host == null || !request.decoderResult().isSuccess()) {
+      reject(ctx, PlainHttpOutcome.BAD_REQUEST);
       return;
     }
+    if (SanitizeHostHandler.matchingHost(knownHosts.get(), host) == null) {
+      reject(ctx, PlainHttpOutcome.UNKNOWN_HOST);
+      return;
+    }
+    URI authority = redirectAuthority(host);
+    if (authority == null) {
+      reject(ctx, PlainHttpOutcome.BAD_REQUEST);
+      return;
+    }
+    metrics.countPlainHttpRequest(PlainHttpOutcome.REDIRECT);
     FullHttpResponse response =
         new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.PERMANENT_REDIRECT);
     response.headers().set(HttpHeaderNames.LOCATION, location(authority, request.uri()));
     writeAndClose(ctx, response);
   }
 
+  /// Answers `400 Bad Request` and counts the outcome
+  private void reject(ChannelHandlerContext ctx, PlainHttpOutcome outcome) {
+    metrics.countPlainHttpRequest(outcome);
+    writeAndClose(
+        ctx, new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST));
+  }
+
   /// Builds a server authority only from a valid host and the configured HTTPS port.
   private URI redirectAuthority(String host) {
-    if (host == null) {
-      return null;
-    }
     try {
       int port = httpsPort == STANDARD_HTTPS_PORT ? -1 : httpsPort;
       URI authority = new URI("https", null, host, port, null, null, null);

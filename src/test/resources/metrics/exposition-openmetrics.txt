@@ -196,6 +196,9 @@ sensepitch_netty_allocator_used_memory_bytes{allocator="pooled",type="direct"} <
 sensepitch_netty_allocator_used_memory_bytes{allocator="pooled",type="heap"} <bytes>
 sensepitch_netty_allocator_used_memory_bytes{allocator="unpooled",type="direct"} <bytes>
 sensepitch_netty_allocator_used_memory_bytes{allocator="unpooled",type="heap"} <bytes>
+# TYPE sensepitch_plain_http_requests counter
+# HELP sensepitch_plain_http_requests Requests on the plain HTTP listener, by the answer of the HTTPS redirect
+sensepitch_plain_http_requests_total{outcome="redirect"} 1.0
 # TYPE sensepitch_request_log_buffered_bytes gauge
 # HELP sensepitch_request_log_buffered_bytes Bytes of request log records waiting to be sent, e.g. during an outage
 sensepitch_request_log_buffered_bytes{destination="otlp"} 4096.0

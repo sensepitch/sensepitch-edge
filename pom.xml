@@ -454,7 +454,11 @@
             </goals>
           </execution>
           <execution>
-            <!-- coverage floor, slightly below the actual coverage, raise it when coverage improves -->
+            <!-- coverage floor, slightly below the actual coverage, raise it when coverage improves.
+                 Set to the lowest of repeated runs: one line and one branch of ConfigFileWatcher
+                 (its test waits on the file system) and one branch of AsyncRequestLogWriter are
+                 covered only in some runs; 4 runs on 2026-11-26: lines 0.99508 to 0.99524,
+                 branches 0.95682 to 0.95757, see TODO.md -->
             <id>jacoco-check</id>
             <phase>verify</phase>
             <goals>
@@ -468,12 +472,12 @@
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.9919</minimum>
+                      <minimum>0.9950</minimum>
                     </limit>
                     <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.9512</minimum>
+                      <minimum>0.9568</minimum>
                     </limit>
                   </limits>
                 </rule>

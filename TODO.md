@@ -27,7 +27,12 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     (about 1 s) and `unsentRecordsAreReported` (about 0.5 s) still wait real shutdown and drain
     timeouts. `awaitListening` probes with a literal 250 ms connect timeout.
   - `ConfigFileWatcherTest`: no clock or scheduler seam, and the watcher waits on the file
-    system; the test stays in the unit scope meanwhile, see the coverage rule in `AGENTS.md`.
+    system; the test stays in the unit scope meanwhile, see the coverage rule in `AGENTS.md`. One
+    line and one branch of `ConfigFileWatcher` are covered only in some runs, so the JaCoCo floor
+    in `pom.xml` has to sit below the best run.
+  - `AsyncRequestLogWriter.reportError`: the branch for an error that was already reported is
+    covered only when a test happens to produce a second write error, so the floor sits below
+    the best run for it too. Cover it deterministically in `AsyncRequestLogWriterTest`.
   - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
     `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
     `AsyncRequestLogWriterTest` has no timer to simulate, it waits on latches only.
@@ -236,15 +241,6 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
   TLS 1.2, decide on the suites without forward secrecy and with CBC/SHA-1
 - [ ] send `Strict-Transport-Security: max-age=31536000` on every response the upstream sends
   without one, not configurable
-- [ ] redirect only served hosts on port 80: `HttpToHttpsRedirectHandler` redirects any
-  syntactically valid `Host` today. Match it like `SanitizeHostHandler` does, with the reloadable
-  known hosts, and answer an unknown host like the TLS side does (unserviced host)
-- [ ] counters for the plain HTTP listener, which is not logged by design: a request counter
-  labelled with the outcome of the redirect handler (`redirect`, `unknown_host`,
-  `bad_request`), and connection counters that tell the two listeners apart; no host or path
-  as label
-- [ ] HTTP/2 over TLS via ALPN
-- [ ] TLS to the upstream, a decision of its own
 
 ## Ingress, HTTP
 

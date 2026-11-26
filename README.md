@@ -272,6 +272,13 @@ Requests by traffic type and client country. `flavor` is the value of the `Sp-Tr
 header: `human`, `bot` or `unknown`, also when no protection handled the request. Before the
 `Sp-*` headers, the values were `user`, `crawler`, `deflect` and `unknown`.
 
+### `sensepitch_plain_http_requests_total{outcome="..."}`
+
+Requests on the plain HTTP listener, which only redirects to HTTPS and is not in the request
+log, see [encrypted transport](doc/design/encrypted-transport.md). `outcome` is `redirect` for a
+served host, `unknown_host` for a host the edge does not serve, and `bad_request` for a missing,
+repeated or malformed host or an undecodable request; both are answered with `400`.
+
 ### Request level errors
 
 A failure that can happen per request or connection is never logged as an error, an outage or an

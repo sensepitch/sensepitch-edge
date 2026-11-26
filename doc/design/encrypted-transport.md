@@ -89,17 +89,15 @@ usable host, and closes the connection. It shares no handler with
 protection or upstream is reachable in plaintext, whatever the configuration says. The redirect
 happens before anything else looks at the request.
 
-The redirect should only be given for a host the edge serves. Today the handler takes the
-client's `Host` header, normalizes it and checks only its syntax, so a request to the edge's
-address with `Host: anything.example` is answered with `308 Location: https://anything.example/…`.
-The TLS side treats an unknown host differently:
-[`SanitizeHostHandler`](../../src/main/java/org/sensepitch/edge/SanitizeHostHandler.java) matches
-it against the known hosts and an unknown one gets the unserviced host answer. The redirect is no
-open redirect, it only leads to the host the client asked for itself, but a forged `Host` could
-put a redirect to a foreign domain into a cache in front of port 80, scanners get a plausible
-answer, and the client spends a TLS handshake on a host the edge has no site for. So the handler
-is to use the same known host matching, with the reloadable host list, redirect only a served
-host and answer an unknown one like the TLS side does.
+The redirect is only given for a host the edge serves: the handler matches the normalized `Host`
+against the known hosts like
+[`SanitizeHostHandler`](../../src/main/java/org/sensepitch/edge/SanitizeHostHandler.java) does,
+with the host list of the active configuration, and answers an unknown host with `400`, as the TLS
+side does. Before, any syntactically valid host was redirected, so `Host: anything.example` got
+`308 Location: https://anything.example/…`. That was no open redirect, it only led to the host
+the client asked for itself, but a forged `Host` could put a redirect to a foreign domain into a
+cache in front of port 80, scanners got a plausible answer, and the client spent a TLS handshake
+on a host the edge has no site for.
 
 An ACME HTTP-01 responder, needed to issue certificates without DNS (Kubernetes plan item 12, see
 [`3-gap-analysis.md`](../kubernetes-support/3-gap-analysis.md)), belongs into this pipeline as
@@ -115,14 +113,17 @@ It would also put the client address, the path and the headers of an unencrypted
 the log, data that was readable on the way and that the edge does not need to answer with a
 redirect.
 
-What the listener does is observable through counters instead: a counter of the answers of the
-redirect handler, labelled with the outcome (`redirect`, `unknown_host`, `bad_request`), so a
-missing redirect for a served site, a wave of unknown hosts or malformed requests shows in the
-metrics. The labels are a fixed set, no host or path, see the cardinality rule in
-[`AGENTS.md`](../../AGENTS.md). The connection counters of
-[`TrackIngressConnectionsHandler`](../../src/main/java/org/sensepitch/edge/TrackIngressConnectionsHandler.java)
-are shared by both listeners today and do not tell them apart. Neither counter exists yet, see
-[Planned improvements](#planned-improvements).
+What the listener does is observable through counters instead:
+`sensepitch_plain_http_requests_total` counts the answers of the redirect handler by outcome
+(`redirect`, `unknown_host`, `bad_request`), so a missing redirect for a served site, a wave of
+unknown hosts or malformed requests shows in the metrics. The labels are a fixed set, no host or
+path, see the cardinality rule in [`AGENTS.md`](../../AGENTS.md). The request counter is
+separate from the metrics of the TLS listener, with a name of its own and no shared label. The
+plain HTTP listener has no connection metrics of its own: every connection carries one request
+and is closed after the answer, so the connections in flight say nothing the request counter
+does not. Its connections pass the shared
+[`TrackIngressConnectionsHandler`](../../src/main/java/org/sensepitch/edge/TrackIngressConnectionsHandler.java),
+so a shutdown drains them, and are included in `sensepitch_ingress_connections_*`.
 
 ### The invariant is structural, and verified where it is relied on
 
@@ -222,12 +223,8 @@ handshake, connection reuse) and is decided on its own, see
   that the minimum stays TLS 1.2.
 - No HSTS header yet, so a browser that types the bare host name goes over port 80 each time; the
   redirect limits that to the first request of a connection.
-- The redirect is given for any syntactically valid `Host`, not only for the hosts the edge
-  serves, see [Port 80 is a separate pipeline, not a
-  route](#port-80-is-a-separate-pipeline-not-a-route).
-- The plain HTTP listener is not observable: no request counter, and its connections are counted
-  together with the TLS listener's, see
-  [Port 80 is counted, not logged](#port-80-is-counted-not-logged).
+- The plain HTTP listener is counted, not logged: an individual request on port 80 cannot be
+  investigated afterwards, see [Port 80 is counted, not logged](#port-80-is-counted-not-logged).
 - The fail closed check in the pipeline is missing, see [The invariant is structural, and
   verified where it is relied on](#the-invariant-is-structural-and-verified-where-it-is-relied-on).
 - No HTTP/2 or HTTP/3 yet, and the connection to the upstream is plaintext.
@@ -235,5 +232,4 @@ handshake, connection reuse) and is decided on its own, see
 ## Planned improvements
 
 Listed in [`TODO.md`](../../TODO.md) under "Transport encryption": fail closed without a TLS
-session, a tested TLS policy, the HSTS header, a host check for the redirect, counters for the
-plain HTTP listener, HTTP/2 over TLS, and upstream TLS.
+session, a tested TLS policy, the HSTS header, HTTP/2 over TLS, and upstream TLS.

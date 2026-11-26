@@ -94,6 +94,34 @@ public class ProxyMetrics implements HasMultipleMetrics {
     ingressErrorCounter.labelValues(ingress(ctx), phase, type.label).inc();
   }
 
+  /// Requests on the plain HTTP listener by [PlainHttpOutcome], see [HttpToHttpsRedirectHandler].
+  /// They are not in the request log, see `doc/design/encrypted-transport.md`.
+  public final Counter plainHttpRequestCounter =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_plain_http_requests")
+              .help("Requests on the plain HTTP listener, by the answer of the HTTPS redirect")
+              .labelNames("outcome")
+              .build());
+
+  /// The `outcome` label of [#plainHttpRequestCounter], the lower case name
+  public enum PlainHttpOutcome {
+    /// Redirected to HTTPS, the host is served
+    REDIRECT,
+    /// Rejected with 400, the host is not served
+    UNKNOWN_HOST,
+    /// Rejected with 400: no or several hosts, a host that is no URI host, or an undecodable
+    /// request
+    BAD_REQUEST;
+
+    final String label = name().toLowerCase(Locale.ROOT);
+  }
+
+  /// Counts a request on the plain HTTP listener, see [HttpToHttpsRedirectHandler]
+  void countPlainHttpRequest(PlainHttpOutcome outcome) {
+    plainHttpRequestCounter.labelValues(outcome.label).inc();
+  }
+
   /// Events on an upstream connection that reach no ingress exception, by upstream name and
   /// [UpstreamErrorType], see [ForwardHandler]. An exception during an exchange is counted as an
   /// ingress error instead.

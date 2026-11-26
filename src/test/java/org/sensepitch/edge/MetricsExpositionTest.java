@@ -113,6 +113,7 @@ class MetricsExpositionTest {
     EmbeddedChannel first = new EmbeddedChannel(connections);
     new EmbeddedChannel(connections);
     first.close();
+    proxyMetrics.countPlainHttpRequest(ProxyMetrics.PlainHttpOutcome.REDIRECT);
 
     RequestLogMetrics requestLogMetrics = new RequestLogMetrics();
     requestLogMetrics.registerCollectors(registry::register);

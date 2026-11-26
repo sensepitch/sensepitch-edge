@@ -463,7 +463,9 @@ public class Proxy implements ProxyContext {
                 ChannelPipeline pipeline = ch.pipeline();
                 pipeline.addLast(trackIngressConnectionsHandler);
                 pipeline.addLast(new HttpServerCodec());
-                pipeline.addLast(new HttpToHttpsRedirectHandler(config.listen().httpsPort()));
+                pipeline.addLast(
+                    new HttpToHttpsRedirectHandler(
+                        config.listen().httpsPort(), () -> state.knownHosts(), metrics));
               }
             });
     ChannelFuture httpFuture = httpSb.bind(new InetSocketAddress(addr, httpPort)).sync();
