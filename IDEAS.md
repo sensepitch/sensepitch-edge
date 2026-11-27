@@ -35,9 +35,3 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   answers); today only forwarded and configured static responses (these responses simulate an upstream) carry it, since only those pass
   `DownstreamHandler.write` with an upstream attached. Operators, medium importance, a client
   whose first response is a challenge learns no policy.
-- Re-run the `performance-test/` benchmark with the upstream on the client's event loop: the
-  README numbers, with the 10 times higher mean latency than NGINX, predate that change, and
-  the README only says they were not measured again. Operators, medium importance, it shows
-  whether the hops between loops caused the latency. From the upstream connection pool draft
-  [doc/design/upstream-connection-pool-draft.md](doc/design/upstream-connection-pool-draft.md),
-  2026-11-27.

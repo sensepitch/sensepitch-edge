@@ -1,0 +1,12 @@
+Requests      [total, rate, throughput]         26688, 2307.87, 233.66
+Duration      [total, attack, wait]             16.806s, 11.564s, 5.242s
+Latencies     [min, mean, 50, 90, 95, 99, max]  5.263ms, 3.245s, 1.873s, 8.314s, 8.378s, 8.994s, 15.205s
+Bytes In      [total, mean]                     40212480, 1506.76
+Bytes Out     [total, mean]                     0, 0.00
+Success       [ratio]                           14.71%
+Status Codes  [code:count]                      0:18356  200:3927  502:4405  
+Error Set:
+502 Upstream connection problem
+Get "https://localhost:17443/10kb.img": dial tcp 0.0.0.0:0->127.0.0.1:17443: bind: address already in use
+Get "https://localhost:17443/10kb.img": net/http: request canceled (Client.Timeout exceeded while awaiting headers)
+Get "https://localhost:17443/10kb.img": context deadline exceeded (Client.Timeout exceeded while awaiting headers)

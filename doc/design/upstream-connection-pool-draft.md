@@ -16,6 +16,14 @@ channel, and `DownstreamHandler` closes it after the response. A pool saves the 
 request: a round trip of latency, an ephemeral port in `TIME_WAIT` on our side, and the accept
 work of the upstream.
 
+The ports are a hard limit today. The edge closes the upstream connection first, so each one
+holds a local port in `TIME_WAIT` for 60 s. With the Linux default `ip_local_port_range`
+(28232 ports) and `tcp_tw_reuse` for loopback only, that allows about 470 requests per second to
+one upstream address; above it the connects fail and the client gets `502 Upstream connection
+problem`. Measured on 2026-11-27: at 10000 and 50000 requests per second only 3 to 58 % of the
+requests succeeded, at 300 all, see
+[performance-test/runs/2026-11-27-upstream-event-loop](../../performance-test/runs/2026-11-27-upstream-event-loop/README.md).
+
 These rules bound the design:
 
 - The exchange stays on the event loop of the client channel: `Upstream#connect` returns a

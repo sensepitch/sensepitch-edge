@@ -1,0 +1,11 @@
+Requests      [total, rate, throughput]         16549, 1636.50, 83.29
+Duration      [total, attack, wait]             11.791s, 10.112s, 1.678s
+Latencies     [min, mean, 50, 90, 95, 99, max]  6.183ms, 701.789ms, 543.759ms, 1.616s, 1.856s, 2.466s, 3.99s
+Bytes In      [total, mean]                     10055680, 607.63
+Bytes Out     [total, mean]                     0, 0.00
+Success       [ratio]                           5.93%
+Status Codes  [code:count]                      0:13105  200:982  502:2462  
+Error Set:
+Get "https://localhost:17443/10kb.img": dial tcp 0.0.0.0:0->127.0.0.1:17443: bind: address already in use
+Get "https://localhost:17443/10kb.img": dial tcp 0.0.0.0:0->[::1]:17443: bind: address already in use
+502 Upstream connection problem

@@ -96,7 +96,9 @@ Status Codes  [code:count]                      200:328821
 Error Set:
 ````
 
-The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the request log to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. At the time of this benchmark, downstream and upstream operations could run on different threads. The proxy now opens each upstream connection on its client channel's event loop; the numbers here predate that change and were not measured again.
+The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the request log to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. At the time of this benchmark, downstream and upstream operations could run on different threads.
+
+These numbers cannot be reproduced today. Without an upstream connection pool the edge opens and closes an upstream connection per request, each one holds a local port in `TIME_WAIT` for 60 s, which limits a Linux host with the default port range to about 470 requests per second per upstream address; above it the upstream connects fail with `502`. The run above probably still had the earlier pool, removed in `dea0ab4` (inferred, not verified). Measured on 2026-11-27 at 300 requests per second, below that limit: opening the upstream connection on the client channel's event loop, as the proxy does now, lowers the median latency from 0.51-0.58 ms to 0.41-0.44 ms, NGINX has 0.23 ms. Scripts, reports and the setup are in [performance-test/runs/2026-11-27-upstream-event-loop](performance-test/runs/2026-11-27-upstream-event-loop/README.md).
 
 Lets have a second look with a non saturating request rate of 10K:
 

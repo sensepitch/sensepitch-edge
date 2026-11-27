@@ -54,3 +54,6 @@ dependency-reduced-pom.xml
 /performance-test/ja4-benchmark-true.log
 /performance-test/ja4-benchmark-false.yaml
 /performance-test/ja4-benchmark-true.yaml
+# performance-test/runs: the JARs under test and the proxy logs (mostly request log) are not kept
+/performance-test/runs/**/*.jar
+/performance-test/runs/**/*.log
