@@ -119,7 +119,8 @@ class PlainHttpListenerIT {
           "proxy binds port " + port,
           () -> {
             try (Socket probe = new Socket()) {
-              probe.connect(new InetSocketAddress("127.0.0.1", port), 250);
+              probe.connect(
+                  new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis());
               return true;
             } catch (IOException notUpYet) {
               return false;

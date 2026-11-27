@@ -10,6 +10,7 @@ import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SniHandler;
 import io.netty.handler.ssl.SslContext;
 import io.netty.util.Mapping;
+import io.netty.util.concurrent.Future;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
@@ -21,6 +22,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
@@ -63,10 +65,13 @@ public class Proxy implements ProxyContext {
 
   private final Object lock = new Object();
 
-  /// Monotonic shutdown time and a possibly spurious wait, injected for deterministic delay tests.
+  /// Monotonic shutdown time, a possibly spurious delay wait, and a timed future wait, injected
+  /// for deterministic shutdown tests.
   private final LongSupplier shutdownNanoTime;
 
   private final LongConsumer shutdownWaitNanos;
+
+  private final BiPredicate<CompletableFuture<?>, Long> shutdownAwaitMillis;
 
   /// Fired on an ingress event loop when the shutdown drain reached the connection, a test seam
   private final Consumer<Channel> ingressShutdownDelivered;
@@ -156,28 +161,39 @@ public class Proxy implements ProxyContext {
         requestLogOutput,
         System::nanoTime,
         LockSupport::parkNanos,
+        Proxy::awaitUninterruptibly,
         NO_INGRESS_SHUTDOWN_SIGNAL);
   }
 
-  /// Shutdown test seams; production uses the monotonic system clock, park and a no-op signal.
+  /// Shutdown test seams; production uses the monotonic system clock, park, timed future join and
+  /// a no-op signal.
   Proxy(
       ProxyConfig config,
       RequestLogOutput requestLogOutput,
       LongSupplier shutdownNanoTime,
       LongConsumer shutdownWaitNanos) {
-    this(config, requestLogOutput, shutdownNanoTime, shutdownWaitNanos, NO_INGRESS_SHUTDOWN_SIGNAL);
+    this(
+        config,
+        requestLogOutput,
+        shutdownNanoTime,
+        shutdownWaitNanos,
+        Proxy::awaitUninterruptibly,
+        NO_INGRESS_SHUTDOWN_SIGNAL);
   }
 
-  /// [#Proxy(ProxyConfig, RequestLogOutput, LongSupplier, LongConsumer)] with a signal fired on
-  /// an ingress event loop when the shutdown drain reached the connection.
+  /// [#Proxy(ProxyConfig, RequestLogOutput, LongSupplier, LongConsumer)] with a timed wait for
+  /// shutdown futures and a signal fired on an ingress event loop when the shutdown drain reached
+  /// the connection.
   Proxy(
       ProxyConfig config,
       RequestLogOutput requestLogOutput,
       LongSupplier shutdownNanoTime,
       LongConsumer shutdownWaitNanos,
+      BiPredicate<CompletableFuture<?>, Long> shutdownAwaitMillis,
       Consumer<Channel> ingressShutdownDelivered) {
     this.shutdownNanoTime = shutdownNanoTime;
     this.shutdownWaitNanos = shutdownWaitNanos;
+    this.shutdownAwaitMillis = shutdownAwaitMillis;
     this.ingressShutdownDelivered = ingressShutdownDelivered;
     this.requestLogOutput = requestLogOutput;
     config = KeyInjector.injectAllMapKeys(config);
@@ -558,9 +574,9 @@ public class Proxy implements ProxyContext {
       bossGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS);
       LOG.info(SHUTDOWN_STOPPED_ACCEPTING);
     }
-    if (!trackIngressConnectionsHandler
-        .drain()
-        .awaitUninterruptibly(remainingMillis(connectionsDeadline))) {
+    if (!shutdownAwaitMillis.test(
+        toCompletableFuture(trackIngressConnectionsHandler.drain()),
+        remainingMillis(connectionsDeadline))) {
       LOG.info(
           "Shutdown: requests still in flight after "
               + TimeUnit.NANOSECONDS.toMillis(shutdownNanoTime.getAsLong() - start)
@@ -573,18 +589,14 @@ public class Proxy implements ProxyContext {
     long drainStart = shutdownNanoTime.getAsLong();
     // the calling thread may have logged as well, e.g. a test driving an EmbeddedChannel
     requestLogDestinations.endThread();
-    CompletableFuture<Void> loops = new CompletableFuture<>();
-    eventLoopGroup
-        .shutdownGracefully(0, remainingMillis(deadline), TimeUnit.MILLISECONDS)
-        .addListener(future -> loops.complete(null));
+    CompletableFuture<Void> loops =
+        toCompletableFuture(
+            eventLoopGroup.shutdownGracefully(0, remainingMillis(deadline), TimeUnit.MILLISECONDS));
     // finished after the loops ended: a loop that logs for the first time while closing its
     // connections still gets a batcher
     boolean drained =
-        loops
-            .thenCompose(done -> requestLogDestinations.finish())
-            .thenApply(v -> true)
-            .completeOnTimeout(false, remainingMillis(deadline), TimeUnit.MILLISECONDS)
-            .join();
+        shutdownAwaitMillis.test(
+            loops.thenCompose(done -> requestLogDestinations.finish()), remainingMillis(deadline));
     if (!drained) {
       LOG.info(
           "Shutdown: request log not drained after "
@@ -622,6 +634,25 @@ public class Proxy implements ProxyContext {
         Thread.currentThread().interrupt();
       }
     }
+  }
+
+  /// Adapts a Netty [Future] so both shutdown drain phases share [#shutdownAwaitMillis].
+  private static CompletableFuture<Void> toCompletableFuture(Future<?> nettyFuture) {
+    if (nettyFuture.isDone()) {
+      return CompletableFuture.completedFuture(null);
+    }
+    CompletableFuture<Void> completed = new CompletableFuture<>();
+    nettyFuture.addListener(ignored -> completed.complete(null));
+    return completed;
+  }
+
+  /// Waits uninterruptibly for `future` up to `timeoutMillis`, returning whether it completed in
+  /// time. Used for the connection and request log drain phases of [#shutdown()].
+  static boolean awaitUninterruptibly(CompletableFuture<?> future, long timeoutMillis) {
+    return future
+        .thenApply(ignored -> true)
+        .completeOnTimeout(false, timeoutMillis, TimeUnit.MILLISECONDS)
+        .join();
   }
 
   private long remainingMillis(long deadlineNanos) {

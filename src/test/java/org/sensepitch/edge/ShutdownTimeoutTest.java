@@ -1,13 +1,49 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.sensepitch.edge.CompleteTest.COMMON_CONFIG;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
-/// Defaults of the shutdown timeouts, the rejected values are in [ProxyRejectedConfigBDDTest]
+/// Shutdown timeout defaults and drain budgets. [ProxyRejectedConfigBDDTest] covers invalid values.
 ///
 /// @author Jens Wilke
 class ShutdownTimeoutTest {
+
+  private Proxy proxy;
+
+  @ParameterizedTest
+  @CsvSource({"40, 60", "125, 0"})
+  void drainPreparationConsumesShutdownBudget(long preparationMillis, long remainingMillis) {
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .shutdownTimeoutMillis(100)
+            .requestLog(RequestLogConfig.builder().drainTimeoutMillis(30L).build())
+            .build();
+    List<Long> waitBudgets = new ArrayList<>();
+    proxy =
+        new Proxy(
+            config,
+            new RequestLogCapture(),
+            // Model elapsed time at a lifecycle boundary, independently of clock read counts.
+            () ->
+                proxy.eventLoopGroup().isShuttingDown()
+                    ? TimeUnit.MILLISECONDS.toNanos(preparationMillis)
+                    : 0,
+            ignored -> {},
+            (future, millis) -> {
+              waitBudgets.add(millis);
+              return future.isDone();
+            },
+            ignored -> {});
+    proxy.shutdown();
+    assertThat(waitBudgets).containsExactly(70L, remainingMillis);
+  }
 
   @Test
   void drainTimeoutDefaultsToAThirdOfTheShutdown() {

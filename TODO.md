@@ -22,10 +22,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 - [ ] Real time and races in the remaining tests, against the rules for concurrent tests in
   `AGENTS.md`
   - P1: each one is slow or can fail on a loaded machine although the code is right.
-  - `ProxyShutdownIT`: the shutdown clock seam is there (`startProxy` with a nano time and wait,
-    as in `acceptGraceKeepsServingThenClosesWithinTheBudget`); `slowRequestIsAbortedAndStillLogged`
-    (about 1 s) and `unsentRecordsAreReported` (about 0.5 s) still wait real shutdown and drain
-    timeouts. `awaitListening` probes with a literal 250 ms connect timeout.
   - `ConfigFileWatcherTest`: no clock or scheduler seam, and the watcher waits on the file
     system; the test stays in the unit scope meanwhile, see the coverage rule in `AGENTS.md`. One
     line and one branch of `ConfigFileWatcher` are covered only in some runs, so the JaCoCo floor
@@ -63,7 +59,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 - [ ] Check the nightly workflows, "Flaky tests":
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/flaky-tests.yml and
   https://github.com/sensepitch/sensepitch-edge/actions/workflows/nightly.yml
-  - BLOCKED: GitHub API unreachable during selection. Recent run artifacts needed.
   - P1: a test that failed in any run of the flaky test hunt, or a failed nightly run, is a bug
     and has priority over all other work here; add an entry below per problem until it is fixed.
     The flaky test summary lists each failed test with the number of runs it failed in; a failed
@@ -147,7 +142,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   Research with sources and the evidence for each point:
   [ip-database-volume-draft.md](doc/design/ip-database-volume-draft.md).
   - P1.
-  - BLOCKED: chart implementation awaits the volume and update interval choices below.
+  - BLOCKED: choose the volume and update interval below before implementing the chart.
   - Facts: IPinfo Lite `ipinfo_lite.mmdb` is 23.71 MB, updated daily, CC BY-SA 4.0, downloaded
     with an account token. A Secret or ConfigMap holds at most 1 MiB, so neither can carry it.
     `ConfigFileWatcher` already reloads by itself when the file is renamed into place.
@@ -189,7 +184,8 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
-  - BLOCKED: replay handling, permitted reuse, timing and migration choices remain open.
+  - BLOCKED: stateless enforcement is selected. Replay handling, reuse, timing and migration
+    remain open.
   - P3: today a challenge is a bare timestamp and an answer can be replayed for five minutes,
     each replay minting another admission. Tick the open choices before implementing:
     - [x] enforcement, decided: Option A of the draft, a stateless idempotent token. The

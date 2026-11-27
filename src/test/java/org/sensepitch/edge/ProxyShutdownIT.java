@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BiPredicate;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 import javax.net.ssl.SSLContext;
@@ -81,11 +82,20 @@ class ProxyShutdownIT {
 
   /// @param drainTimeoutMillis `null` for the default, a third of the shutdown timeout
   void startProxy(long shutdownTimeoutMillis, Long drainTimeoutMillis) throws Exception {
-    startProxy(shutdownTimeoutMillis, drainTimeoutMillis, System::nanoTime, LockSupport::parkNanos);
+    startProxy(
+        shutdownTimeoutMillis,
+        drainTimeoutMillis,
+        System::nanoTime,
+        LockSupport::parkNanos,
+        Proxy::awaitUninterruptibly);
   }
 
   void startProxy(
-      long shutdownTimeoutMillis, Long drainTimeoutMillis, LongSupplier clock, LongConsumer wait)
+      long shutdownTimeoutMillis,
+      Long drainTimeoutMillis,
+      LongSupplier clock,
+      LongConsumer wait,
+      BiPredicate<CompletableFuture<?>, Long> awaitMillis)
       throws Exception {
     upstream = Loopback.httpServer();
     upstream.createContext(
@@ -94,7 +104,7 @@ class ProxyShutdownIT {
           upstreamGotRequest.countDown();
           try {
             CountDownLatch drainReached = shutdownDrainReached;
-            if (drainReached == null) {
+            if (upstreamDelayMillis > 0 || drainReached == null) {
               // the delay ends early when the test is over, otherwise stopping the upstream
               // waits for the rest of it
               testOver.await(upstreamDelayMillis, TimeUnit.MILLISECONDS);
@@ -183,6 +193,7 @@ class ProxyShutdownIT {
             requestLog,
             clock,
             wait,
+            awaitMillis,
             ignored -> {
               CountDownLatch drainReached = shutdownDrainReached;
               if (drainReached != null) {
@@ -273,21 +284,50 @@ class ProxyShutdownIT {
 
   /// A request that takes longer than the shutdown allows is aborted when only the drain timeout
   /// is left. Its record, status 499, is still sent within the drain timeout, and the requests in
-  /// flight are reported. The request log is drained, so that phase logs no diagnostic. The drain
-  /// timeout is the full [TestingParameters#EVENT_TIMEOUT], so a delayed post cannot run out of it; the
-  /// drain ends as soon as the record is sent.
+  /// flight are reported. The request log is drained, so that phase logs no diagnostic. The
+  /// connection wait runs on a fake clock so the test does not sleep; the drain timeout is the
+  /// full [TestingParameters#EVENT_TIMEOUT], so a delayed post cannot run out of it, and the drain
+  /// ends as soon as the record is sent.
   @Test
   void slowRequestIsAbortedAndStillLogged() throws Exception {
-    startProxy(1_000 + EVENT_TIMEOUT.toMillis(), EVENT_TIMEOUT.toMillis());
+    AtomicLong now = new AtomicLong(1_000);
+    AtomicInteger waitCalls = new AtomicInteger();
+    CountDownLatch drainReached = new CountDownLatch(1);
+    shutdownDrainReached = drainReached;
+    long connectionBudgetMillis = 1_000;
+    long drainMillis = EVENT_TIMEOUT.toMillis();
+    startProxy(
+        connectionBudgetMillis + drainMillis,
+        drainMillis,
+        now::get,
+        LockSupport::parkNanos,
+        (future, timeoutMillis) -> {
+          int call = waitCalls.incrementAndGet();
+          if (call == 1) {
+            assertThat(timeoutMillis).isEqualTo(connectionBudgetMillis);
+            try {
+              assertThat(drainReached.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                  .as("shutdown drain reached the stalled connection")
+                  .isTrue();
+            } catch (InterruptedException interrupted) {
+              Thread.currentThread().interrupt();
+              throw new AssertionError("interrupted waiting for shutdown drain", interrupted);
+            }
+            assertThat(future.isDone()).as("stalled request keeps connection open").isFalse();
+            now.addAndGet(TimeUnit.MILLISECONDS.toNanos(timeoutMillis));
+            return false;
+          }
+          assertThat(timeoutMillis).isEqualTo(drainMillis);
+          return Proxy.awaitUninterruptibly(future, timeoutMillis);
+        });
     // answers only when the test is over, long after the abort
     upstreamDelayMillis = OUT_OF_REACH_MILLIS;
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "upstream.com");
       assertThat(upstreamGotRequest.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-      long start = System.nanoTime();
       proxy.shutdown();
-      assertThat(millisSince(start)).as("waited for the request").isGreaterThanOrEqualTo(900);
     }
+    assertThat(waitCalls.get()).isEqualTo(2);
     assertThat(requestLog.lines())
         .singleElement()
         .asString()
@@ -295,32 +335,80 @@ class ProxyShutdownIT {
     assertThat(otlpRecords.get()).as("the aborted request is sent too").isOne();
     assertThat(logs.messages(Proxy.class))
         .anySatisfy(
-            m ->
-                assertThat(m)
-                    .contains("requests still in flight after")
-                    .contains("ms, total 1, by upstream {sites.upstream.com.upstream=1}"));
-    assertThat(logs.messages(Proxy.class))
-        .noneMatch(m -> m.startsWith("Shutdown: request log not drained"));
+            message ->
+                assertThat(message)
+                    .contains(
+                        "requests still in flight after "
+                            + connectionBudgetMillis
+                            + " ms, total 1, by upstream {sites.upstream.com.upstream=1}"))
+        .noneMatch(message -> message.startsWith("Shutdown: request log not drained"));
   }
 
-  /// With the log server down, the shutdown ends at its timeout and reports the records not sent
+  /// With the log server down, the shutdown ends at its timeout and reports the records not sent.
+  /// The drain wait advances the fake clock once the event loops stopped and the OTLP sender
+  /// failed its export against the stopped log server, so the test does not sleep.
   @Test
   void unsentRecordsAreReported() throws Exception {
-    startProxy(1_000, 500L);
+    AtomicLong now = new AtomicLong(1_000);
+    AtomicInteger waitCalls = new AtomicInteger();
+    long totalMillis = 2 * EVENT_TIMEOUT.toMillis();
+    long drainMillis = EVENT_TIMEOUT.toMillis();
+    AtomicReference<String> logEndpoint = new AtomicReference<>();
+    startProxy(
+        totalMillis,
+        drainMillis,
+        now::get,
+        LockSupport::parkNanos,
+        (future, timeoutMillis) -> {
+          int call = waitCalls.incrementAndGet();
+          if (call == 1) {
+            return Proxy.awaitUninterruptibly(future, timeoutMillis);
+          }
+          assertThat(timeoutMillis).isEqualTo(totalMillis);
+          try {
+            assertThat(
+                    proxy
+                        .eventLoopGroup()
+                        .terminationFuture()
+                        .await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                .as("event loops stopped")
+                .isTrue();
+            String endpoint = logEndpoint.get();
+            await(
+                "OTLP export failed against the stopped log server",
+                () ->
+                    logs.messages(OtlpLogDestination.class).stream()
+                        .anyMatch(
+                            message ->
+                                message.contains("Request log export to")
+                                    && message.contains(endpoint)));
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted waiting for OTLP export failure", interrupted);
+          } catch (Exception failure) {
+            throw new AssertionError("waiting for OTLP export failure", failure);
+          }
+          assertThat(future.isDone()).as("log drain waits while log server is down").isFalse();
+          now.addAndGet(TimeUnit.MILLISECONDS.toNanos(timeoutMillis));
+          return false;
+        });
+    logEndpoint.set(":" + logServer.getAddress().getPort() + "/v1/logs");
     try (SSLSocket socket = tlsSocket()) {
       send(socket, "example.com");
       assertThat(readResponse(socket.getInputStream())).startsWith("HTTP/1.1 200");
     }
     logServer.stop(0);
-    long start = System.nanoTime();
     proxy.shutdown();
-    assertThat(millisSince(start)).as("waited for the drain timeout").isGreaterThanOrEqualTo(400);
+    assertThat(waitCalls.get()).isEqualTo(2);
     assertThat(logs.messages(Proxy.class))
         .anySatisfy(
-            m ->
-                assertThat(m)
-                    .contains("request log not drained after")
-                    .contains("ms, unsent request log records 1"));
+            message ->
+                assertThat(message)
+                    .contains(
+                        "request log not drained after "
+                            + totalMillis
+                            + " ms, unsent request log records 1"))
+        .noneMatch(message -> message.contains("event loop group still running"));
   }
 
   /// A reload after the shutdown started is rejected, it would create destinations that are
@@ -421,7 +509,8 @@ class ProxyShutdownIT {
             throw new AssertionError(e);
           }
           now.addAndGet(nanos);
-        });
+        },
+        Proxy::awaitUninterruptibly);
     assertThat(
             proxy
                 .reload(config.toBuilder().shutdownAcceptGraceMillis(graceMillis).build())
@@ -503,10 +592,6 @@ class ProxyShutdownIT {
     return header + new String(in.readNBytes(length), StandardCharsets.US_ASCII);
   }
 
-  static long millisSince(long startNanos) {
-    return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
-  }
-
   private SSLSocket tlsSocket() throws Exception {
     SSLContext context = SSLContext.getInstance("TLS");
     // the test certificate is self-signed, validation is deliberately skipped
@@ -539,7 +624,7 @@ class ProxyShutdownIT {
         "proxy binds port " + port,
         () -> {
           try (Socket probe = new Socket()) {
-            probe.connect(new InetSocketAddress("127.0.0.1", port), 250);
+            probe.connect(new InetSocketAddress("127.0.0.1", port), (int) EVENT_TIMEOUT.toMillis());
             return true;
           } catch (IOException notUpYet) {
             return false;

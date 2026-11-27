@@ -410,8 +410,12 @@ build.
   (2026-11-25): `ReloadableRequestLoggerTest.removedDestinationIsClosed`,
   `ReloadableRequestLoggerTest.finishCoversDrainingDestinations`, and the OTLP cases of
   `RequestLoggerFactoryTest` (no `HttpServer` started there anymore) run on `FakeTime` and
-  `FakeLogServer` without `TestingParameters.await` polling. Left: `ProxyShutdownIT` and
-  `ConfigFileWatcherTest`, see `TODO.md`.
+  `FakeLogServer` without `TestingParameters.await` polling. Completed for shutdown timeouts
+  (2026-11-26): `ProxyShutdownIT.slowRequestIsAbortedAndStillLogged` and
+  `ProxyShutdownIT.unsentRecordsAreReported` drive the connection-drain and log-drain timeouts
+  through `Proxy`'s shutdown clock and future-wait seam without real-time sleeps, and
+  `awaitListening` in `ProxyShutdownIT`, `ExternalTcpIT` and `PlainHttpListenerIT` uses
+  `TestingParameters.EVENT_TIMEOUT`. Left: `ConfigFileWatcherTest`, see `TODO.md`.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 

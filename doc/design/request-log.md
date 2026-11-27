@@ -196,6 +196,8 @@ readiness is already false, stop the listener, let the requests in flight comple
 `shutdownTimeoutMillis − requestLog.drainTimeoutMillis` from the start), shut down the event
 loops, which closes the remaining connections, logs their requests as aborted (499) and writes
 the end markers, then wait for the destinations to send everything until `shutdownTimeoutMillis`.
+Loop shutdown and the final wait each take the time left at their start, so preparing the drain
+consumes the same shutdown budget.
 The request log gets its own budget, by default a third of the total, because the records of the
 aborted requests only exist after the connections are gone. What is left at a deadline is logged
 at `INFO`: the requests in flight per upstream, the total of unsent request log records, and
