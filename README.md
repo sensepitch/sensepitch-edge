@@ -96,7 +96,7 @@ Status Codes  [code:count]                      200:328821
 Error Set:
 ````
 
-The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the request log to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. I assume a probable cause is the fact that downstream and upstream operations run in two different threads.
+The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the request log to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. At the time of this benchmark, downstream and upstream operations could run on different threads. The proxy now opens each upstream connection on its client channel's event loop; the numbers here predate that change and were not measured again.
 
 Lets have a second look with a non saturating request rate of 10K:
 

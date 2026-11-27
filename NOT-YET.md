@@ -92,7 +92,8 @@ Decisions, alternatives and limitations are in
 
 - [ ] upstream connection pool with keep-alive (an earlier version was disabled 2025-09-20 and
   removed, see git history); then expose pool metrics via Prometheus
-  - P2: do a draft design first, researching what parameters are needed, looking at other proxy products
+  - P2: decide the open choices of the draft
+    [upstream-connection-pool-draft.md](doc/design/upstream-connection-pool-draft.md)
 - [ ] cache upstream responses with cache2k in netty buffers
 - [ ] Allow cache to be tiered on disk and Redis
   - P2 relatively important so we don't have restart spikes

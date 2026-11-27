@@ -697,7 +697,6 @@ public class Proxy implements ProxyContext {
     return requestLogMetrics.circuitBreakers;
   }
 
-  @Override
   public EventLoopGroup eventLoopGroup() {
     return eventLoopGroup;
   }

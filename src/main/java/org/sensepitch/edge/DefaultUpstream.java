@@ -14,8 +14,10 @@ import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 
-/// Opens a new connection to the upstream for each request. There is no connection pool, the
-/// [DownstreamHandler] closes the connection after the response.
+/// Opens a new connection to the upstream on the client channel's event loop for each request.
+/// There is no connection pool. The [DownstreamHandler] closes the connection after the response.
+/// The upstream connections are spread over the event loops like the accepted client connections,
+/// so their load balance is that of the clients.
 ///
 /// @author Jens Wilke
 public class DefaultUpstream implements Upstream {
@@ -41,7 +43,6 @@ public class DefaultUpstream implements Upstream {
     }
     bootstrap =
         new Bootstrap()
-            .group(ctx.eventLoopGroup())
             .channel(NioSocketChannel.class)
             // deliberately no ChannelOption.ALLOCATOR, so this uses ByteBufAllocator.DEFAULT
             // like the ingress side does, see Proxy.start()
@@ -82,7 +83,7 @@ public class DefaultUpstream implements Upstream {
   private ChannelFuture connectToUpstream(Channel ingress) {
     Bootstrap bs =
         bootstrap
-            .clone()
+            .clone(ingress.eventLoop())
             .handler(
                 new ChannelInitializer<SocketChannel>() {
                   @Override

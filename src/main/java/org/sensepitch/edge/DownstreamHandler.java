@@ -102,7 +102,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
         ReferenceCountUtil.release(msg);
         return;
       }
-      // Upstream channel might be still connecting or retrieved and checked by the pool.
+      // The upstream channel might be still connecting.
       // Queue in all content we receive via the listener.
       upstreamChannelFuture.addListener(
           (FutureListener<Channel>)
@@ -119,7 +119,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     }
   }
 
-  // runs in another tread!
+  /// Called by the listener of the upstream connect. The upstream channel runs on the event loop
+  /// of the client channel, see [Upstream#connect], so this and the listener of the write run on
+  /// it as well and end a failed exchange at once.
   void forwardLastContentAndFlush(
       ChannelHandlerContext ctx, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
@@ -130,15 +132,13 @@ public class DownstreamHandler extends ChannelDuplexHandler {
               (ChannelFutureListener)
                   f -> {
                     if (!f.isSuccess()) {
-                      ctx.executor()
-                          .execute(
-                              () ->
-                                  failExchange(
-                                      ctx,
-                                      future,
-                                      f.cause(),
-                                      RequestOutcome.UPSTREAM_WRITE_FAILED,
-                                      HttpResponseStatus.valueOf(502, "Upstream write problem")));
+                      assert ctx.executor().inEventLoop();
+                      failExchange(
+                          ctx,
+                          future,
+                          f.cause(),
+                          RequestOutcome.UPSTREAM_WRITE_FAILED,
+                          HttpResponseStatus.valueOf(502, "Upstream write problem"));
                     }
                   });
     } else {
@@ -178,7 +178,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     completeWithError(ctx, status);
   }
 
-  // runs in another tread!
+  /// Called by the listener of the upstream connect, on the event loop of the client channel
   void forwardContent(Future<Channel> future, HttpContent msg) {
     if (future.isSuccess()) {
       future.resultNow().write(msg);
@@ -207,7 +207,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   /// Ends the use of the upstream of the active exchange and closes it. The reference is cleared
-  /// before the close, so the [ForwardHandler] report of this close, which may arrive at once when
+  /// before the close, so the [ForwardHandler] report of this close, which may arrive at once since
   /// both channels share an event loop, belongs to no exchange, see [#userEventTriggered].
   private void dropUpstream() {
     Future<Channel> exchangeUpstream = upstreamChannelFuture;
@@ -323,9 +323,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   }
 
   /// Remove upstream reference when processing for this request is complete. The upstream channel
-  /// will go back to the pool, so we need to ensure that we don't have it anymore for throttling.
-  /// Throttling can only occur in response to a write, so we are sure that there is no pending
-  /// throttling.
+  /// is closed, so we need to ensure that we don't have it anymore for throttling. Throttling can
+  /// only occur in response to a write, so we are sure that there is no pending throttling.
   ///
   /// @see #channelWritabilityChanged(ChannelHandlerContext)
   @Override
