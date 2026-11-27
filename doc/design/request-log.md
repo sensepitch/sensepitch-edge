@@ -30,7 +30,7 @@ The requirements, in order:
    graceful shutdown of the proxy must not lose records.
 4. **Observable.** What was sent, dropped, retried or is waiting shows in metrics.
 
-Diagnostic logging (Log4j2 to standard error) is out of scope, see `LogTarget`.
+Diagnostic logging (Log4j2 to standard error) is out of scope, see `DiagnosticLogSink`.
 
 ## Overview
 

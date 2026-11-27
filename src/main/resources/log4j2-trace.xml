@@ -8,7 +8,7 @@
 
   Diagnostics go to standard error, unbuffered: the last message before a crash or hang must not
   be stuck in a buffer. Standard out is reserved for the request log, which the proxy writes
-  directly and buffered (see RequestLogger and LogTarget). Keeping the two apart means a log
+  directly and buffered (see RequestLogger and DiagnosticLogSink). Keeping the two apart means a log
   collector can read standard out as pure request log, without filtering and without the JSON
   record being wrapped in another layout.
 

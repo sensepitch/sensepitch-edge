@@ -31,19 +31,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     `AsyncRequestLogWriterTest` has no timer to simulate, it waits on latches only.
     `ProxyOptionsTest` (OTLP with a 1 ms flush) waits for the post as an event and asserts no
     timing.
-- [ ] Instance scoped diagnostic logging and event driven waits, plan in
-  [plans/instance-scoped-logging.md](plans/instance-scoped-logging.md)
-  - P1, test speed and clarity, no operator visible change: non-trace loggers become instance
-    fields owned by a `LogScope` (proxy instance and component), trace stays on a `static final`
-    `TraceLogger`. Tests capture by scope instead of by thread, so `LogCapture.ofAllThreads()`
-    and the `@Isolated` it forces go away, and `LogCapture.await` waits for a record without
-    polling. Not started yet; the classes held `@Isolated` by it are listed in
-    [doc/design/test-speed.md](doc/design/test-speed.md).
-  - Polling to replace: `ExternalTcpIT` (`awaitLogged`, `awaitRequestLog`,
-    `awaitHandshakeErrors`) and `ShadedJarIT.awaitOutput` (reads the stderr file). Where no log is
-    involved: a test log server that signals each post with a `Semaphore` or queue, a latch in the
-    reload callback.
-    `TestingParameters.await` stays where no hook exists.
 
 ## Bugs
 
@@ -288,6 +275,16 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
   with its response, see the [glossary](doc/glossary.md), e.g. "the request then ends by its
   timeout" in the class doc of `ForwardHandler`. Names that are part of an interface (metric
   names such as `sensepitch_ingress_requests_in_flight`, log fields, config keys) stay.
+- [ ] Replace deprecated library calls, found with `javac -Xlint:deprecation` on 2026-11-27 (Maven
+  does not show them by default):
+  - Netty `HttpHeaderNames.KEEP_ALIVE` in `DownstreamHandler` and `IngressTimeoutHandler`, and in
+    `FlowAndExceptionTest`, `InformationalResponseBDDTest`, `TimeoutsTest`; `PROXY_CONNECTION` in
+    `DownstreamHandler`. Both are hop-by-hop headers the proxy removes, check what Netty suggests
+    instead (likely an `AsciiString` constant of our own, behaviour unchanged).
+  - Jackson `ObjectMapper.readTree(URL)` in `CombinedIpTraitsLookup.readCrawlerIpLists`.
+  - Commons CSV `new CSVParser(Reader, CSVFormat)` in `DetectCrawler`, the builder instead.
+  - P3, no operator-visible effect; consider enabling `-Xlint:deprecation` in `pom.xml` afterwards
+    so new ones show up in the build.
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without
   a visible effect for the operator, move optional work to [NOT-YET.md](NOT-YET.md), and check the
   GitHub CI actions; add an entry or fix right away if something is broken

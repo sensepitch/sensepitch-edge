@@ -233,8 +233,8 @@ delay.
   for it: the test is woken by the event it expects, signalled by a mock or fake on the other side
   (`CountDownLatch`, `Semaphore`, `BlockingQueue`, `CompletableFuture`), e.g. a test log server
   that releases a semaphore per post, or by the log output the code writes (diagnostic or request
-  log). Polling with `TestingParameters.await` is the fallback where no hook exists, a sleep loop
-  never.
+  log: `LogCapture.await`, `RequestLogCapture.awaitLine`). Polling with `TestingParameters.await`
+  is the fallback where no hook exists, a sleep loop never.
 - A wait or grace period that every run consumes in full is a defect to investigate, not a
   margin.
 

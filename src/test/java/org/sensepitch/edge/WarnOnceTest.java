@@ -165,7 +165,7 @@ public class WarnOnceTest {
   }
 
   /// Keeps the records, with the JVM wide first occurrence check of the production targets
-  static class Recording implements LogTarget {
+  static class Recording implements DiagnosticLogSink {
 
     /// Written by the logging threads; copy on write, so a stream reads a snapshot without a lock
     final List<LogInfo> records = new CopyOnWriteArrayList<>();

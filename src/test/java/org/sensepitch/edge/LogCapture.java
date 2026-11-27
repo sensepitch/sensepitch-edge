@@ -1,7 +1,10 @@
 package org.sensepitch.edge;
 
 import java.lang.System.Logger.Level;
+import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.parallel.Isolated;
@@ -14,21 +17,22 @@ import org.junit.jupiter.api.parallel.Isolated;
 /// @RegisterExtension LogCapture logs = new LogCapture();
 /// ```
 ///
-/// In tests the loggers write to the [LogSink], which keeps the records per logging thread. A
+/// In tests the loggers write to the [TestingLogSink], which keeps the records per logging thread. A
 /// capture shows the records of the test's own thread and forgets the earlier ones before each
 /// test. Tests running in other threads at the same time do not show up.
 ///
 /// Code under test that logs from its own threads, e.g. event loops of a started [Proxy] or the
 /// sender of a request log destination, needs [#ofAllThreads()]. Such a capture also sees what
 /// other tests log, so its test class must be `@Isolated`: it then runs while no other class
-/// does.
+/// does. To wait for a record such a thread logs, use [#await(String, Predicate)]: it wakes on
+/// each new record instead of polling, see "React on the event" in `AGENTS.md`.
 ///
 /// The first occurrence of each kind of request level event, see `ProxyLogger.incrementAndWarnOnce`, is logged
 /// at `WARNING` once per JVM in production. In tests every occurrence is at `DEBUG`, so the level
 /// does not depend on which tests ran before; [#warnProblems()] switches the production behaviour
 /// on for one test.
 ///
-/// Only `DEBUG` and above is captured, see [LogSink], trace is no acceptance criterion. Messages
+/// Only `DEBUG` and above is captured, see [TestingLogSink], trace is no acceptance criterion. Messages
 /// of Netty, JUL and other libraries do not pass the proxy's loggers, [Log4jCapture] sees them.
 ///
 /// @author Jens Wilke
@@ -56,7 +60,7 @@ public class LogCapture implements BeforeEachCallback {
 
     /// The message as it is logged, without the throwable
     public String message() {
-      return LogTarget.format(info);
+      return DiagnosticLogSink.format(info);
     }
 
     public Throwable error() {
@@ -66,9 +70,9 @@ public class LogCapture implements BeforeEachCallback {
 
   @Override
   public void beforeEach(ExtensionContext context) {
-    if (!LogSink.installed()) {
+    if (!TestingLogSink.installed()) {
       throw new IllegalStateException(
-          "LogSink is not installed, see META-INF/services in the test resources");
+          "TestingLogSink is not installed, see META-INF/services in the test resources");
     }
     if (allThreads) {
       requireIsolated(context, "LogCapture.ofAllThreads()");
@@ -95,22 +99,22 @@ public class LogCapture implements BeforeEachCallback {
     if (allThreads) {
       throw new IllegalStateException("only for the thread of the test");
     }
-    LogSink.warnProblemsOfCurrentThread();
+    TestingLogSink.warnProblemsOfCurrentThread();
   }
 
   /// Discards the records collected so far and switches [#warnProblems()] off
   public void clear() {
     if (allThreads) {
-      LogSink.clearAllThreads();
+      TestingLogSink.clearAllThreads();
     } else {
-      LogSink.clearCurrentThread();
+      TestingLogSink.clearCurrentThread();
     }
   }
 
   /// Snapshot of the collected records
   public List<Entry> entries() {
-    List<LogSink.Entry> entries =
-        allThreads ? LogSink.entriesOfAllThreads() : LogSink.entriesOfCurrentThread();
+    List<TestingLogSink.Entry> entries =
+        allThreads ? TestingLogSink.entriesOfAllThreads() : TestingLogSink.entriesOfCurrentThread();
     return entries.stream().map(e -> new Entry(e.source(), e.info())).toList();
   }
 
@@ -138,5 +142,42 @@ public class LogCapture implements BeforeEachCallback {
   /// Records at level `ERROR`
   public List<Entry> errors() {
     return entries().stream().filter(e -> e.info().level() == Level.ERROR).toList();
+  }
+
+  /// Waits for a record logged by another thread, up to [TestingParameters#EVENT_TIMEOUT]. A
+  /// record logged before the call is found at once.
+  ///
+  /// @param description names the awaited event in the failure
+  /// @return the first record that matches
+  /// @throws AssertionError if no record matches in time
+  public Entry await(String description, Predicate<Entry> condition) throws InterruptedException {
+    return await(description, condition, TestingParameters.EVENT_TIMEOUT);
+  }
+
+  /// [#await(String, Predicate)] with its own bound, so a test of the failure does not wait the
+  /// whole [TestingParameters#EVENT_TIMEOUT]
+  Entry await(String description, Predicate<Entry> condition, Duration bound)
+      throws InterruptedException {
+    long deadline = System.nanoTime() + bound.toNanos();
+    if (!TestingLogSink.awaitAdded(() -> firstMatch(condition).isPresent(), deadline)) {
+      throw new AssertionError(
+          description + " not reached within " + bound.toSeconds() + " seconds");
+    }
+    return firstMatch(condition).orElseThrow();
+  }
+
+  private Optional<Entry> firstMatch(Predicate<Entry> condition) {
+    return entries().stream().filter(condition).findFirst();
+  }
+
+  /// Waits for a message of the logger of `source` that contains `messagePart`, see
+  /// [#await(String, Predicate)]
+  ///
+  /// @return the message
+  public String awaitMessage(Class<?> source, String messagePart) throws InterruptedException {
+    return await(
+            source.getSimpleName() + " logs \"" + messagePart + "\"",
+            e -> e.source().equals(source.getName()) && e.message().contains(messagePart))
+        .message();
   }
 }

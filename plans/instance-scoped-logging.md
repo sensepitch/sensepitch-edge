@@ -28,7 +28,7 @@ records by instance instead of by thread removes both problems at the source.
 `record LogScope(String instance, String component)`: who owns a record. `LogScope.next()` takes
 the next value of a JVM wide counter (`"p1"`, `"p2"`, ...), `scope.component("otlp:vl")` derives
 a component scope of the same instance. Not rendered in production; carried to the
-`LogTarget` factory only. Doc: the instance is a proxy (or whatever the caller groups, e.g. Main),
+`DiagnosticLogSink` factory only. Doc: the instance is a proxy (or whatever the caller groups, e.g. Main),
 the component names the part (`listener`, `admin`, `metrics`, `config-watcher`, `otlp:<name>`,
 `stdout:<name>`, `upstream:<name>`).
 
@@ -41,7 +41,7 @@ the component names the part (`listener`, `admin`, `metrics`, `config-watcher`, 
   created with `ProxyLogger.get(Class<?> source, LogScope scope)`, held in instance fields.
   `ProxyLogger.get(Class)` without scope is removed, so a static non-trace logger no longer
   compiles.
-- `LogTarget.of(String loggerName, LogScope scope)`; the `Factory` function takes both. The Log4j
+- `DiagnosticLogSink.of(String loggerName, LogScope scope)`; the `Factory` function takes both. The Log4j
   default ignores the scope (output unchanged). Trace loggers get `LogScope.NONE`.
 
 ### Plumbing (from the usage map)
@@ -65,7 +65,7 @@ the component names the part (`listener`, `admin`, `metrics`, `config-watcher`, 
 - Remove the unused `LOG` fields of `DeflectorHandler` and `IngressTimeoutHandler`.
 
 ### Test side
-- `LogSink`: buffers per `LogScope.instance()` instead of per thread (map of synchronized
+- `TestingLogSink`: buffers per `LogScope.instance()` instead of per thread (map of synchronized
   buffers); each `Entry` keeps the component. `add` does `notifyAll` on its buffer (lock is held
   anyway), so a waiter wakes at once.
 - `LogCapture` (JUnit extension, field as today): owns a fresh `LogScope.next()` per test,
@@ -94,7 +94,7 @@ the component names the part (`listener`, `admin`, `metrics`, `config-watcher`, 
   thread" (why: test isolation and waiting; the scope is not rendered), "Trace stays static"
   (JIT argument moved from the `ProxyLogger` doc), alternative considered: global sequence numbers
   with per-thread buffers (complicated, still needs unique predicates).
-- `AGENTS.md`: Security & Configuration Tips paragraph on `LogSink`/`LogCapture` rewritten
+- `AGENTS.md`: Security & Configuration Tips paragraph on `TestingLogSink`/`LogCapture` rewritten
   (capture by scope, no `@Isolated` for logs, `await`); the "React on the event" rule names
   `LogCapture.await` and `RequestLogCapture.awaitLine`; coding style: non-trace loggers are
   instance fields from a `LogScope`, only `TraceLogger` is `static final`.
@@ -103,7 +103,7 @@ the component names the part (`listener`, `admin`, `metrics`, `config-watcher`, 
 - `TODO.md`: remove the log part of "Instance scoped diagnostic logging and event driven waits".
 
 ## Order of work
-1. `LogScope`, `TraceLogger` split, `LogTarget` factory with scope, `LogSink`/`LogCapture` by
+1. `LogScope`, `TraceLogger` split, `DiagnosticLogSink` factory with scope, `TestingLogSink`/`LogCapture` by
    scope with `await` (+ their tests).
 2. Migrate main classes per the plumbing list; compile fixes the test sites.
 3. Migrate tests, drop `ofAllThreads`/`@Isolated`, replace polling with `await`.

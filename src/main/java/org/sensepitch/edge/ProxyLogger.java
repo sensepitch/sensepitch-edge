@@ -12,7 +12,7 @@ import java.util.List;
 
 /// Logging facade of the proxy, with methods that render channel ids consistently.
 ///
-/// Messages are forwarded to Log4j2 via [LogTarget], which also explains why diagnostics and
+/// Messages are forwarded to Log4j2 via [DiagnosticLogSink], which also explains why diagnostics and
 /// the request log go to different streams.
 ///
 /// ## Levels
@@ -88,11 +88,11 @@ public interface ProxyLogger {
 
   /// @param traceDisabled see [#TRACE_DISABLED]
   static ProxyLogger create(String source, boolean traceDisabled) {
-    LogTarget target = LogTarget.of(source);
+    DiagnosticLogSink sink = DiagnosticLogSink.of(source);
     if (traceDisabled) {
-      return new ErrorOnly(source, target);
+      return new ErrorOnly(source, sink);
     }
-    return new WithTracing(source, target);
+    return new WithTracing(source, sink);
   }
 
   /// Logger named after the fully qualified class name, so levels can be configured per package.
@@ -149,11 +149,12 @@ public interface ProxyLogger {
   }
 
   /// The hint appended to the message of the first occurrence of an event, naming its series,
-  /// e.g. `sensepitch_upstream_errors_total{type="closed_in_flight",upstream="a"}`. The label
-  /// names of a [Counter] are not public, so they are taken from the data point with the same
-  /// values in a snapshot of the counter, which costs only on the first occurrence.
+  /// e.g. `sensepitch_upstream_errors_total{type="closed_in_flight",upstream="a"}`. The labels are
+  /// taken from the data point with the same values in a snapshot of the counter, which renders
+  /// them as the exposition does and costs only on the first occurrence.
   static String firstOccurrenceHint(Counter counter, String[] labelValues) {
-    String series = counter.getPrometheusName() + "_total";
+    counter.getLabelNames()
+    String series = counter.getMetricFamilyDescriptor().getPrometheusName() + "_total";
     if (labelValues.length > 0) {
       List<String> values = Arrays.stream(labelValues).sorted().toList();
       series +=
@@ -193,25 +194,25 @@ public interface ProxyLogger {
   void error(String msg, Throwable cause);
 
   default String channelId(Channel channel) {
-    return LogTarget.localChannelId(channel);
+    return DiagnosticLogSink.localChannelId(channel);
   }
 
   abstract class BaseLogger implements ProxyLogger {
 
-    private final LogTarget target;
+    private final DiagnosticLogSink sink;
 
-    /// @param source unused, the source is the name of the logger behind `target`
-    public BaseLogger(String source, LogTarget target) {
-      this.target = target;
+    /// @param source unused, the source is the name of the logger behind `sink`
+    public BaseLogger(String source, DiagnosticLogSink sink) {
+      this.sink = sink;
     }
 
-    LogTarget target() {
-      return target;
+    DiagnosticLogSink sink() {
+      return sink;
     }
 
     @Override
     public void log(LogInfo record) {
-      target.log(record);
+      sink.log(record);
     }
 
     @Override
@@ -316,7 +317,7 @@ public interface ProxyLogger {
     }
 
     /// Logs at the level of the occurrence of `point`. The check for the first occurrence costs
-    /// a hash lookup without locking, see [LogTarget#firstOccurrence(CounterDataPoint)], the
+    /// a hash lookup without locking, see [DiagnosticLogSink#firstOccurrence(CounterDataPoint)], the
     /// message is only extended for the first one.
     private void warnOnce(
         CounterDataPoint point,
@@ -325,7 +326,7 @@ public interface ProxyLogger {
         Channel channel,
         String message,
         Throwable cause) {
-      boolean first = target.firstOccurrence(point);
+      boolean first = sink.firstOccurrence(point);
       log(
           LogInfo.builder()
               .level(first ? Level.WARNING : Level.DEBUG)
@@ -338,20 +339,20 @@ public interface ProxyLogger {
 
   class WithTracing extends BaseLogger {
 
-    public WithTracing(String source, LogTarget target) {
-      super(source, target);
+    public WithTracing(String source, DiagnosticLogSink sink) {
+      super(source, sink);
     }
 
     @Override
     public boolean isTraceEnabled() {
-      return target().isEnabled(Level.TRACE);
+      return sink().isEnabled(Level.TRACE);
     }
   }
 
   class ErrorOnly extends BaseLogger {
 
-    public ErrorOnly(String source, LogTarget target) {
-      super(source, target);
+    public ErrorOnly(String source, DiagnosticLogSink sink) {
+      super(source, sink);
     }
 
     @Override

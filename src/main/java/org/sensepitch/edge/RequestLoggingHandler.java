@@ -435,7 +435,7 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   @Override
   public String connectionId() {
-    return LogTarget.localChannelId(channel);
+    return DiagnosticLogSink.localChannelId(channel);
   }
 
   @Override

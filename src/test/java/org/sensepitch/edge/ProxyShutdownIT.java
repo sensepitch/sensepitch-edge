@@ -374,14 +374,12 @@ class ProxyShutdownIT {
                 .as("event loops stopped")
                 .isTrue();
             String endpoint = logEndpoint.get();
-            await(
+            logs.await(
                 "OTLP export failed against the stopped log server",
-                () ->
-                    logs.messages(OtlpLogDestination.class).stream()
-                        .anyMatch(
-                            message ->
-                                message.contains("Request log export to")
-                                    && message.contains(endpoint)));
+                entry ->
+                    entry.source().equals(OtlpLogDestination.class.getName())
+                        && entry.message().contains("Request log export to")
+                        && entry.message().contains(endpoint));
           } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new AssertionError("interrupted waiting for OTLP export failure", interrupted);

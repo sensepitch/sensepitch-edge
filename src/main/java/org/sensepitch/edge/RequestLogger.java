@@ -3,7 +3,7 @@ package org.sensepitch.edge;
 /// Receives every completed request, for writing the request log or for metrics.
 ///
 /// The request log is written directly to standard out, not through the logging framework,
-/// which sends diagnostics to standard error. See [LogTarget] for the rationale and
+/// which sends diagnostics to standard error. See [DiagnosticLogSink] for the rationale and
 /// [AsyncRequestLogWriter] for how it is written without blocking the event loops.
 ///
 /// @author Jens Wilke

@@ -119,8 +119,7 @@ class DualStackListenerIT {
 
     assertThat(take(forwardedForHeaders, "X-Forwarded-For")).isEqualTo(IPV4_LOOPBACK);
     assertThat(take(ipTraitsHeaders, "IP traits header")).contains("country=DE");
-    TestingParameters.await(
-        "IPv4 request log record is written", () -> !requestLog.lines().isEmpty());
+    requestLog.awaitLine("IPv4 request log record is written", line -> true);
     assertThat(requestLog.lines())
         .singleElement()
         .asString()
@@ -134,8 +133,7 @@ class DualStackListenerIT {
     request(IPV6_LOOPBACK, "Cookie: gate=1\r\n");
 
     assertThat(take(forwardedForHeaders, "X-Forwarded-For")).isEqualTo(IPV6_LOOPBACK_HOST_ADDRESS);
-    TestingParameters.await(
-        "IPv6 request log record is written", () -> !requestLog.lines().isEmpty());
+    requestLog.awaitLine("IPv6 request log record is written", line -> true);
     assertThat(requestLog.lines())
         .singleElement()
         .asString()

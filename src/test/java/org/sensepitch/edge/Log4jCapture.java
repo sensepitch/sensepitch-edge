@@ -15,7 +15,7 @@ import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 /// Collects the Log4j2 events of the whole JVM in memory for the duration of a test. Only for
-/// tests of the way into Log4j2 itself: the forwarding by [LogTarget.Log4jOutput], and Netty and
+/// tests of the way into Log4j2 itself: the forwarding by [DiagnosticLogSink.Log4jOutput], and Netty and
 /// JUL, which log to Log4j2 directly. Everything else asserts on the messages of the proxy's
 /// loggers with [LogCapture], which is separate per thread.
 ///

@@ -102,9 +102,9 @@ capture attached an appender to the Log4j2 root logger, so every capturing test 
 of all tests running at the same time, and 25 test classes captured, including all slow ones.
 
 Now the loggers of the proxy do not write to Log4j2 in tests.
-[`LogTarget.Factory`](../../src/main/java/org/sensepitch/edge/LogTarget.java) is replaced before
+[`DiagnosticLogSink.Factory`](../../src/main/java/org/sensepitch/edge/DiagnosticLogSink.java) is replaced before
 the first test class loads, by a JUnit `LauncherSessionListener`, with the
-[`LogSink`](../../src/test/java/org/sensepitch/edge/LogSink.java). It stores the records per
+[`TestingLogSink`](../../src/test/java/org/sensepitch/edge/TestingLogSink.java). It stores the records per
 logging thread; a test reads what its own thread logged.
 
 - A logger asks the factory once, when it is created, so production code pays nothing when
@@ -115,6 +115,11 @@ logging thread; a test reads what its own thread logged.
   maintainers state that it does not support concurrent tests.
 - Code that logs from its own threads, e.g. a sender or an event loop, cannot be read per thread.
   For it there is `LogCapture.ofAllThreads()`, at the price of `@Isolated`.
+- A test waits for a record of another thread with `LogCapture.await` instead of polling: each
+  record notifies the waiters on one monitor of the sink, and only while a waiter exists, so
+  logging takes no shared lock otherwise. `RequestLogCapture.awaitLine` does the same for the
+  request log. Both were added on 2026-11-27; a test of each would run into its 10 s bound
+  without the notification (`LogCaptureTest`, `RequestLogCaptureTest`).
 - Two details the first versions got wrong, both found by flaky tests: a thread that ended keeps
   its buffer until the next reset, otherwise what short lived threads logged disappears; and a
   pool thread that erases its thread locals between tasks gets its buffer back, not a new one.
@@ -372,6 +377,31 @@ so this is not needed.
 the manifest are fresh in every build. It saves 1.5 to 3 s, the start of Maven itself; the test
 JVMs are forked as before. Useful for single tests (3.1 s against 4.6 s), not a change to the
 build.
+
+### Capturing by instance scope instead of by thread
+
+Planned in [plans/instance-scoped-logging.md](../../plans/instance-scoped-logging.md): loggers as
+instance fields owned by a scope of the proxy or component, the capture reads the records of its
+scope from any thread, so `LogCapture.ofAllThreads()` and its `@Isolated` go away. Not done,
+measured on 2026-11-27 (Ryzen AI 7 PRO 360, 16 threads, `./mvnw -o test -Djacoco.skip`, wall
+clock of the Maven run):
+
+| Class | Tests | Time | `@Isolated` because of |
+| --- | --- | --- | --- |
+| `ConfigFileWatcherTest` | 24 | 0.203 s | the log of all threads |
+| `AsyncRequestLogWriterTest` | 13 | 0.028 s | the log of all threads |
+| `Log4jOutputTest` | 3 | 0.015 s | Log4j2, stays |
+| `LoggingTest` | 2 | 0.003 s | Log4j2, stays |
+| `OtlpLogDestinationIT` | 5 | 0.816 s | the log of all threads, integration test |
+| `ExternalTcpIT` | 9 | 0.750 s | the log of all threads, integration test |
+| `ProxyShutdownIT` | 7 | 0.598 s | the log of all threads, integration test |
+
+The scope would free the first two unit test classes, 0.23 s. All 1064 unit tests took 6.43,
+6.57 and 6.32 s, without those two classes (1027 tests) 6.86, 6.33 and 6.45 s: no difference
+beyond the noise. The integration tests run one after the other anyway, `@Isolated` costs them
+nothing. The refactoring would pass a logger into about 22 classes for clarity only; the waits it
+also promised came cheaper with `LogCapture.await` on the per thread capture. The idea is kept in
+`NOT-YET.md`.
 
 ## Limitations
 

@@ -134,7 +134,7 @@ class ExternalTcpIT {
     awaitListening();
     // the proxy logs after binding the port, wait for it, so the startup messages are not
     // captured after the clear
-    awaitLogged("Proxy listening");
+    logs.awaitMessage(Proxy.class, "Proxy listening");
     // clear only now, so startup and the readiness probe stay out of the assertions
     logs.clear();
   }
@@ -230,8 +230,7 @@ class ExternalTcpIT {
 
   /// The record is written when the response is sent, which can be after the client read it
   private String awaitRequestLog() throws Exception {
-    await("request log record is written", () -> !requestLog.lines().isEmpty());
-    return requestLog.lines().getFirst();
+    return requestLog.awaitLine("request log record is written", line -> true);
   }
 
   @Test
@@ -271,7 +270,9 @@ class ExternalTcpIT {
     awaitHandshakeErrors(SanitizeHostHandler.MISSING_HOST);
   }
 
-  /// Waits until a handshake error of the ingress was counted, the proxy counts asynchronously
+  /// Waits until a handshake error of the ingress was counted, the proxy counts asynchronously.
+  /// Polls the metric: a TLS decoder error or a reset in the handshake is counted only, no log
+  /// record could wake the test, see [ExceptionHandler].
   private void awaitHandshakeErrors(String ingress) throws Exception {
     String prefix =
         "sensepitch_ingress_request_errors_total{ingress=\"" + ingress + "\",phase=\"handshake\"";
@@ -436,12 +437,6 @@ class ExternalTcpIT {
   }
 
   /// Waits for startup logging before clearing the capture for a test.
-  private void awaitLogged(String messagePart) throws Exception {
-    await(
-        "proxy logs " + messagePart,
-        () -> proxyMessages().stream().anyMatch(m -> m.contains(messagePart)));
-  }
-
   /// Waits for the listener before a test opens its client connection.
   private void awaitListening() throws Exception {
     await(

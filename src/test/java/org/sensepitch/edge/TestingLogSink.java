@@ -8,12 +8,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.junit.platform.launcher.LauncherSession;
 import org.junit.platform.launcher.LauncherSessionListener;
 
-/// The [LogTarget] of all [ProxyLogger]s in tests: keeps the records in memory, per logging
+/// The [DiagnosticLogSink] of all [ProxyLogger]s in tests: keeps the records in memory, per logging
 /// thread, for [LogCapture]. Nothing is formatted and Log4j2 is not involved, a record is one
 /// thread local lookup and a list add.
 ///
@@ -31,7 +34,7 @@ import org.junit.platform.launcher.LauncherSessionListener;
 /// passed on to Log4j2 as well.
 ///
 /// @author Jens Wilke
-final class LogSink implements LogTarget {
+final class TestingLogSink implements DiagnosticLogSink {
 
   /// A captured record with the name of its logger
   record Entry(String source, LogInfo info) {}
@@ -100,10 +103,18 @@ final class LogSink implements LogTarget {
 
   private static volatile boolean installed;
 
-  private final String source;
-  private final LogTarget forward;
+  /// Monitor of the waiters in [#awaitAdded], one for the sink: a capture of all threads reads
+  /// the buffers of many threads, so a waiter cannot wait on one buffer
+  private static final Object ADDED = new Object();
 
-  private LogSink(String source) {
+  /// Threads in [#awaitAdded]. A record notifies only while there is one, so logging takes no
+  /// shared lock in the common case.
+  private static final AtomicInteger WAITERS = new AtomicInteger();
+
+  private final String source;
+  private final DiagnosticLogSink forward;
+
+  private TestingLogSink(String source) {
     this.source = source;
     this.forward = FORWARD ? Factory.log4j(source) : null;
   }
@@ -129,6 +140,11 @@ final class LogSink implements LogTarget {
     }
     if (info.level().getSeverity() >= Level.DEBUG.getSeverity()) {
       BUFFER.get().add(new Entry(source, info));
+      if (WAITERS.get() > 0) {
+        synchronized (ADDED) {
+          ADDED.notifyAll();
+        }
+      }
     }
   }
 
@@ -173,13 +189,40 @@ final class LogSink implements LogTarget {
     return entries;
   }
 
-  /// Makes this sink the target of all loggers before the first test class is loaded. Registered
+  /// Waits until `condition` holds, checking it again after each record of any thread, for
+  /// [LogCapture#await]. A wake-up is not lost: a record is added to its buffer before the
+  /// logger reads [#WAITERS], and a waiter counts itself before it checks the condition, so
+  /// either the check sees the record or the logger sees the waiter and notifies, which it can
+  /// only do once the waiter waits, since the waiter holds the monitor until then.
+  ///
+  /// @param deadlineNanos the [System#nanoTime()] at which to give up
+  /// @return whether the condition holds, `false` after the deadline
+  static boolean awaitAdded(BooleanSupplier condition, long deadlineNanos)
+      throws InterruptedException {
+    synchronized (ADDED) {
+      WAITERS.incrementAndGet();
+      try {
+        while (!condition.getAsBoolean()) {
+          long remaining = deadlineNanos - System.nanoTime();
+          if (remaining <= 0) {
+            return false;
+          }
+          TimeUnit.NANOSECONDS.timedWait(ADDED, remaining);
+        }
+        return true;
+      } finally {
+        WAITERS.decrementAndGet();
+      }
+    }
+  }
+
+  /// Makes this sink the sink of all loggers before the first test class is loaded. Registered
   /// in `META-INF/services`, so it also applies to tests started from an IDE.
   public static final class Installer implements LauncherSessionListener {
 
     @Override
     public void launcherSessionOpened(LauncherSession session) {
-      Factory.replace(LogSink::new);
+      Factory.replace(TestingLogSink::new);
       installed = true;
     }
   }

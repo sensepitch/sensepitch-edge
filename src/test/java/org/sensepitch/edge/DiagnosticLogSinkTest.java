@@ -7,29 +7,29 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-/// [ProxyLogger] and the formatting of [LogTarget], captured per thread. The way into Log4j2 needs
+/// [ProxyLogger] and the formatting of [DiagnosticLogSink], captured per thread. The way into Log4j2 needs
 /// the JVM wide capture and is in [Log4jOutputTest].
 ///
 /// @author Jens Wilke
-public class LogTargetTest {
+public class DiagnosticLogSinkTest {
 
   @RegisterExtension LogCapture logs = new LogCapture();
 
   @Test
   public void proxyLoggerUsesClassNameAndKeepsCause() {
     Throwable error = new Throwable("expected");
-    ProxyLogger.get(LogTargetTest.class).error("failed", error);
-    assertThat(logs.messages(LogTargetTest.class)).containsExactly("failed");
+    ProxyLogger.get(DiagnosticLogSinkTest.class).error("failed", error);
+    assertThat(logs.messages(DiagnosticLogSinkTest.class)).containsExactly("failed");
     assertThat(logs.errors().getFirst().error()).isSameAs(error);
   }
 
-  static final String NAME = LogTargetTest.class.getName();
+  static final String NAME = DiagnosticLogSinkTest.class.getName();
 
   /// Tracing is available by default, the level decides. Tests run the proxy's loggers at TRACE,
   /// see `log4j2-test.xml`. The trace calls are run for coverage, their output is not checked.
   @Test
   public void defaultLoggerTraces() {
-    ProxyLogger log = ProxyLogger.get(LogTargetTest.class);
+    ProxyLogger log = ProxyLogger.get(DiagnosticLogSinkTest.class);
     assertThat(log).isInstanceOf(ProxyLogger.WithTracing.class);
     assertThat(log.isTraceEnabled()).isTrue();
     EmbeddedChannel down = new EmbeddedChannel(new ChannelInboundHandlerAdapter());
@@ -53,12 +53,12 @@ public class LogTargetTest {
     log.trace(channel, channel, "both");
     log.traceChannelRead(channel.pipeline().firstContext(), "a message");
     log.error("still logged");
-    assertThat(logs.messages(LogTargetTest.class)).containsExactly("still logged");
+    assertThat(logs.messages(DiagnosticLogSinkTest.class)).containsExactly("still logged");
   }
 
   @Test
   public void errorsWarningsAndInfo() {
-    ProxyLogger log = ProxyLogger.get(LogTargetTest.class);
+    ProxyLogger log = ProxyLogger.get(DiagnosticLogSinkTest.class);
     EmbeddedChannel down = new EmbeddedChannel();
     EmbeddedChannel up = new EmbeddedChannel();
     String d = down.id().asShortText();
@@ -71,7 +71,7 @@ public class LogTargetTest {
     log.error("plain", cause);
     log.warn("a warning");
     log.info("an info");
-    assertThat(logs.messages(LogTargetTest.class))
+    assertThat(logs.messages(DiagnosticLogSinkTest.class))
         .containsExactly(
             d,
             d + " with message",
@@ -90,7 +90,7 @@ public class LogTargetTest {
     EmbeddedChannel channel = new EmbeddedChannel();
     LogInfo info =
         LogInfo.builder().channel(channel).operation("channel read").message("a message").build();
-    assertThat(LogTarget.format(info))
+    assertThat(DiagnosticLogSink.format(info))
         .isEqualTo(channel.id().asShortText() + " channel read a message");
   }
 }

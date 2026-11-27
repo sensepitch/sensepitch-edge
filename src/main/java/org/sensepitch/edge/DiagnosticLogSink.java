@@ -25,32 +25,32 @@ import org.apache.logging.log4j.Logger;
 /// without filtering.
 ///
 /// @author Jens Wilke
-public interface LogTarget {
+public interface DiagnosticLogSink {
 
-  /// Target of the logger with the given name, forwarding to Log4j2 unless replaced, see
+  /// Sink of the logger with the given name, forwarding to Log4j2 unless replaced, see
   /// [Factory]
-  static LogTarget of(String loggerName) {
+  static DiagnosticLogSink of(String loggerName) {
     return Factory.current.apply(loggerName);
   }
 
-  /// Creates the targets of all loggers. A logger asks once when it is created, mostly for a
+  /// Creates the sinks of all loggers. A logger asks once when it is created, mostly for a
   /// `static final` field, so the indirection costs nothing when logging. Tests replace the
   /// factory before the first logger is created, to collect the messages in memory instead of
   /// passing them through Log4j2.
   final class Factory {
 
-    private static volatile Function<String, LogTarget> current = Factory::log4j;
+    private static volatile Function<String, DiagnosticLogSink> current = Factory::log4j;
 
     private Factory() {}
 
-    /// The default: a target forwarding to the Log4j2 logger with the given name
-    static LogTarget log4j(String loggerName) {
+    /// The default: a sink forwarding to the Log4j2 logger with the given name
+    static DiagnosticLogSink log4j(String loggerName) {
       return new Log4jOutput(LogManager.getLogger(loggerName));
     }
 
-    /// Loggers created from now on get their target from the given factory, existing loggers
+    /// Loggers created from now on get their sink from the given factory, existing loggers
     /// keep theirs
-    static void replace(Function<String, LogTarget> factory) {
+    static void replace(Function<String, DiagnosticLogSink> factory) {
       current = factory;
     }
   }
@@ -122,7 +122,7 @@ public interface LogTarget {
   void log(LogInfo info);
 
   /// Forwards to a Log4j2 logger. The log level of the record is mapped to the Log4j2 level.
-  class Log4jOutput implements LogTarget {
+  class Log4jOutput implements DiagnosticLogSink {
 
     private final Logger logger;
 

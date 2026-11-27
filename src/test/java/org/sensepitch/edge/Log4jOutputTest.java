@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.parallel.Isolated;
 
-/// The way of a record into Log4j2, [LogTarget.Log4jOutput], as in production. The loggers of the
-/// proxy do not write to Log4j2 in tests, see [LogSink]; the rest of the logging is in
-/// [LogTargetTest], which runs in parallel.
+/// The way of a record into Log4j2, [DiagnosticLogSink.Log4jOutput], as in production. The loggers of the
+/// proxy do not write to Log4j2 in tests, see [TestingLogSink]; the rest of the logging is in
+/// [DiagnosticLogSinkTest], which runs in parallel.
 ///
 /// @author Jens Wilke
 // alone: captures what arrives in Log4j2 and changes a Log4j2 level, both JVM wide
@@ -25,7 +25,7 @@ class Log4jOutputTest {
   @Test
   void errorIsForwardedToLog4jWithThrowable() {
     Throwable error = new Throwable("expected");
-    LogTarget.Factory.log4j("org.sensepitch.LoggingSource")
+    DiagnosticLogSink.Factory.log4j("org.sensepitch.LoggingSource")
         .log(LogInfo.builder().level(Level.ERROR).message("message text").error(error).build());
     assertThat(log4j.errors()).hasSize(1);
     LogEvent event = log4j.errors().getFirst();
@@ -37,7 +37,7 @@ class Log4jOutputTest {
   /// With Log4j2 as the target, as in production, the level of the Log4j2 logger decides
   @Test
   void levelDecidesForWithTracing() {
-    ProxyLogger log = new ProxyLogger.WithTracing(NAME, LogTarget.Factory.log4j(NAME));
+    ProxyLogger log = new ProxyLogger.WithTracing(NAME, DiagnosticLogSink.Factory.log4j(NAME));
     Configurator.setLevel(NAME, org.apache.logging.log4j.Level.INFO);
     try {
       assertThat(log.isTraceEnabled()).isFalse();
@@ -53,9 +53,10 @@ class Log4jOutputTest {
   @Test
   void levelMapping() {
     for (Level level : Level.values()) {
-      assertThat(LogTarget.Log4jOutput.toLog4j(level).name())
+      assertThat(DiagnosticLogSink.Log4jOutput.toLog4j(level).name())
           .isEqualTo(level == Level.WARNING ? "WARN" : level.name());
     }
-    assertThat(LogTarget.Log4jOutput.toLog4j(null)).isEqualTo(org.apache.logging.log4j.Level.INFO);
+    assertThat(DiagnosticLogSink.Log4jOutput.toLog4j(null))
+        .isEqualTo(org.apache.logging.log4j.Level.INFO);
   }
 }
