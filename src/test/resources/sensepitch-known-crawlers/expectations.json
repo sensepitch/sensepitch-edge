@@ -1,0 +1,201 @@
+[
+  {
+    "ip": "192.0.2.1",
+    "matches": [
+      {
+        "vendor": "example-search",
+        "listname": "crawler",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "192.0.2.63",
+    "matches": [
+      {
+        "vendor": "example-search",
+        "listname": "crawler",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "192.0.2.64",
+    "matches": [
+      {
+        "vendor": "example-ai",
+        "listname": "user-fetcher",
+        "tier": 1
+      },
+      {
+        "vendor": "example-search",
+        "listname": "crawler",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "192.0.2.127",
+    "matches": [
+      {
+        "vendor": "example-ai",
+        "listname": "user-fetcher",
+        "tier": 1
+      },
+      {
+        "vendor": "example-search",
+        "listname": "crawler",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "192.0.2.128",
+    "matches": []
+  },
+  {
+    "ip": "192.0.2.200",
+    "matches": [
+      {
+        "vendor": "example-ai",
+        "listname": "user-fetcher",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "192.0.2.201",
+    "matches": []
+  },
+  {
+    "ip": "192.0.2.255",
+    "matches": []
+  },
+  {
+    "ip": "198.51.100.1",
+    "matches": [
+      {
+        "vendor": "example-seo",
+        "listname": "audit",
+        "tier": 2
+      }
+    ]
+  },
+  {
+    "ip": "198.51.100.127",
+    "matches": [
+      {
+        "vendor": "example-seo",
+        "listname": "audit",
+        "tier": 2
+      }
+    ]
+  },
+  {
+    "ip": "198.51.100.128",
+    "matches": [
+      {
+        "vendor": "example-seo",
+        "listname": "audit",
+        "tier": 2
+      },
+      {
+        "vendor": "example-hooks",
+        "listname": "webhooks",
+        "tier": 3
+      }
+    ]
+  },
+  {
+    "ip": "198.51.100.255",
+    "matches": [
+      {
+        "vendor": "example-seo",
+        "listname": "audit",
+        "tier": 2
+      },
+      {
+        "vendor": "example-hooks",
+        "listname": "webhooks",
+        "tier": 3
+      }
+    ]
+  },
+  {
+    "ip": "203.0.113.7",
+    "matches": [
+      {
+        "vendor": "example-cdn",
+        "listname": "edge",
+        "tier": 3
+      }
+    ]
+  },
+  {
+    "ip": "8.8.8.8",
+    "matches": []
+  },
+  {
+    "ip": "2001:db8:1::1",
+    "matches": [
+      {
+        "vendor": "example-search",
+        "listname": "crawler",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "2001:db8:1:5::1",
+    "matches": [
+      {
+        "vendor": "example-ai",
+        "listname": "user-fetcher",
+        "tier": 1
+      },
+      {
+        "vendor": "example-search",
+        "listname": "crawler",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "2001:db8:1:5::2",
+    "matches": [
+      {
+        "vendor": "example-search",
+        "listname": "crawler",
+        "tier": 1
+      }
+    ]
+  },
+  {
+    "ip": "2001:db8:2::1",
+    "matches": []
+  },
+  {
+    "ip": "2001:db8:3:ffff::1",
+    "matches": [
+      {
+        "vendor": "example-cdn",
+        "listname": "edge",
+        "tier": 3
+      }
+    ]
+  },
+  {
+    "ip": "2001:db8:4::abcd",
+    "matches": [
+      {
+        "vendor": "example-train",
+        "listname": "bot",
+        "tier": 3
+      }
+    ]
+  },
+  {
+    "ip": "2606:4700::1",
+    "matches": []
+  }
+]

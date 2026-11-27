@@ -108,7 +108,6 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   Research with sources and the evidence for each point:
   [ip-database-volume-draft.md](doc/design/ip-database-volume-draft.md).
   - P1.
-  - BLOCKED: choose the volume and update interval below before implementing the chart.
   - Facts: IPinfo Lite `ipinfo_lite.mmdb` is 23.71 MB, updated daily, CC BY-SA 4.0, downloaded
     with an account token. A Secret or ConfigMap holds at most 1 MiB, so neither can carry it.
     `ConfigFileWatcher` already reloads by itself when the file is renamed into place.
@@ -123,9 +122,11 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
       every update is a pod restart
     - [ ] D. baked into the edge image; every update is an image build and rollout, and the
       public image redistributes CC BY-SA data
+    - [x] edge gets writable volume and does regular updates by itself, access token and 
+      maybe URL for IPInfo needs to be confiugres
   - Update interval, tick one; A and B reach the running edge through the watcher, C and D
     through a rollout restart:
-    - [ ] daily, IPinfo's cadence
+    - [x] daily, IPinfo's cadence, confurable check interval with HTTP validator skipping if nothing is new
     - [ ] less often, e.g. weekly, to save transfer
   - Then: a chart values block for the chosen volume, its operator documentation (item 15), and
     a test that the running watcher picks up a renamed database without a `reload` call.
@@ -147,29 +148,44 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 
 ## Protection, admission
 
+- [ ] Crawler detection: Drop embedded IP lists and have a configuration field that points to a set
+  to the zips of sesnepitch-known-crawlers. An axample is in the test resources.
+  Further configuration options: 
+  - admittedTierLevel: E.g. if is 2, tier 1 and tier 2 lists are considered and treated as crawlers
+  - excludeTypes: list of type tags to exclude
+  Log and headers should include the types and list tier
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
-  - BLOCKED: stateless enforcement is selected. Replay handling, reuse, timing and migration
-    remain open.
   - P3: today a challenge is a bare timestamp and an answer can be replayed for five minutes,
-    each replay minting another admission. Tick the open choices before implementing:
+    each replay minting another admission. All choices are decided (2026-11-27); the next step
+    is the implementation plan:
     - [x] enforcement, decided: Option A of the draft, a stateless idempotent token. The
       challenge becomes random and signed, and the admission token is derived
       deterministically from it, so a replay on any replica returns the same token without shared
       state. Not chosen: B (node-local consumed-challenge set), C (cluster-wide shared store),
       D (node-local set propagated to the peers).
-    - [ ] replay handling: idempotent success, or strict rejection plus a replay metric
-    - [ ] permitted reuse: unlimited requests per admission until expiry, or a per-token budget
+    - [x] replay handling, decided: idempotent success, a replay gets the same token; no
+      consumed set and no replay metric. Not chosen: strict rejection plus a replay metric
+    - [x] permitted reuse, decided: unlimited requests per admission until expiry
+      (`admissionMaxAgeMillis`). Not chosen: a per-token budget
     - [x] site binding, decided: none. A challenge and its admission are valid on every site
       sharing the generator secret, so an admission can be accepted across domains without a new
       proof of work; sites that must stay separate use separate secrets
-    - [ ] carry an admission to another domain, since cookies are host-only (see the draft's
-      limitations)
-    - [ ] challenge lifetime and clock-skew window; key rotation and overlap period
-    - [ ] migration policy for the current unsigned challenge and token format
+    - [x] timing, decided: a challenge is valid for five minutes after its signed issue time and
+      up to 30 seconds in the future (clock skew). The challenge key is derived from the
+      generator secret with its own label; rotation reuses `tokenGenerators`, so a removed
+      generator must have been unused for issuing for at least lifetime plus skew. The
+      `sensepitch-ch` cookie's `Max-Age` follows the challenge lifetime
+    - [x] migration, decided: unsigned challenges are rejected from the upgrade on, so a page
+      loaded before it re-solves once; admission tokens of the old format stay valid until they
+      expire, told apart by a version prefix
   - Stays here as a security issue until implemented. With Option A, replaying an answer on
     any node or site returns the same token, so replay no longer mints new admissions.
+- [ ] carry an admission to another domain, since cookies are host-only, e.g. a redirect that
+  sets the cookie there or a cookie on a common parent domain; see the limitations of the
+  [replay draft](doc/design/admission-replay-draft.md). Without it a browser solves once per
+  domain, as today
 - [ ] pass the browser traits of the challenge answer (`webdriver`, timezone) on with the
   admission, so later requests and the upstream see them; see
   [browser fingerprinting](doc/design/browser-fingerprinting.md)

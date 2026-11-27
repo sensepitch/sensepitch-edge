@@ -1,14 +1,13 @@
 # Admission replay protection (draft)
 
-**Draft, enforcement (Option A) and no host binding decided, the rest open.** This is the
+**Draft, all policy choices decided (2026-11-27), not yet implemented.** This is the
 research for the `TODO.md` entry "restrict admissions per solved challenge". It covers
 [`TimeBasedChallenge`](../../src/main/java/org/sensepitch/edge/TimeBasedChallenge.java),
 [`ChallengeGenerationAndVerification`](../../src/main/java/org/sensepitch/edge/ChallengeGenerationAndVerification.java),
 [`Deflector`](../../src/main/java/org/sensepitch/edge/Deflector.java) and
 [`DefaultAdmissionTokenGenerator`](../../src/main/java/org/sensepitch/edge/DefaultAdmissionTokenGenerator.java).
 It records the replay threat, compares enforcement and coordination options, and names the policy
-choices that the maintainer has to tick before implementation. Only the enforcement choice and
-the absence of a host binding are decided.
+choices; the maintainer's decisions are in "Decisions" below.
 
 The flow and code references were checked against `main` at `af435f6` on 2026-11-20 and
 rechecked at `c59c848` on 2026-11-24; the commits in between do not change the replay facts. The
@@ -386,8 +385,52 @@ Option D only if cluster-wide rejection is wanted and a store is not.
 A per-token request budget should not be added speculatively: it puts state on the hottest path
 and its memory cost is driven by five-day token retention.
 
-The maintainer has since chosen Option A for enforcement (2026-11-24); the remaining choices are
-still open and listed in `TODO.md`.
+The maintainer has since decided all choices, see "Decisions".
+
+## Decisions
+
+### Stateless idempotent token (Option A)
+
+Decided 2026-11-24. One solve yields one token on every replica without shared state or a new
+failure mode on the answer path, see "Option A".
+
+### No site binding
+
+Decided 2026-11-24. A challenge and its admission are valid on every site sharing the generator
+secret, so an admission can be accepted across domains without a new proof of work; separation
+comes from separate generator secrets. How the admission reaches another domain is a separate
+`TODO.md` entry, see "Limitations".
+
+### A replay succeeds idempotently
+
+Decided 2026-11-27. A replayed answer gets 200 and the same token. No consumed-challenge set and
+no replay metric: a browser retrying after a lost response keeps working, and Option B would only
+give node-local visibility at the cost of state and broken retries. Consequence: replays are not
+visible in the metrics, see "Limitations".
+
+### Unlimited use until expiry
+
+Decided 2026-11-27. An admission is a bearer credential valid until `admissionMaxAgeMillis`, as
+today. A per-token budget would put five-day state on the hottest path, see "Admission reuse
+limits"; none of the investigated products limits cookie use. Abnormal use is the separate
+`TODO.md` entry.
+
+### Five minutes lifetime, 30 seconds skew, rotation through `tokenGenerators`
+
+Decided 2026-11-27. A challenge is accepted for five minutes after its signed issue time, the
+current window, and at most 30 seconds in the future, instead of today's five minutes, so a
+client can no longer stretch a value to ten minutes. The challenge key is derived from the
+generator secret with its own label; rotation reuses the `tokenGenerators` list, so no second
+secret format is needed. A generator must stay configured for at least lifetime plus skew after
+it stopped issuing, otherwise outstanding answers fail. The `sensepitch-ch` cookie's `Max-Age`
+follows the challenge lifetime instead of 30 days.
+
+### Hard cut for unsigned challenges, old tokens expire naturally
+
+Decided 2026-11-27. Unsigned challenges are rejected from the upgrade on: the cost is one
+re-solve for a page loaded before the upgrade, and accepting them longer would keep the replay
+hole open. Admission tokens of the old format stay valid until they expire, told apart by a
+version prefix, so no visitor loses an admission at the rollout.
 
 ## Observability and verification plan
 
@@ -587,8 +630,10 @@ this draft. RFC 6238 (TOTP), RFC 5849 (OAuth 1) and RFC 8555 (ACME nonces) were 
   only prevents one solve from creating more than one token.
 - The memory estimates for Option B are arithmetic assumptions, not measurements; a real map's
   overhead, concurrency and eviction policy must be measured before choosing a cap.
-- The draft does not decide whether old, unsigned challenges or old token formats remain
-  acceptable during a rollout. A mixed fleet needs an explicit migration and retirement window.
+- With the hard cut for unsigned challenges, a mixed fleet during a rolling upgrade rejects
+  answers to challenges issued by an old replica on a new one, and vice versa; the browser
+  re-solves.
+- Replays succeed silently: no metric tells a replay from a first answer.
 - The HMAC tag protects challenge fields, but a compromised generator secret still allows an
   attacker to mint challenges and tokens. Key compromise is out of scope.
 - The admission token keeps its existing 32-bit checksum unless the format is versioned. The
@@ -603,6 +648,6 @@ this draft. RFC 6238 (TOTP), RFC 5849 (OAuth 1) and RFC 8555 (ACME nonces) were 
 
 ## Planned improvements
 
-The open choices and the follow-up are in the `TODO.md` entry "restrict admissions per solved
-challenge". Once the choices are ticked, this document becomes the basis for a decision document
-and the implementation, and the unchecked options move to the implementation plan.
+The implementation is the `TODO.md` entry "restrict admissions per solved challenge"; carrying
+an admission to another domain is a separate entry. With the implementation, this draft becomes
+the decision document.
