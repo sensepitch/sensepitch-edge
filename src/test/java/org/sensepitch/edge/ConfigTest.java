@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.StringReader;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.junit.jupiter.api.Test;
@@ -176,6 +177,52 @@ public class ConfigTest {
     obj = KeyInjector.injectAllMapKeys(obj);
     assertThat(obj.map().get("first").key()).isEqualTo("first");
     assertThat(obj.map().get("second").key()).isEqualTo("second");
+  }
+
+  /// A YAML key that looks like a number is a string map key, so it is injected as key
+  @Test
+  public void injectNumericYamlKey() {
+    Node root = new Yaml().compose(new StringReader("map:\n  123:\n    number: 1\n"));
+    AllFieldTypesConfig obj = RecordConstructor.construct(AllFieldTypesConfig.class, root);
+    obj = KeyInjector.injectAllMapKeys(obj);
+    assertThat(obj.map()).containsOnlyKeys("123");
+    assertThat(obj.map().get("123").key()).isEqualTo("123");
+  }
+
+  /// A map entry without value stays `null`, there is no record to inject the key into
+  @Test
+  public void injectKeySkipsNullValue() {
+    Map<String, TestWithKeyConfig> map = new LinkedHashMap<>();
+    map.put("empty", null);
+    AllFieldTypesConfig obj =
+        KeyInjector.injectAllMapKeys(AllFieldTypesConfig.builder().map(map).build());
+    assertThat(obj.map()).containsEntry("empty", null);
+  }
+
+  /// A map built in code with a key that is not a string is rejected, not left without key
+  @Test
+  public void injectKeyRejectsNonStringKey() {
+    AllFieldTypesConfig obj = configWithRawMapKey(123);
+    assertThatThrownBy(() -> KeyInjector.injectAllMapKeys(obj))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "Map key of AllFieldTypesConfig.map must be a string, was: 123 (java.lang.Integer)");
+  }
+
+  @Test
+  public void injectKeyRejectsNullKey() {
+    AllFieldTypesConfig obj = configWithRawMapKey(null);
+    assertThatThrownBy(() -> KeyInjector.injectAllMapKeys(obj))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("Map key of AllFieldTypesConfig.map must be a string, was: null");
+  }
+
+  /// Bypasses the generic map type, like a caller with a raw or unchecked map would
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static AllFieldTypesConfig configWithRawMapKey(Object key) {
+    Map raw = new LinkedHashMap<>();
+    raw.put(key, TestWithKeyConfig.builder().number(1).build());
+    return AllFieldTypesConfig.builder().map(raw).build();
   }
 
   /// Debugging aid, logs the YAML node tree

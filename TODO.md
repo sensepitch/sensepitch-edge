@@ -73,10 +73,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported on the recent run; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
-- [ ] `KeyInjector`: a map key that is not a string leaves the record's `key` unset
-  - P3: `getMethod("key", key.getClass())` finds no `key(Integer)` for a YAML key like `123:`,
-    the `NoSuchMethodException` is ignored. Inferred from the code, not verified with YAML. Use
-    the key as string or reject it with a clear message.
 
 ## Kubernetes, direct node ingress
 

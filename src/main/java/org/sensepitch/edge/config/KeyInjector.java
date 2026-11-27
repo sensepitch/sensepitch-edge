@@ -7,18 +7,21 @@ import java.util.Map;
 import org.sensepitch.edge.HasKey;
 
 /// If a configuration record has a key field, then the key is automatically assigned with the
-/// mapping key.
+/// mapping key. [HasKey] defines the key as string: the YAML loading always produces string map
+/// keys, a map built in code with another key type is rejected instead of leaving `key` unset.
 public class KeyInjector {
 
   private KeyInjector() {}
 
-  /// Walks through all Map<K,V> components of any record R, and for each V that has
-  /// toBuilder()/build() and a key(K) setter on its builder, injects the map-key into its 'key'
-  /// component.
+  /// Walks through all Map<K,V> components of any record R, and for each V that is a [HasKey]
+  /// record with toBuilder()/build() and a key(String) setter on its builder, injects the map-key
+  /// into its 'key' component. A `null` value, e.g. `api:` in YAML, is kept as it is.
   ///
   /// @param obj any record with a toBuilder()/build() builder
   /// @param <R> record type
   /// @return a brand-new record of type R with all nested maps updated
+  /// @throws IllegalArgumentException if the map key of a [HasKey] value is not a string
+  /// @throws IllegalStateException if a [HasKey] record has no key(String) builder setter
   @SuppressWarnings("unchecked")
   public static <R> R injectAllMapKeys(R obj) {
     try {
@@ -44,14 +47,19 @@ public class KeyInjector {
           if (val != null
               && val.getClass().isRecord()
               && HasKey.class.isAssignableFrom(val.getClass())) {
+            if (!(key instanceof String)) {
+              throw new IllegalArgumentException(
+                  "Map key of "
+                      + clazz.getSimpleName()
+                      + "."
+                      + name
+                      + " must be a string, was: "
+                      + (key == null ? "null" : key + " (" + key.getClass().getName() + ")"));
+            }
             Method valueToBuilder = val.getClass().getMethod("toBuilder");
             Object valueBuilder = valueToBuilder.invoke(val);
-            try {
-              Method keySetter = valueBuilder.getClass().getMethod("key", key.getClass());
-              keySetter.invoke(valueBuilder, key);
-            } catch (NoSuchMethodException ignored) {
-              // no key(...) method: skip
-            }
+            Method keySetter = valueBuilder.getClass().getMethod("key", String.class);
+            keySetter.invoke(valueBuilder, key);
             Method build = valueBuilder.getClass().getMethod("build");
             val = build.invoke(valueBuilder);
           }
