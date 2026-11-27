@@ -119,9 +119,10 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     }
   }
 
-  /// Called by the listener of the upstream connect. The upstream channel runs on the event loop
-  /// of the client channel, see [Upstream#connect], so this and the listener of the write run on
-  /// it as well and end a failed exchange at once.
+  /// Called by the listener of the upstream connect, on the event loop of the client channel, see
+  /// [Upstream#connect]. The listener of the write runs on the event loop of the upstream channel.
+  /// [DefaultUpstream] opens it on the client's loop, so a failed exchange ends at once; an
+  /// upstream on another loop hands the failure over to the client's loop.
   void forwardLastContentAndFlush(
       ChannelHandlerContext ctx, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
@@ -132,13 +133,19 @@ public class DownstreamHandler extends ChannelDuplexHandler {
               (ChannelFutureListener)
                   f -> {
                     if (!f.isSuccess()) {
-                      assert ctx.executor().inEventLoop();
-                      failExchange(
-                          ctx,
-                          future,
-                          f.cause(),
-                          RequestOutcome.UPSTREAM_WRITE_FAILED,
-                          HttpResponseStatus.valueOf(502, "Upstream write problem"));
+                      Runnable fail =
+                          () ->
+                              failExchange(
+                                  ctx,
+                                  future,
+                                  f.cause(),
+                                  RequestOutcome.UPSTREAM_WRITE_FAILED,
+                                  HttpResponseStatus.valueOf(502, "Upstream write problem"));
+                      if (ctx.executor().inEventLoop()) {
+                        fail.run();
+                      } else {
+                        ctx.executor().execute(fail);
+                      }
                     }
                   });
     } else {
@@ -165,6 +172,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       Throwable cause,
       RequestOutcome outcome,
       HttpResponseStatus status) {
+    assert ctx.executor().inEventLoop() : "exchange state changed off the client's event loop";
     if (upstreamChannelFuture != exchangeUpstream) {
       LOG.trace(ctx.channel(), "upstream failure after the exchange ended: " + cause);
       return;
@@ -178,7 +186,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     completeWithError(ctx, status);
   }
 
-  /// Called by the listener of the upstream connect, on the event loop of the client channel
+  /// Called by the listener of the upstream connect, on the event loop of the client channel. Uses
+  /// no state of this handler, so the upstream channel may run on another loop.
   void forwardContent(Future<Channel> future, HttpContent msg) {
     if (future.isSuccess()) {
       future.resultNow().write(msg);
@@ -195,6 +204,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// connection is closed without one: the client sees a truncated response, which it can tell
   /// from a complete one by the content length or the missing last chunk.
   void completeWithError(ChannelHandlerContext ctx, HttpResponseStatus status) {
+    assert ctx.executor().inEventLoop() : "exchange state changed off the client's event loop";
     dropUpstream();
     if (responseStarted) {
       responseStarted = false;

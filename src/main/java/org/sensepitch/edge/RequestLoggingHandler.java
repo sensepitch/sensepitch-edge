@@ -30,9 +30,9 @@ import javax.net.ssl.SSLSession;
 /// It also assigns each request its W3C trace context and sets the `traceparent` header that is
 /// sent to upstream, see [TraceContext] and [TraceContextConfig].
 ///
-/// Note on concurrency: there is no concurrent activity on this object. The downstream request
-/// comes from one thread, after submitting the upstream request, writes come from the upstream
-/// reading thread
+/// Note on concurrency: there is no concurrent activity on this object. All its events run on the
+/// event loop of the client channel; the writes of an upstream channel on another event loop are
+/// handed over to it by Netty, see [Upstream#connect].
 ///
 /// @author Jens Wilke
 public class RequestLoggingHandler extends ChannelDuplexHandler implements RequestBackedLogInfo {

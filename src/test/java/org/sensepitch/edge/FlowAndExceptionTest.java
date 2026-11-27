@@ -583,24 +583,6 @@ public class FlowAndExceptionTest {
         .isEqualTo(1);
   }
 
-  /// The upstream channel runs on the event loop of its client channel, see [DefaultUpstream], so
-  /// the listener of a failed upstream write ends the exchange at once, without a task on the
-  /// client's event loop. The connect completes here outside of `writeInbound`, which would run
-  /// such a task; nothing runs pending tasks before the checks.
-  @Test
-  public void upstreamWriteFailureEndsTheExchangeWithoutATaskHop() {
-    deferConnect = true;
-    failUpstreamWrites = true;
-    sendGetRequest();
-    pendingConnect.setSuccess(upstreamChannel(ingressChannel));
-    assertThat(ingressChannel.hasPendingTasks()).isFalse();
-    HttpResponse response = ingressChannel.readOutbound();
-    assertThat(response.status().code()).isEqualTo(502);
-    assertThat(response.status().reasonPhrase()).isEqualTo("Upstream write problem");
-    assertThat(ingressChannel.isOpen()).isFalse();
-    assertThat(requestLogCapture.outcomes()).containsExactly(RequestOutcome.UPSTREAM_WRITE_FAILED);
-  }
-
   /// An exception on the upstream connection while waiting for the response ends the ingress
   /// request with a 502 and closes the upstream.
   @Test

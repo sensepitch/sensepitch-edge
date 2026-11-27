@@ -10,9 +10,10 @@ import io.netty.util.concurrent.Future;
 public interface Upstream {
 
   /// Provides an upstream channel. The channel is connected to the ingress and writes everything
-  /// received to the ingress channel. The channel does its I/O on the ingress event loop extracted
-  /// from the context, so the listeners of the returned future and of the channel's writes are
-  /// called on it; the [DownstreamHandler] relies on that and does not hand them over to it.
+  /// received to the ingress channel. The listeners of the returned future are called on the
+  /// ingress event loop extracted from the context, the [DownstreamHandler] relies on that. The
+  /// channel itself may do its I/O on another event loop, then the listeners of its writes run
+  /// there; [DefaultUpstream] uses the ingress event loop, which saves the hops between loops.
   Future<Channel> connect(ChannelHandlerContext downstreamContext);
 
   /// Name of the upstream in the configuration, e.g. `upstreams.backend` or

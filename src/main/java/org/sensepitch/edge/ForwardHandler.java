@@ -30,6 +30,11 @@ import io.netty.util.ReferenceCountUtil;
 /// Only the [DownstreamHandler] knows whether it closed the upstream itself, e.g. after a timeout
 /// or a client abort, or whether the upstream went away; it counts and answers the latter.
 ///
+/// The fields of this handler are only used on the event loop of the upstream channel. It reaches
+/// the client channel only through Netty calls that hand over to the client's event loop (write,
+/// firing events into its pipeline, setting `AUTO_READ`), so the upstream channel may run on
+/// another event loop than the client channel, see [Upstream#connect].
+///
 /// @author Jens Wilke
 public class ForwardHandler extends ChannelInboundHandlerAdapter {
 

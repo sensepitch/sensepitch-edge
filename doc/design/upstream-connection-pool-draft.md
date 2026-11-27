@@ -81,6 +81,14 @@ Consequence: up to (event loops) x (max idle) idle connections per upstream, and
 a new connection while another loop has idle ones. With the round robin of accepted client
 connections over the loops, the partitions see about the same load.
 
+The handlers do not depend on it: `DownstreamHandler` hands the listener of a failed upstream
+write over to the client's loop when it runs on another one, and `ForwardHandler` reaches the
+client channel only through Netty calls that do the same. Asserts in `DownstreamHandler` catch
+exchange state changed off the client's loop, and
+[`UpstreamOnAnotherLoopTest`](../../src/test/java/org/sensepitch/edge/UpstreamOnAnotherLoopTest.java)
+runs an exchange with the upstream on a second loop. So a shared pool, or borrowing from another
+partition, stays possible without changes to the handlers.
+
 ### No connection moves between event loops
 
 Proposed. Netty 4.2.21 can do it: `AbstractChannel.AbstractUnsafe.register` accepts a channel

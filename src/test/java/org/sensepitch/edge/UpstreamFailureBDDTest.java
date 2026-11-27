@@ -301,11 +301,13 @@ class UpstreamFailureBDDTest {
       return this;
     }
 
+    /// The listener of the write ends the exchange at once, no task is run: the upstream runs on
+    /// the event loop of the client, see [DefaultUpstream]. An upstream on another event loop is
+    /// covered by [UpstreamOnAnotherLoopTest].
     @Step
     Steps when_the_upstream_write_fails() {
       failure = new IOException("Broken pipe");
       heldWrite.promise.setFailure(failure);
-      ingress.runPendingTasks();
       return this;
     }
 
