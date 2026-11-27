@@ -101,6 +101,10 @@ from the standalone chart. The numbers continue those of the Kubernetes section 
   report outcomes) and "deflector" to "protection" in general, or keep it as is. A metric rename
   breaks dashboards and alerts.
   - P3: decide ownership and migration/deprecation before renaming.
+- [ ] carry an admission to another domain, since cookies are host-only, e.g. a redirect that
+  sets the cookie there or a cookie on a common parent domain; see the limitations of the
+  [replay draft](doc/design/admission-replay-draft.md). Without it a browser solves once per
+  domain, as today
 
 ## Request log
 
@@ -193,6 +197,12 @@ the failure threshold for upstreams is under Upstream.
 - [ ] warmup before ready
   - P3: makes sense after cache is implemented, reload a previous cache content or define some URLs
     to spider through
+- [ ] restart a node ingress pod without refused connections: `SO_REUSEPORT` and DaemonSet
+  `maxSurge: 1`, the new pod binds next to the old one, which stops accepting once the new one
+  is ready (`shutdownAcceptGraceMillis`). Needs `hostNetwork` instead of the chosen `hostPort`,
+  and the Netty epoll or io_uring transport (today NIO, `Proxy`). See `TODO.md` Kubernetes
+  item 9.
+  - P3: until then a restart refuses connections on that node, accepted in item 9.
 - [ ] have good documentation, nice examples are: Envoy
   - Choose audience and deliverables: operator setup, reference configuration or architecture.
   - The operator documentation for the Kubernetes setup is in `TODO.md`, Kubernetes item 15.

@@ -67,24 +67,26 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   labelled ingress nodes, ports 80 and 443 on the node addresses. How the ports are bound decides
   whether a restart can overlap the old and the new pod.
   - P1.
-  - Port binding, tick one:
-    - [x] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
+  - Port binding, tick one; rule: first the option with the least extra configuration that works
+    in the most setups:
+    - [ ] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
       non-root need a capability; `capabilities.add: [NET_BIND_SERVICE]` is not effective for a
       non-root process without file capabilities on `java`, and the
       `net.ipv4.ip_unprivileged_port_start` sysctl is the node's in the host network namespace
       (inferred from the Kubernetes and Linux capability rules, verify on the cluster).
       `1-architecture.md` assumes the capability is enough.
-    - [ ] `hostPort` 80/443 to container ports 17080/17443: the pod stays non-root in its own
+    - [x] `hostPort` 80/443 to container ports 17080/17443: the pod stays non-root in its own
       network namespace; the CNI `portmap` plugin forwards with DNAT, which keeps the client
       address (verify with the chosen CNI). The scheduler allows one pod per host port and node,
-      so a restart cannot overlap.
+      so a restart cannot overlap. Verify on kind first (its default CNI supports `portmap`);
+      Cilium serves host ports only with its host port support enabled, list such CNI
+      prerequisites in the chart README (item 15)
   - Restart: with host ports a DaemonSet update stops the old pod before the new one binds
     (`maxSurge: 0`), and the node refuses connections in between. Tick one:
     - [x] accept it: browsers try the next address of the name; check the clients that matter,
       e.g. payment provider webhooks, which may not retry
-    - [x] Add as new task to NOT-YET.md: `SO_REUSEPORT` and DaemonSet `maxSurge: 1`: the new pod binds next to the old one,
-      which stops accepting once the new one is ready (`shutdownAcceptGraceMillis`). Needs
-      `hostNetwork` and the Netty epoll or io_uring transport (today NIO, `Proxy`).
+    - [ ] overlap with `SO_REUSEPORT`, parked in [NOT-YET.md](NOT-YET.md) under "Configuration,
+      operations"
   - The node firewall must let 80 and 443 through to the chosen path.
 - [x] 11. dual stack: the default `listen.address` `0.0.0.0` accepts IPv4 only, the nodes have
   IPv6 as well. Verify that `address: "::"` accepts both on one socket, and that an IPv4 client
@@ -148,12 +150,31 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 
 ## Protection, admission
 
-- [ ] Crawler detection: Drop embedded IP lists and have a configuration field that points to a set
-  to the zips of sesnepitch-known-crawlers. An axample is in the test resources.
-  Further configuration options: 
-  - admittedTierLevel: E.g. if is 2, tier 1 and tier 2 lists are considered and treated as crawlers
-  - excludeTypes: list of type tags to exclude
-  Log and headers should include the types and list tier
+- [ ] Crawler detection from the Sensepitch Known Crawlers release: drop the embedded IP lists
+  (`src/main/resources/crawler-ips/`, `CombinedIpTraitsLookup.readCrawlerIpLists`) and read the
+  release zips from a directory instead. The fixture and the pointer to the format description
+  are in `src/test/resources/sensepitch-known-crawlers/`; its `expectations.json` is the test
+  oracle for the matching. Breaking change allowed. Decided 2026-11-27:
+  - Scope: only the IP lists are replaced; the User-Agent list (`crawlers.tsv`,
+    `DetectCrawlerConfig`) stays unchanged.
+  - Configuration:
+    - directory of the zip files in the local file system; not set means no IP crawler
+      detection, startup logs one `WARNING`, the User-Agent list still applies
+    - `admittedTierLevel`, default `1`: feeds of tier 1 up to this level are admitted as
+      crawlers (tiers stand for trustworthiness, 1 is the most trusted)
+    - `excludeTypes`: tags; a feed with any excluded tag is not admitted
+  - Not admitted is not invisible: a match of a higher tier or an excluded feed is still
+    recognised and reported, it only does not bypass the challenge.
+  - Several matches (feeds overlap): the best admitted match decides, ordered by tier, then
+    vendor and list name, as in `expectations.json`. The request log and the headers list every
+    match in that order, each with vendor, list name, tier and tags; `IpTraits` carries a list
+    instead of one `crawlerName`.
+  - Updates: the directory is watched (`ConfigFileWatcher`), a zip renamed into place reloads
+    the lists; a broken zip or an unknown `meta.json` `version` keeps the previous lists and is
+    counted. The tier is taken from `meta.json`. The operator or a host job fills the directory.
+  - Metrics: the crawler counter gets a `tier` label and a `tag` label, one increment per tag of
+    the deciding match. Both values come from the configured data, not from the request, so the
+    cardinality is bounded by the loaded lists; check it stays small with the real release.
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
@@ -182,10 +203,6 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
       expire, told apart by a version prefix
   - Stays here as a security issue until implemented. With Option A, replaying an answer on
     any node or site returns the same token, so replay no longer mints new admissions.
-- [ ] carry an admission to another domain, since cookies are host-only, e.g. a redirect that
-  sets the cookie there or a cookie on a common parent domain; see the limitations of the
-  [replay draft](doc/design/admission-replay-draft.md). Without it a browser solves once per
-  domain, as today
 - [ ] pass the browser traits of the challenge answer (`webdriver`, timezone) on with the
   admission, so later requests and the upstream see them; see
   [browser fingerprinting](doc/design/browser-fingerprinting.md)

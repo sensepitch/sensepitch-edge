@@ -189,8 +189,11 @@ external-dns reads them. No separate DNS integration is needed. When a node leav
 controller removes its IP from the addresses before the pod drains. The drain time must be
 at least the DNS TTL.
 
-HostNetwork binds ports 80 and 443 on the node, so the provisioner adds the
-`NET_BIND_SERVICE` capability to the generated pod spec.
+HostNetwork binds ports 80 and 443 on the node. The provisioner was meant to add the
+`NET_BIND_SERVICE` capability to the generated pod spec, but for a non-root `java` without file
+capabilities that is not effective (inferred, not verified on a cluster). The standalone chart
+uses `hostPort` instead, see `TODO.md` Kubernetes item 9; the controller has to settle this
+before it offers HostNetwork mode.
 
 ### Client IP
 
