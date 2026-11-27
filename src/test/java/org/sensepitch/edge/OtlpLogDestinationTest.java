@@ -37,7 +37,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.zip.Deflater;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -52,8 +51,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 /// [FakeTime] drives the flush, the backoff and the post durations, a [FakeLogServer]
 /// takes the posts, and the test answers them. Everything runs in the test thread, so the log is
 /// captured per thread and the class runs in parallel with the others. The wire format
-/// (compression, headers, the exported record) is checked against a real log server, which
-/// [OtlpLogDestinationIT] also uses as its fixture.
+/// (compression, headers, the exported record) is checked against a real log server, started on
+/// the first use of [#endpoint()] only, which [OtlpLogDestinationIT] also uses as its fixture.
 ///
 /// New OTLP scenarios belong here. Outages as step chains (age limit, breaker, probes) are in
 /// [OtlpOutageBDDTest], timing details of the sender in [HttpBatchSenderTest].
@@ -102,12 +101,18 @@ class OtlpLogDestinationTest {
   volatile int status = 200;
   volatile CountDownLatch answerGate;
 
+  /// The real log server, `null` until a test uses [#endpoint()]
   HttpServer server;
+
   int port;
   OtlpLogDestination destination;
 
-  @BeforeEach
+  /// Starts the real log server unless it runs. Only the wire format tests need it, the tests on
+  /// simulated time do not pay for it.
   void startServer() throws IOException {
+    if (server != null) {
+      return;
+    }
     server = Loopback.httpServer();
     port = server.getAddress().getPort();
     startServerOn(server);
@@ -166,7 +171,9 @@ class OtlpLogDestinationTest {
     // under the answer, the post would fail with "header parser received no bytes", and the
     // sender would log the retry warning late, into the log capture of another test. Returns at
     // once when no exchange is running.
-    TestingParameters.stop(server);
+    if (server != null) {
+      TestingParameters.stop(server);
+    }
   }
 
   /// Bounds receipt of the next post, which the server queues before answering it.
@@ -176,11 +183,12 @@ class OtlpLogDestinationTest {
     return post;
   }
 
-  String endpoint() {
+  String endpoint() throws IOException {
+    startServer();
     return "http://" + Loopback.ADDRESS + ":" + port + "/v1/logs";
   }
 
-  OtlpConfig.Builder config() {
+  OtlpConfig.Builder config() throws IOException {
     return OtlpConfig.builder().endpoint(endpoint()).flushIntervalMillis(1);
   }
 

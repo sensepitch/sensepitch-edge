@@ -35,7 +35,12 @@ public class GeoLite2 {
             //          .ipInfoPath( System.getenv("HOME")
             //          + "/proj/ipinfo-lite/ipinfo_lite.mmdb")
             .build();
-    traitsLookup = CombinedIpTraitsLookup.create(cfg, new ProxyMetrics(), new ConfigFiles());
+    traitsLookup =
+        CombinedIpTraitsLookup.create(
+            cfg,
+            new ProxyMetrics(),
+            new ConfigFiles(),
+            CombinedIpTraitsLookup.readCrawlerIpLists());
     final String address = "80.187.82.121";
     lookup(address);
     lookup("93.189.29.26");

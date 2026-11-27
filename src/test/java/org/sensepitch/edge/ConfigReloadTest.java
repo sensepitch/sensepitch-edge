@@ -297,6 +297,9 @@ class ConfigReloadTest {
     assertThat(reload(withDatabase)).isTrue();
     assertThat(steps.proxy.state().ipTraitsLookup()).isNotSameAs(first);
     assertThat(steps.proxy.state().ipTraitsLookup().lookup(address).isoCountry()).isEqualTo("FR");
+    assertThat(((CombinedIpTraitsLookup) steps.proxy.state().ipTraitsLookup()).crawlerIpLists())
+        .as("the rebuilt lookup takes the parsed crawler lists over")
+        .isSameAs(((CombinedIpTraitsLookup) first).crawlerIpLists());
   }
 
   /// A reload that replaces the IP lookup keeps the old one open for now, so a connection
@@ -333,7 +336,8 @@ class ConfigReloadTest {
         CombinedIpTraitsLookup.create(
             IpLookupConfig.builder().ipInfoPath(database.toString()).build(),
             metrics,
-            new ConfigFiles());
+            new ConfigFiles(),
+            CombinedIpTraitsLookupTest.crawlerIpLists());
     InetAddress address = InetAddress.getByName("192.0.2.1");
     FakeTime time = new FakeTime();
     stateWithIpTraitsLookup(lookup)

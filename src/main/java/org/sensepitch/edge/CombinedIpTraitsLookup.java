@@ -28,13 +28,16 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
   private final IpLabelLookup ipLabelLookup;
   private final ProxyMetrics metrics;
 
-  /// Opens the configured databases and parses the shipped crawler IP lists. If construction
-  /// fails, closes the readers opened so far and suppresses cleanup failures on the original.
+  /// Opens the configured databases. If construction fails, closes the readers opened so far and
+  /// suppresses cleanup failures on the original.
   ///
   /// @param files records the database files, which the database readers open themselves
+  /// @param crawlerIpLists the parsed crawler IP lists, see [#readCrawlerIpLists()]; a reload
+  ///   passes those of the lookup it replaces, see [EdgeState#build]
   public static CombinedIpTraitsLookup create(
-      IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files) throws IOException {
-    return create(cfg, metrics, files, new ArrayList<>());
+      IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files, IpLabelLookup crawlerIpLists)
+      throws IOException {
+    return create(cfg, metrics, files, crawlerIpLists, new ArrayList<>());
   }
 
   /// Accumulates the readers owned by this attempt until the completed lookup takes ownership.
@@ -42,6 +45,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
       IpLookupConfig cfg,
       ProxyMetrics metrics,
       ConfigFiles files,
+      IpLabelLookup crawlerIpLists,
       List<IpTraitsCollector> collectors)
       throws IOException {
     try {
@@ -59,8 +63,6 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
         files.record(Path.of(cfg.ipInfoPath()));
         collectors.add(new IpInfoCountryAndAsnLookup(cfg.ipInfoPath()));
       }
-      TrieIpLabelLookup crawlerIpLists = readCrawlerIpLists();
-      LOG.info("IP lookup nodes: " + crawlerIpLists.getNodeCount());
       return new CombinedIpTraitsLookup(collectors, metrics, crawlerIpLists);
     } catch (Throwable failure) {
       closeAfterFailure(collectors.iterator(), failure);
@@ -77,6 +79,12 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
     this.collectors = List.copyOf(collectors);
     this.metrics = metrics;
     ipLabelLookup = crawlerIpLists;
+  }
+
+  /// The crawler IP lists, which a rebuilt lookup takes over instead of parsing them again, see
+  /// [EdgeState#build]. They are immutable and not released by [#close()].
+  IpLabelLookup crawlerIpLists() {
+    return ipLabelLookup;
   }
 
   /// Reads the published crawler IP lists named in `crawler-ips/index.txt`. Each address is labeled
@@ -97,6 +105,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
         }
       }
     }
+    LOG.info("IP lookup nodes: " + lookup.getNodeCount());
     return lookup;
   }
 

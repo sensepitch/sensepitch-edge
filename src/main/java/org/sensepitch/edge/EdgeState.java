@@ -47,7 +47,8 @@ record EdgeState(
   /// so on an exception the previous state can stay active.
   ///
   /// @param previous the active state, or `null` at startup. Unchanged upstreams, SSL contexts
-  ///   and an unchanged IP lookup are taken over from it.
+  ///   and an unchanged IP lookup are taken over from it, a rebuilt IP lookup takes over its parsed
+  ///   crawler IP lists.
   /// @param files reads the referenced files and records them, also those of a taken over IP
   ///   lookup
   static EdgeState build(
@@ -83,7 +84,12 @@ record EdgeState(
     } else {
       // a component, so the next state can tell whether the databases changed
       ConfigFiles ipFiles = files.component();
-      ipTraitsLookup = buildIpTraitsLookup(config.ipLookup(), ctx.metrics(), ipFiles);
+      ipTraitsLookup =
+          buildIpTraitsLookup(
+              config.ipLookup(),
+              ctx.metrics(),
+              ipFiles,
+              previous != null ? previous.ipTraitsLookup : IpTraitsLookup.NONE);
       ipLookupFiles = ipFiles.snapshot();
     }
     return new EdgeState(
@@ -98,13 +104,21 @@ record EdgeState(
         configId(config));
   }
 
+  /// Builds the IP lookup of a new state. The crawler IP lists are shipped and immutable, so they
+  /// are parsed only when `previous` has none, which saves the parse on a reload.
+  ///
+  /// @param previous the lookup of the active state, [IpTraitsLookup#NONE] at startup
   private static IpTraitsLookup buildIpTraitsLookup(
-      IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files) {
+      IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files, IpTraitsLookup previous) {
     if (cfg == null) {
       return IpTraitsLookup.NONE;
     }
     try {
-      return CombinedIpTraitsLookup.create(cfg, metrics, files);
+      IpLabelLookup crawlerIpLists =
+          previous instanceof CombinedIpTraitsLookup combined
+              ? combined.crawlerIpLists()
+              : CombinedIpTraitsLookup.readCrawlerIpLists();
+      return CombinedIpTraitsLookup.create(cfg, metrics, files, crawlerIpLists);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }

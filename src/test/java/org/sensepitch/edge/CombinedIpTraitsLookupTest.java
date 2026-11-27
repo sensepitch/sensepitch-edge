@@ -28,7 +28,11 @@ public class CombinedIpTraitsLookupTest {
   @Test
   public void crawlerName() throws IOException {
     var lookup =
-        CombinedIpTraitsLookup.create(IpLookupConfig.builder().build(), metrics, new ConfigFiles());
+        CombinedIpTraitsLookup.create(
+            IpLookupConfig.builder().build(),
+            metrics,
+            new ConfigFiles(),
+            CombinedIpTraitsLookup.readCrawlerIpLists());
     IpTraits amazonbot = lookup(lookup, "3.210.223.61");
     assertThat(amazonbot.crawlerName()).isEqualTo("amazon:amazonbot");
     IpTraits googlebot = lookup(lookup, "192.178.4.1");
@@ -195,7 +199,8 @@ public class CombinedIpTraitsLookupTest {
                         .build())
                 .build(),
             metrics,
-            files);
+            files,
+            crawlerIpLists());
     assertThat(files.snapshot().files()).containsKeys(country, asn);
     assertThat(lookup(lookup, "81.2.69.142").isoCountry()).isEqualTo("GB");
     assertThat(lookup(lookup, "1.128.0.1").asn()).isEqualTo(1221);
@@ -232,7 +237,9 @@ public class CombinedIpTraitsLookupTest {
 
     Throwable failure =
         catchThrowable(
-            () -> CombinedIpTraitsLookup.create(config, metrics, new ConfigFiles(), opened));
+            () ->
+                CombinedIpTraitsLookup.create(
+                    config, metrics, new ConfigFiles(), crawlerIpLists(), opened));
     assertThat(failure).isInstanceOf(InvalidDatabaseException.class);
     assertThat(opened).hasSize(3);
     try (var reader = opened.getLast()) {
@@ -258,7 +265,8 @@ public class CombinedIpTraitsLookupTest {
                 .geoIp2(GeoIp2Config.builder().asnDbPath(asn.toString()).build())
                 .build(),
             metrics,
-            files);
+            files,
+            crawlerIpLists());
     assertThat(files.snapshot().files()).containsKey(asn);
     assertThat(lookup(lookup, "1.128.0.1").asn()).isEqualTo(1221);
   }

@@ -44,15 +44,6 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     involved: a test log server that signals each post with a `Semaphore` or queue, a latch in the
     reload callback.
     `TestingParameters.await` stays where no hook exists.
-- [ ] Smaller repeated fixtures, checked 2026-11-26, not worth a change alone
-  - The crawler IP lists (13.5 ms per parse) are parsed 8 times per run now: 5 in
-    `ConfigReloadTest` (each rebuilt IP lookup), 3 in `CombinedIpTraitsLookupTest`. A rebuilt IP
-    lookup could take the lists over from the previous state, like the SSL contexts.
-  - `OtlpLogDestinationTest` starts a JDK `HttpServer` before each of its 28 tests, also those
-    that use the simulated transport only; a few ms each. Start it only in the tests that post
-    to it, when the class is touched anyway. Its slowest test, `limitDropsTheNewestRecords`
-    (1.45 s), spends the time in logging enough records to exceed the buffer limit, not in setup.
-  - `DetectCrawler` (0.4 ms) and `PublicIpv4Finder` (0.3 ms) per deflector: negligible.
 
 ## Bugs
 
