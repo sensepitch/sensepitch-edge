@@ -455,10 +455,11 @@
           </execution>
           <execution>
             <!-- coverage floor, slightly below the actual coverage, raise it when coverage improves.
-                 Set to the lowest of repeated runs: one line and one branch of ConfigFileWatcher
-                 (its test waits on the file system) are covered only in some runs, and
-                 Deflector.deriveServerIpv4Address varies by host NICs; lines stay at 0.9950 for public-IPv4 host headroom, branches raised after
-                 deterministic PublicIpv4Finder tests (2026-11-26: 0.95985 loopback), see TODO.md -->
+                 Set to the lowest of repeated runs: Deflector.deriveServerIpv4Address varies by
+                 host NICs; lines stay at 0.9950 for public-IPv4 host headroom. Branches raised
+                 after deterministic PublicIpv4Finder tests (2026-11-26: 0.95985 loopback) and
+                 again when the ConfigFileWatcher race was removed (2026-11-27: 0.96095 on a
+                 workstation, ConfigFileWatcher covered in 8 of 8 runs) -->
             <id>jacoco-check</id>
             <phase>verify</phase>
             <goals>
@@ -477,7 +478,7 @@
                     <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.9590</minimum>
+                      <minimum>0.9595</minimum>
                     </limit>
                   </limits>
                 </rule>

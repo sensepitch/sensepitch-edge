@@ -207,8 +207,8 @@ the failure threshold for upstreams is under Upstream.
     Probably real timers (retry backoff after 503, age limit), not verified. On 2026-11-25 a
     focused run of the class took 0.94 s, the first test 0.55 s of it with warm-up and server
     start, the others 0.15 s or less. What cannot move for coverage gets a fake clock instead,
-    see "Real time and races in the remaining tests" in
-    [TODO.md](TODO.md#fast-tests-without-flakiness).
+    see the planned improvements in the
+    [test speed design](doc/design/test-speed.md#planned-improvements).
 - [ ] Performance test: different Netty allocators, leak detection,
   `-XX:NativeMemoryTracking=summary`
   - P3: compare representative workloads and record throughput, latency and memory before choosing.

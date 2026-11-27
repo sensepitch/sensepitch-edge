@@ -132,6 +132,13 @@ logging thread; a test reads what its own thread logged.
 a semaphore signalled after each watcher check. The test waits and rechecks its reload assertion
 without running the watcher itself. A permit keeps a notification that arrived before the wait.
 
+A test that must act before the worker sees an event holds the worker in the same override
+(`holdWorker`, `releaseWorker`). `deletedAndRecreatedDirectoryIsWatchedAgain` needs this: the
+reload has to find the key of the deleted directory still registered. Without the hold the worker
+dropped that key first in 5 of 6 runs, and the replacement branch of `ConfigFileWatcher` was
+covered only sometimes, which kept the JaCoCo floor down. With it: covered in 8 of 8 runs
+(2026-11-27).
+
 ### Serenity: reporting is off, step objects are plain
 
 Serenity is used for the step chains of the `*BDDTest` classes. Its reporting is not used by the
@@ -445,9 +452,13 @@ also promised came cheaper with `LogCapture.await` on the per thread capture. Th
   `ProxyShutdownIT.unsentRecordsAreReported` drive the connection-drain and log-drain timeouts
   through `Proxy`'s shutdown clock and future-wait seam without real-time sleeps, and
   `awaitListening` in `ProxyShutdownIT`, `ExternalTcpIT` and `PlainHttpListenerIT` uses
-  `TestingParameters.EVENT_TIMEOUT`. Left: `ConfigFileWatcherTest`, see `TODO.md`.
+  `TestingParameters.EVENT_TIMEOUT`. Completed 2026-11-27: `ConfigFileWatcher` has no timer,
+  its test needs no clock; its race is removed, see "Config watcher tests wait on their own
+  fixture". Not converted, on purpose: the `MockTicker` users (`CircuitBreakerBDDTest`,
+  `TimeoutsTest`, `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no
+  scheduler; `AsyncRequestLogWriterTest` has no timer, it waits on latches; `ProxyOptionsTest`
+  (OTLP with a 1 ms flush) waits for the post as an event and asserts no timing.
 - **The Serenity report mode**: make the reports useful, or drop the mode together with the
   byte-buddy agent it needs.
 
-The fake clock is an entry in [`TODO.md`](../../TODO.md#fast-tests-without-flakiness), top
-priority since 2026-11-21; the report mode is in [`NOT-YET.md`](../../NOT-YET.md).
+The fake clock work is done; the report mode is in [`NOT-YET.md`](../../NOT-YET.md).

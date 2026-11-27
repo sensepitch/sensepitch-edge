@@ -19,19 +19,6 @@ First, because every other task depends on it: a quick test loop and a failure t
 means a defect speed up and secure all work below. Measurements, the fake clock library and what
 was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 
-- [ ] Real time and races in the remaining tests, against the rules for concurrent tests in
-  `AGENTS.md`
-  - P1: each one is slow or can fail on a loaded machine although the code is right.
-  - `ConfigFileWatcherTest`: no clock or scheduler seam, and the watcher waits on the file
-    system; the test stays in the unit scope meanwhile, see the coverage rule in `AGENTS.md`. One
-    line and one branch of `ConfigFileWatcher` are covered only in some runs, so the JaCoCo floor
-    in `pom.xml` has to sit below the best run.
-  - Not worth converting: the `MockTicker` users (`CircuitBreakerBDDTest`, `TimeoutsTest`,
-    `ResponseTimeoutBDDTest`, `MetricsExpositionTest`) need a ticker only, no scheduler.
-    `AsyncRequestLogWriterTest` has no timer to simulate, it waits on latches only.
-    `ProxyOptionsTest` (OTLP with a 1 ms flush) waits for the post as an event and asserts no
-    timing.
-
 ## Bugs
 
 - [ ] Check the nightly workflows, "Flaky tests":

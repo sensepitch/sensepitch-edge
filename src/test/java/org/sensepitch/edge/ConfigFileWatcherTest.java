@@ -47,17 +47,45 @@ class ConfigFileWatcherTest {
 
   @AutoClose ConfigFileWatcher activeWatcher;
 
-  /// Signals after a check has finished, including any reload it caused.
+  /// While set, the worker thread waits here before its next check, see [#holdWorker]
+  private volatile CountDownLatch workerRelease;
+
+  /// Counted down when the worker reached the hold
+  private final CountDownLatch workerHeld = new CountDownLatch(1);
+
+  /// Signals after a check has finished, including any reload it caused. Holds the worker before
+  /// a check while [#workerRelease] is set.
   ConfigFileWatcher watcher(Path file) {
     activeWatcher =
         new ConfigFileWatcher(file) {
           @Override
           void checkForChange() {
+            CountDownLatch release = workerRelease;
+            if (release != null
+                && Thread.currentThread().getName().equals(ConfigFileWatcher.WORKER_NAME)) {
+              workerHeld.countDown();
+              OtlpLogDestinationTest.awaitQuietly(release);
+            }
             super.checkForChange();
             checkedEvents.release();
           }
         };
     return activeWatcher;
+  }
+
+  /// Stops the worker thread before its next check, so it takes no further event until
+  /// [#releaseWorker()]: a change of `dir` wakes it, and it waits in [#watcher(Path)]. The test can
+  /// then change files and call the watcher without racing the worker.
+  void holdWorker() throws IOException, InterruptedException {
+    workerRelease = new CountDownLatch(1);
+    Files.writeString(dir.resolve("wake-the-worker"), "");
+    assertThat(workerHeld.await(EVENT_TIMEOUT.toNanos(), NANOSECONDS)).as("worker held").isTrue();
+  }
+
+  void releaseWorker() {
+    CountDownLatch release = workerRelease;
+    workerRelease = null;
+    release.countDown();
   }
 
   /// Waits for the watched change instead of polling the reload count, then checks that the
@@ -484,18 +512,27 @@ class ConfigFileWatcherTest {
     assertThat(proxy.attempts).hasValue(2);
   }
 
-  /// A deleted directory loses its registration, a reload attempt registers it again
+  /// A deleted directory loses its registration, a reload attempt registers it again. The worker
+  /// is held meanwhile, so the reload finds the key of the deleted directory still registered and
+  /// replaces it, which the worker would otherwise drop first in some runs; the stale key the
+  /// worker takes afterwards must not remove the new registration.
   @Test
   void deletedAndRecreatedDirectoryIsWatchedAgain() throws Exception {
     Path secrets = Files.createDirectory(dir.resolve("secrets"));
     Path secret = secrets.resolve("token");
     ConfigFileWatcher watcher = startWithSecret(dir.resolve("config.yaml"), secret);
-    Files.delete(secret);
-    Files.delete(secrets);
-    Files.createDirectory(secrets);
-    Files.writeString(secret, "recreated");
-    assertThat(watcher.forceReload()).isEqualTo(ReloadResult.APPLIED);
-    // the events of the parent directory may have reloaded already, a later check finds no change
+    holdWorker();
+    try {
+      Files.delete(secret);
+      Files.delete(secrets);
+      Files.createDirectory(secrets);
+      Files.writeString(secret, "recreated");
+      assertThat(watcher.forceReload()).isEqualTo(ReloadResult.APPLIED);
+    } finally {
+      releaseWorker();
+    }
+    assertThat(watcher.watchedDirectories()).contains(secrets.toAbsolutePath());
+    // the held check of the worker finds no change, the forced reload took the new state
     int before = reloads.get();
     Files.move(
         Files.writeString(secrets.resolve("tmp"), "rotated"),
