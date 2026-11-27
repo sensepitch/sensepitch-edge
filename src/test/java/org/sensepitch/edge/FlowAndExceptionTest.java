@@ -37,6 +37,7 @@ import java.net.SocketException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /// Request and response flow through [DownstreamHandler] and the upstream, and its error cases,
@@ -335,6 +336,32 @@ public class FlowAndExceptionTest {
     assertThat((Object) ingressChannel.readOutbound()).isInstanceOf(LastHttpContent.class);
     assertThat(upstreamChannel.isOpen()).isFalse();
     assertThat(ingressChannel.isOpen()).isTrue();
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    ", false, max-age=31536000",
+    "max-age=0, false, max-age=0",
+    "max-age=60, true, max-age=31536000"
+  })
+  void forwardedResponseCarriesOneHstsPolicy(String policy, boolean hopByHop, String expected) {
+    sendGetRequest();
+    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+    if (policy != null) {
+      response.headers().set("sTrIcT-TrAnSpOrT-SeCuRiTy", policy);
+    }
+    if (hopByHop) {
+      response.headers().set(HttpHeaderNames.CONNECTION, "Strict-Transport-Security");
+    }
+    try {
+      upstreamChannel.writeInbound(response, LastHttpContent.EMPTY_LAST_CONTENT);
+      rattle();
+      HttpResponse received = ingressChannel.readOutbound();
+      assertThat(received.headers().getAll("Strict-Transport-Security")).containsExactly(expected);
+    } finally {
+      ingressChannel.finishAndReleaseAll();
+      upstreamChannel.finishAndReleaseAll();
+    }
   }
 
   /// Upstream sends `Connection: close`, the upstream connection is closed like after every

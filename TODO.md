@@ -217,8 +217,6 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
   `EmbeddedChannel` tests
 - [ ] a TLS policy of the edge instead of the library defaults: pin and test the minimum
   TLS 1.2, decide on the suites without forward secrecy and with CBC/SHA-1
-- [ ] send `Strict-Transport-Security: max-age=31536000` on every response the upstream sends
-  without one, not configurable
 
 ## Ingress, HTTP
 

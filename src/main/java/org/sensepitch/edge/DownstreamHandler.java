@@ -20,6 +20,7 @@ import io.netty.handler.codec.http.HttpStatusClass;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.util.AsciiString;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
@@ -38,6 +39,10 @@ import java.net.InetSocketAddress;
 public class DownstreamHandler extends ChannelDuplexHandler {
 
   private static final ProxyLogger LOG = ProxyLogger.get(DownstreamHandler.class);
+
+  private static final AsciiString STRICT_TRANSPORT_SECURITY =
+      AsciiString.cached("Strict-Transport-Security");
+  private static final String DEFAULT_HSTS_POLICY = "max-age=31536000";
 
   private final Upstream upstream;
   private final ProxyMetrics metrics;
@@ -327,7 +332,12 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
       throws Exception {
     if (msg instanceof HttpResponse response) {
-      sanitizeResponseHeaders(response.headers());
+      HttpHeaders headers = response.headers();
+      sanitizeResponseHeaders(headers);
+      // forwarded and configured static responses, edge generated ones do not pass here
+      if (upstreamChannelFuture != null && !headers.contains(STRICT_TRANSPORT_SECURITY)) {
+        headers.set(STRICT_TRANSPORT_SECURITY, DEFAULT_HSTS_POLICY);
+      }
       informationalResponse = response.status().codeClass() == HttpStatusClass.INFORMATIONAL;
       if (!informationalResponse) {
         responseStarted = true;

@@ -384,6 +384,37 @@ class CompleteTest {
         .then_channel_open();
   }
 
+  /// A configured static response carries the default HSTS policy once, like a forwarded one. A
+  /// redirect only bare domain is the case HSTS exists for, see `encrypted-transport.md`.
+  @Test
+  void staticResponsesCarryOneHstsPolicy() {
+    ProxyConfig config =
+        COMMON_CONFIG.toBuilder()
+            .sites(
+                Map.of(
+                    "example.com",
+                    SiteConfig.builder()
+                        .response(
+                            ResponseConfig.builder().location("https://www.example.com/").build())
+                        .protection(ProtectionConfig.builder().disable(true).build())
+                        .paths(
+                            Map.of(
+                                "/text",
+                                PathRouteConfig.builder()
+                                    .response(ResponseConfig.builder().text("hello").build())
+                                    .build()))
+                        .build()))
+            .build();
+    steps = new Steps().given_initialized_proxy_with(config);
+    steps
+        .when_requesting("example.com", "/")
+        .then_the_response_location_header_is("https://www.example.com/")
+        .then_the_response_header_values_are("Strict-Transport-Security", "max-age=31536000")
+        .when_requesting("example.com", "/text")
+        .then_expect_content("hello")
+        .then_the_response_header_values_are("Strict-Transport-Security", "max-age=31536000");
+  }
+
   @AfterEach
   void finish() {
     steps.finish_and_check_for_leaks();
@@ -494,6 +525,12 @@ class CompleteTest {
     @Step
     Steps then_the_response_header_is(CharSequence name, String value) {
       assertThat(response.headers().get(name)).isEqualTo(value);
+      return this;
+    }
+
+    @Step
+    Steps then_the_response_header_values_are(CharSequence name, String... values) {
+      assertThat(response.headers().getAll(name)).containsExactly(values);
       return this;
     }
 

@@ -30,3 +30,8 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   deterministically instead of varying by whether the test host has a public IPv4. Developers, low
   importance, removes host-NIC coverage variance. From the
   `test-public-ipv4-finder-deterministically` turn, 2026-11-26.
+- Add the default `Strict-Transport-Security` also to responses the edge generates itself
+  (protection challenge, `FallbackHandler` pages, `ExceptionHandler` error pages, unserviced host
+  answers); today only forwarded and configured static responses (these responses simulate an upstream) carry it, since only those pass
+  `DownstreamHandler.write` with an upstream attached. Operators, medium importance, a client
+  whose first response is a challenge learns no policy.

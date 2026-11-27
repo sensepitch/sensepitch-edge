@@ -180,12 +180,20 @@ allow the invariant to be undermined, so there is none. The value is fixed to
 `max-age=31536000`, one year, without `includeSubDomains` and without `preload`: those two reach
 beyond the hosts the edge serves, they would break a plaintext subdomain served elsewhere, and a
 preload entry is hard to undo. If the upstream sends its own `Strict-Transport-Security`, the
-edge keeps it and adds none, so an application decides about `includeSubDomains` and `preload`
-itself, without configuration of the edge.
+edge keeps it and adds none, also `max-age=0` that clears a remembered policy, so an application
+decides about `includeSubDomains` and `preload` itself, without configuration of the edge.
+
+[`DownstreamHandler`](../../src/main/java/org/sensepitch/edge/DownstreamHandler.java) adds the
+header after it removed the hop-by-hop headers, to forwarded responses and to the static
+responses a site configures (`response:` with `location`, `text` or `file`). The static ones
+need it from the edge, because no upstream stands behind them that could send it and their
+configuration has no way to add headers. And a host that only redirects, like a bare domain to
+`www`, needs it most: users type the bare domain, so its first request is the one a browser
+would otherwise send in plaintext, and only an HSTS header from that host itself prevents that.
 
 The consequence: a host that moves from the edge to a plaintext server stays HTTPS only in the
-browsers that saw it, for up to a year. Under this design that is intended. The header is not sent
-yet, see [Planned improvements](#planned-improvements).
+browsers that saw it, for up to a year. Under this design that is intended. Responses the edge
+generates itself do not carry the header yet, see [Limitations](#limitations).
 
 ### Restricted Gateway API subset
 
@@ -221,15 +229,17 @@ handshake, connection reuse) and is decided on its own, see
 - The protocols and ciphers are library defaults, not a policy of the edge: TLS 1.2 is enabled
   with suites without forward secrecy and with CBC, see [Overview](#overview). Nothing tests
   that the minimum stays TLS 1.2.
-- No HSTS header yet, so a browser that types the bare host name goes over port 80 each time; the
-  redirect limits that to the first request of a connection.
 - The plain HTTP listener is counted, not logged: an individual request on port 80 cannot be
   investigated afterwards, see [Port 80 is counted, not logged](#port-80-is-counted-not-logged).
 - The fail closed check in the pipeline is missing, see [The invariant is structural, and
   verified where it is relied on](#the-invariant-is-structural-and-verified-where-it-is-relied-on).
+- Responses the edge generates itself carry no HSTS header: the protection challenge, the
+  fallback pages of `FallbackHandler`, the error pages of `ExceptionHandler` and the answers to
+  an unserviced host. They are written before `DownstreamHandler` or after it dropped the
+  upstream, see [HSTS always, not configurable](#hsts-always-not-configurable).
 - No HTTP/2 or HTTP/3 yet, and the connection to the upstream is plaintext.
 
 ## Planned improvements
 
 Listed in [`TODO.md`](../../TODO.md) under "Transport encryption": fail closed without a TLS
-session, a tested TLS policy, the HSTS header, HTTP/2 over TLS, and upstream TLS.
+session, a tested TLS policy, HTTP/2 over TLS, and upstream TLS.
