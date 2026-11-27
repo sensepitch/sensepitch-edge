@@ -153,7 +153,6 @@ public interface ProxyLogger {
   /// taken from the data point with the same values in a snapshot of the counter, which renders
   /// them as the exposition does and costs only on the first occurrence.
   static String firstOccurrenceHint(Counter counter, String[] labelValues) {
-    counter.getLabelNames()
     String series = counter.getMetricFamilyDescriptor().getPrometheusName() + "_total";
     if (labelValues.length > 0) {
       List<String> values = Arrays.stream(labelValues).sorted().toList();
