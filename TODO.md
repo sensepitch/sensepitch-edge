@@ -260,7 +260,42 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
       - [ ] on by default, e.g. 300 s
     - [ ] minimum upload rate
     - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
-- [ ] Protection for slow requests. Have a better protection than a per request timeout, which allows more time for legit uploads and stricter timerouts for simple GET requests which should arrive in one go. Do a research design draft first
+- [ ] Slow request protection: decide the options below, then implement the chosen ones. Research
+  and sources in the draft
+  [slow-request-protection-draft.md](doc/design/slow-request-protection-draft.md)
+  - P2. Today (read and measured on 2026-11-26): the head is already bounded by a total of
+    `readTimeoutSeconds` (30 s) from accept or from the end of the previous response, since the
+    codec emits it only when complete; a request without `Content-Length` and
+    `Transfer-Encoding` ends with its head (RFC 9112 6.3). The same timer is also the idle body
+    timeout and the keep-alive wait, so the head cannot be tightened alone. The body total
+    `requestTimeoutSeconds` is off by default, see the request size entry above.
+  - Head timeout:
+    - [ ] new `requestHeadTimeoutSeconds` in `listen.connection`, 408 when the head is not
+      complete in time
+    - [ ] keep `readTimeoutSeconds`, only document that it bounds the head in total
+  - Start of the head timer:
+    - [ ] at accept and at the end of the previous response, as today
+    - [ ] at the first byte of the head, with a separate keep-alive wait
+  - Requests without a body:
+    - [ ] nothing separate, the head timeout is their limit
+    - [ ] refuse a body in `GET`, `HEAD` and `DELETE`
+  - Body:
+    - [ ] minimum rate after a grace time, like Apache `MinRate`, capped by
+      `requestTimeoutSeconds`
+    - [ ] only `requestTimeoutSeconds`, on by default
+    - [ ] idle only, as today
+  - Overrides:
+    - [ ] body limits per site and per path
+    - [ ] listener level only
+  - Defaults:
+    - [ ] head 10 s
+    - [ ] head 20 s
+    - [ ] head 30 s, as today
+    - [ ] minimum body rate off
+    - [ ] minimum body rate 500 bytes/s after 20 s
+  - Metric phases:
+    - [ ] separate `head`, `body_idle`, `body_rate`, `request_total`
+    - [ ] today's phases plus `body_rate`
 
 ## Evergreen / Cleanups
 

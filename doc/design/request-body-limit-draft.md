@@ -277,8 +277,12 @@ None of these is decided. The choices are ticked in `TODO.md`.
   Also add TODO: Additionally. slow upload needs a separate investigation. Normal requests without body 
   should have a more tight timeout. Would an upstream usually give us an error when a body is sent but
   not expected, or, would the body always received?
-- [ ] A minimum upload rate after a grace period. More complex; how other servers do it was not
-  verified here.
+  Investigated in [slow-request-protection-draft.md](slow-request-protection-draft.md): the head
+  is already bounded in total by the read timeout, a request without `Content-Length` and
+  `Transfer-Encoding` ends with its head, and the options for a tighter head limit and a minimum
+  body rate are open choices there.
+- [ ] A minimum upload rate after a grace period. More complex; how Apache and Caddy do it is in
+  [slow-request-protection-draft.md](slow-request-protection-draft.md).
 - [ ] Only correct the `ConnectionConfig` doc: a body byte does reset the read timeout.
   The doc was corrected together with the total timeout above.
 
