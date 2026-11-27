@@ -158,6 +158,88 @@ public class ProxyMetrics implements HasMultipleMetrics {
     final String label = name().toLowerCase(Locale.ROOT);
   }
 
+  // upstream connection pool, see UpstreamConnectionPool
+
+  /// Connections opened to the upstream
+  public final Counter upstreamConnectionsOpened =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_upstream_connections_opened")
+              .help("Connections opened to the upstream")
+              .labelNames("upstream")
+              .build());
+
+  /// Exchanges sent on an idle connection of the pool instead of a new one
+  public final Counter upstreamConnectionsReused =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_upstream_connections_reused")
+              .help("Requests sent on a kept-alive connection instead of a new one")
+              .labelNames("upstream")
+              .build());
+
+  /// Open connections to the upstream, in use, idle and connecting, of all event loops: what
+  /// `connectionPool.maxConnections` limits
+  public final Gauge upstreamConnections =
+      metricSet.add(
+          Gauge.builder()
+              .name("sensepitch_upstream_connections")
+              .help("Open connections to the upstream, in use, idle and connecting")
+              .labelNames("upstream")
+              .build());
+
+  /// Exchanges refused because their event loop had its share of `maxConnections` open, see
+  /// [RequestOutcome#UPSTREAM_CONNECTION_LIMIT]
+  public final Counter upstreamConnectionLimit =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_upstream_connection_limit")
+              .help("Requests answered with 503, the connection limit of the upstream was reached")
+              .labelNames("upstream")
+              .build());
+
+  /// Idle connections in the pool, of all event loops
+  public final Gauge upstreamIdleConnections =
+      metricSet.add(
+          Gauge.builder()
+              .name("sensepitch_upstream_idle_connections")
+              .help("Idle kept-alive connections to the upstream")
+              .labelNames("upstream")
+              .build());
+
+  /// Idle connections closed, by [IdleCloseReason]
+  public final Counter upstreamIdleClosed =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_upstream_idle_closed")
+              .help("Idle connections to the upstream closed, by reason")
+              .labelNames("upstream", "reason")
+              .build());
+
+  /// The `reason` label of [#upstreamIdleClosed], the lower case name
+  public enum IdleCloseReason {
+    /// Idle for the configured `idleTimeoutMillis`
+    IDLE_TIMEOUT,
+    /// The upstream closed it or sent data while it was idle
+    CLOSED_BY_UPSTREAM,
+    /// A reload removed or changed the upstream
+    REMOVED;
+
+    final String label = name().toLowerCase(Locale.ROOT);
+  }
+
+  /// Exchanges sent again on a new connection after a reused connection failed before the
+  /// response, see [DownstreamHandler]
+  public final Counter upstreamRetries =
+      metricSet.add(
+          Counter.builder()
+              .name("sensepitch_upstream_retries")
+              .help(
+                  "Requests sent again on a new connection, after a kept-alive connection was"
+                      + " closed before the response")
+              .labelNames("upstream")
+              .build());
+
   /// Request log records that failed to render or write, see [RequestLoggingHandler]. The request
   /// outcome is counted before, in [#requestOutcomeCounter].
   public final Counter requestLogErrorCounter =

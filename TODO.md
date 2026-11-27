@@ -33,6 +33,7 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
   - Act only on what the workflows reported on the recent run; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
+- [ ] OtlpLogDestinationIT is running too long
 
 ## Kubernetes, direct node ingress
 

@@ -1,0 +1,16 @@
+rate 5000, maxIdle 32, TIME_WAIT before: 19
+Requests      [total, rate, throughput]         49996, 5000.03, 4999.85
+Duration      [total, attack, wait]             9.999s, 9.999s, 155.629µs
+Latencies     [min, mean, 50, 90, 95, 99, max]  81.041µs, 150.392ms, 351.122µs, 727.479ms, 970.844ms, 1.345s, 1.989s
+Bytes In      [total, mean]                     511948800, 10239.80
+Bytes Out     [total, mean]                     0, 0.00
+Success       [ratio]                           100.00%
+Status Codes  [code:count]                      0:1  200:49995  
+Error Set:
+Get "https://localhost:17443/10kb.img": dial tcp: lookup 127: no such host
+TIME_WAIT after: 13657
+sensepitch_upstream_connections_opened_total{upstream="sites.localhost.upstream"} 3465.0
+sensepitch_upstream_connections_reused_total{upstream="sites.localhost.upstream"} 46530.0
+sensepitch_upstream_idle_closed_total{reason="idle_timeout",upstream="sites.localhost.upstream"} 998.0
+sensepitch_upstream_idle_closed_total{reason="limit",upstream="sites.localhost.upstream"} 2418.0
+sensepitch_upstream_idle_connections{upstream="sites.localhost.upstream"} 17.0

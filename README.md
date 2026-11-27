@@ -98,7 +98,7 @@ Error Set:
 
 The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the request log to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. At the time of this benchmark, downstream and upstream operations could run on different threads.
 
-These numbers cannot be reproduced today. Without an upstream connection pool the edge opens and closes an upstream connection per request, each one holds a local port in `TIME_WAIT` for 60 s, which limits a Linux host with the default port range to about 470 requests per second per upstream address; above it the upstream connects fail with `502`. The run above probably still had the earlier pool, removed in `dea0ab4` (inferred, not verified). Measured on 2026-11-27 at 300 requests per second, below that limit: opening the upstream connection on the client channel's event loop, as the proxy does now, lowers the median latency from 0.51-0.58 ms to 0.41-0.44 ms, NGINX has 0.23 ms. Scripts, reports and the setup are in [performance-test/runs/2026-11-27-upstream-event-loop](performance-test/runs/2026-11-27-upstream-event-loop/README.md).
+These numbers could not be reproduced without an upstream connection pool: the edge then opened and closed an upstream connection per request, each one held a local port in `TIME_WAIT` for 60 s, which limited a Linux host with the default port range to about 470 requests per second per upstream address. The run above probably still had the earlier pool, removed in `dea0ab4` (inferred, not verified). With the current pool, see [Upstream connections](#upstream-connections), 98 % of the requests reuse a connection at 2 000 requests per second, 93 % at 10 000, where all requests succeed; from 5 000 on, the tail latency on the test workstation is in seconds, with the load generator on the same host, see [performance-test/runs/2026-11-27-upstream-pool](performance-test/runs/2026-11-27-upstream-pool/README.md). Measured on 2026-11-27 at 300 requests per second, below that limit: opening the upstream connection on the client channel's event loop, as the proxy does now, lowers the median latency from 0.51-0.58 ms to 0.41-0.44 ms, NGINX has 0.23 ms. Scripts, reports and the setup are in [performance-test/runs/2026-11-27-upstream-event-loop](performance-test/runs/2026-11-27-upstream-event-loop/README.md).
 
 Lets have a second look with a non saturating request rate of 10K:
 
@@ -311,6 +311,28 @@ warning:
 
 To see the details, enable debug for the package `org.sensepitch.edge` in the Log4j2
 configuration.
+
+### Upstream connections: `sensepitch_upstream_*{upstream="..."}`
+
+The kept-alive connections to the upstreams, see [Upstream connections](#upstream-connections),
+labelled by the upstream name:
+
+- `sensepitch_upstream_connections_opened_total`: connections opened. Compared with
+  `sensepitch_upstream_connections_reused_total`, the requests sent on a kept-alive connection,
+  it shows how well the connections are reused.
+- `sensepitch_upstream_connections`: open connections, in use, idle and connecting, of all event
+  loops; what `maxConnections` limits.
+- `sensepitch_upstream_connection_limit_total`: requests answered with `503`, because the
+  connection limit was reached. It should stay at zero; if not, raise `maxConnections` or look at
+  why the upstream is slow.
+- `sensepitch_upstream_idle_connections`: idle connections, of all event loops.
+- `sensepitch_upstream_idle_closed_total{reason}`: idle connections closed, `idle_timeout`,
+  `closed_by_upstream` (also when the upstream sent data to an idle connection) or `removed` (a
+  reload removed or changed the upstream). Many
+  `closed_by_upstream` mean the upstream's keep-alive timeout is shorter than `idleTimeoutMillis`.
+- `sensepitch_upstream_retries_total`: requests sent once more on a new connection, because a
+  kept-alive connection was closed before the response. A few are normal, many point to the same
+  timeout mismatch.
 
 ### `sensepitch_request_log_dropped_total{destination="..."}`
 
@@ -613,6 +635,45 @@ sites:
 | `/api/v2/x` | `api-v2` |
 | `/products` with cookie `beta` | `shop-beta` |
 | `/api/v2/x` with cookie `beta` | `api-beta` |
+
+### Upstream connections
+
+Connections to an upstream are kept open after a response and reused for the next requests
+(HTTP/1.1 keep-alive). Each event loop keeps its own idle connections and closes one after
+`idleTimeoutMillis` without a request; after a burst, the connections no longer needed are closed
+this way. Keep that time below the
+keep-alive timeout of the upstream server, otherwise the server closes connections just as the edge
+sends a request on them. Before, every request opened its own connection, which limited a host
+to about 470 requests per second per upstream address, see
+[performance-test/runs/2026-11-27-upstream-event-loop](performance-test/runs/2026-11-27-upstream-event-loop/README.md).
+
+````yaml
+upstreams:
+  api:
+    target: api:8080
+    connectionPool:
+      enable: true            # default; false opens a connection per request
+      idleTimeoutMillis: 4000 # default
+      maxConnections: 10000   # default, all connections to this upstream
+````
+
+`maxConnections` limits all connections to the upstream, open, idle and connecting, so the edge
+does not run out of local ports and does not overwhelm the upstream. The event loops share it
+evenly: each may open `maxConnections` divided by the number of event loops, rounded down. A
+request that needs a further connection is answered with `503` and the outcome
+`upstream_connection_limit`; there is no queue. The limit applies also with `enable: false`.
+
+- The headers that only apply to the client connection (`Connection` and the headers it names,
+  `Keep-Alive`, `Proxy-Connection`, `Upgrade`, `TE`, `Trailer`) are not forwarded to the upstream;
+  a client's `Connection: close` does not close the upstream connection. Before, they were
+  forwarded.
+- If an upstream closes a kept-alive connection just as a request is sent on it, a request with
+  the method GET, HEAD, OPTIONS, TRACE, PUT or DELETE and without a body is sent once more on a new
+  connection. Other requests get a `502`, as before.
+- A connection is reused only after a complete response that allows keep-alive; after an error, a
+  timeout or a client that left, it is closed.
+
+The design is in [doc/design/upstream-connection-pool.md](doc/design/upstream-connection-pool.md).
 
 ### Several sites for one host
 
@@ -1040,6 +1101,7 @@ to see at a glance whether the edge, the upstream or the client is involved. The
 |---|---|
 | `completed` | the response was sent completely, whoever produced it, see `sensepitch.response.source` |
 | `upstream_connect_failed` | the connection to the upstream failed (502) |
+| `upstream_connection_limit` | the upstream had `connectionPool.maxConnections` connections open (503) |
 | `upstream_write_failed` | forwarding the request to the upstream failed (502) |
 | `upstream_closed` | the upstream closed the connection before its response was complete (502, or the client connection is closed if the response had started). Before, the request waited for `upstream_timeout` |
 | `upstream_timeout` | the upstream did not respond within the response timeout (504) |

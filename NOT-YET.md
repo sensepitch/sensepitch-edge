@@ -5,6 +5,53 @@ node ingress, see [TODO.md](TODO.md). Moved out of `TODO.md` on 2026-11-21; the 
 their text, numbers and priorities from there. An entry moves back to `TODO.md` when it becomes a
 need, e.g. a bug or a production requirement. Bugs and robustness issues are never parked here.
 
+## Upstream pool fine tuning
+
+- enable -> disable
+- finanlise metric names
+- max age, see below
+
+## Benchmark: edge against NGINX, done fairly
+
+- [ ] Rebuild the comparison in `performance-test/runs/2026-11-27-upstream-pool` on `shb` and
+  replace the numbers of the README benchmark section
+  - P2, operator-visible only through the README: today's README numbers (2025, vegeta, edge with
+    the earlier pool) and most numbers of 2026-11-27 compare unequal setups.
+  - Findings of 2026-11-27 that the plan builds on, in the run README
+    [2026-11-27-upstream-pool](performance-test/runs/2026-11-27-upstream-pool/README.md):
+    - vegeta is the bottleneck on one machine: at a requested 40k req/s it reached 28 to 30k, the
+      machine 93 % busy with NGINX on 3.7 cores. `h2load` 1.71 and `shb` (io_uring) reach about
+      50k for both servers at 100 connections.
+    - A freshly started edge needs a warm-up (JIT): without one the first seconds take 10 cores
+      and dominate the tail; 10 s at 1 000 req/s are enough.
+    - NGINX logs every request to standard out (the image links `access.log` to `/dev/stdout`);
+      that costs it 19 % (64.8k to 52.5k req/s with `shb`), the request log of the edge 7 %
+      (47.3k to 43.8k). With both logs off the edge reaches 73 % of NGINX, with both on 83 %.
+      Earlier "edge equals NGINX" results compared NGINX with its log against the edge without.
+    - Without the warm-up and with vegeta, the latency tails at 5k and 10k came from the cold
+      start, not from the request log.
+  - Plan:
+    1. `compare.sh` on `shb` instead of vegeta: per step a fresh server (edge JVM or NGINX
+       container), warm-up with `shb` for 10 s (discarded), then 10 s measured with `-j` (JSON),
+       the summary table built from the JSON: requests per second, errors, p50, p90, p99,
+       p99.9.
+    2. Variants per step: NGINX and the edge, each with its log on and off
+       (`NGINX_PROXY_ACCESS_LOG=off`, `SENSEPITCH_EDGE_REQUEST_LOG_DISABLED=true`), at 10, 100
+       and 1 000 connections (closed loop: `shb` sends as fast as answers come).
+    3. Three runs per variant, the table reports median and range, so a single bad run (seen
+       up to a factor of three in the p90) does not decide.
+    4. CPU per variant: the machine busy share and the server's cores, average of the samples 6
+       to 8 of 10 as in `compare.sh` today, and from it cores per 10 000 req/s, the fairest
+       figure while the client shares the machine.
+    5. Optional, if the machine stays above 80 % busy: pin `shb` and the server to separate
+       cores (`taskset`) and run once more, to see how much the shared CPU changes the ratio.
+    6. Optional: HTTP/2 (`shb --http2`, NGINX `http2 on`, the edge where it supports it) and
+       later HTTP/3, which `shb` and `h2load` both speak.
+    7. Results: the run README gets the new tables and replaces the probe tables measured
+       without a warm-up; the README benchmark section gets the fair numbers (logs on and off,
+       tool, machine, date) instead of the 2025 vegeta run, and keeps one sentence on why the
+       old numbers differ.
+
 ## Kubernetes, Gateway API controller
 
 The Gateway API implementation with its Go controller (milestones M1 to M3, plan in
@@ -90,10 +137,16 @@ Decisions, alternatives and limitations are in
 
 ## Upstream
 
-- [ ] upstream connection pool with keep-alive (an earlier version was disabled 2025-09-20 and
-  removed, see git history); then expose pool metrics via Prometheus
-  - P2: decide the open choices of the draft
-    [upstream-connection-pool-draft.md](doc/design/upstream-connection-pool-draft.md)
+- [ ] upstream connection pool, follow-ups of
+  [upstream-connection-pool.md](doc/design/upstream-connection-pool.md):
+  - maximum requests per connection and maximum connection age (NGINX: 1000, 1 h), so a DNS change
+    of the upstream takes effect
+  - a queue at `maxConnections` instead of the immediate `503`, with a timeout (Envoy
+    `max_pending_requests`, HAProxy `timeout queue`)
+  - borrowing an idle connection of another event loop when the own partition is empty, or its
+    share of `maxConnections` is used up
+  - preconnect (Envoy `per_upstream_preconnect_ratio`)
+  - P3: no operator asked yet; the pool works without them.
 - [ ] cache upstream responses with cache2k in netty buffers
 - [ ] Allow cache to be tiered on disk and Redis
   - P2 relatively important so we don't have restart spikes

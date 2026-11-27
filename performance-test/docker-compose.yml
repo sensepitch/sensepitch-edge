@@ -9,7 +9,10 @@ services:
 #    ports:
 #      - "80:80"     # HTTP → redirect
 #      - "443:443"   # HTTPS termination
+    # the image fills ${...} of a template from the environment into conf.d at start
+    environment:
+      NGINX_PROXY_ACCESS_LOG: ${NGINX_PROXY_ACCESS_LOG:-/var/log/nginx/access.log main}
     volumes:
-      - ./nginx-proxy/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./ssl/nginx.crt:/etc/nginx/ssl/nginx.crt:ro
       - ./ssl/nginx.key:/etc/nginx/ssl/nginx.key:ro

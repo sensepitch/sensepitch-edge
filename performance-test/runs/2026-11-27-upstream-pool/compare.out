@@ -1,0 +1,59 @@
+| Rate | Server | Request log | Success | p50 | p90 | p99 | Machine busy | Server cores |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:80
+wait-for-it.sh: 172.21.0.2:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:443
+wait-for-it.sh: 172.21.0.3:443 is available after 0 seconds
+| 5000 | nginx | - | 100.00% | 265.68µs | 526.743µs | 889.705µs | 20 % | 0.5 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:80
+wait-for-it.sh: 172.21.0.3:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:443
+wait-for-it.sh: 172.21.0.2:443 is available after 0 seconds
+wait-for-it.sh: waiting 30 seconds for localhost:17443
+wait-for-it.sh: localhost:17443 is available after 1 seconds
+| 5000 | edge | on | 100.00% | 257.623µs | 464.78µs | 15.468ms | 19 % | 0.7 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:80
+wait-for-it.sh: 172.21.0.3:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:443
+wait-for-it.sh: 172.21.0.2:443 is available after 0 seconds
+wait-for-it.sh: waiting 30 seconds for localhost:17443
+wait-for-it.sh: localhost:17443 is available after 1 seconds
+| 5000 | edge | off | 100.00% | 237.234µs | 425.987µs | 13.706ms | 17 % | 0.5 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:80
+wait-for-it.sh: 172.21.0.2:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:443
+wait-for-it.sh: 172.21.0.3:443 is available after 0 seconds
+| 10000 | nginx | - | 100.00% | 191.581µs | 447.504µs | 5.358ms | 29 % | 0.7 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:80
+wait-for-it.sh: 172.21.0.2:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:443
+wait-for-it.sh: 172.21.0.3:443 is available after 0 seconds
+wait-for-it.sh: waiting 30 seconds for localhost:17443
+wait-for-it.sh: localhost:17443 is available after 1 seconds
+| 10000 | edge | on | 100.00% | 235.531µs | 5.191ms | 126.626ms | 39 % | 1.4 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:80
+wait-for-it.sh: 172.21.0.2:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:443
+wait-for-it.sh: 172.21.0.3:443 is available after 0 seconds
+wait-for-it.sh: waiting 30 seconds for localhost:17443
+wait-for-it.sh: localhost:17443 is available after 1 seconds
+| 10000 | edge | off | 100.00% | 224.83µs | 23.013ms | 527.653ms | 28 % | 0.8 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:80
+wait-for-it.sh: 172.21.0.2:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:443
+wait-for-it.sh: 172.21.0.3:443 is available after 0 seconds
+| 20000 | nginx | - | 100.00% | 1.018ms | 31.027ms | 238.774ms | 86 % | 3.5 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:80
+wait-for-it.sh: 172.21.0.2:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:443
+wait-for-it.sh: 172.21.0.3:443 is available after 0 seconds
+wait-for-it.sh: waiting 30 seconds for localhost:17443
+wait-for-it.sh: localhost:17443 is available after 1 seconds
+| 20000 | edge | on | 100.00% | 5.394ms | 87.746ms | 327.824ms | 86 % | 4.5 |
+wait-for-it.sh: waiting 10 seconds for 172.21.0.3:80
+wait-for-it.sh: 172.21.0.3:80 is available after 0 seconds
+wait-for-it.sh: waiting 10 seconds for 172.21.0.2:443
+wait-for-it.sh: 172.21.0.2:443 is available after 0 seconds
+wait-for-it.sh: waiting 30 seconds for localhost:17443
+wait-for-it.sh: localhost:17443 is available after 1 seconds
+| 20000 | edge | off | 100.00% | 12.248ms | 5.052s | 6.279s | 98 % | 6.6 |

@@ -1,0 +1,43 @@
+Linux 7.0.0-42-generic (gonzo) 	11/27/2026 	_x86_64_	(16 CPU)
+
+05:45:35 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:36 PM  1000   1202345  427.00   62.00    0.00    0.00  489.00    13  java
+05:45:36 PM  1000   1202942  242.00   51.00    0.00    0.00  293.00    12  vegeta
+
+05:45:36 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:37 PM  1000   1202345   56.00   33.00    0.00    0.00   89.00    13  java
+05:45:37 PM  1000   1202942  198.00   27.00    0.00    0.00  225.00    12  vegeta
+
+05:45:37 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:38 PM  1000   1202345   65.00   35.00    0.00    0.00  100.00    13  java
+05:45:38 PM  1000   1202942  201.00   34.00    0.00    0.00  235.00    12  vegeta
+
+05:45:38 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:39 PM  1000   1202345   67.00   34.00    0.00    0.00  101.00    13  java
+05:45:39 PM  1000   1202942  214.00   26.00    0.00    0.00  240.00    12  vegeta
+
+05:45:39 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:40 PM  1000   1202345   69.00   32.00    0.00    0.00  101.00    13  java
+05:45:40 PM  1000   1202942  211.00   29.00    0.00    0.00  240.00    12  vegeta
+
+05:45:40 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:41 PM  1000   1202345   66.00   36.00    0.00    0.00  102.00    13  java
+05:45:41 PM  1000   1202942  214.00   28.00    0.00    0.00  242.00    12  vegeta
+
+05:45:41 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:42 PM  1000   1202345   63.00   34.00    0.00    0.00   97.00    13  java
+05:45:42 PM  1000   1202942  208.00   28.00    0.00    0.00  236.00    12  vegeta
+
+05:45:42 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:43 PM  1000   1202345   61.00   40.00    0.00    0.00  101.00    13  java
+05:45:43 PM  1000   1202942  208.00   30.00    0.00    0.00  238.00    12  vegeta
+
+05:45:43 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:44 PM  1000   1202345   64.00   38.00    0.00    0.00  102.00    13  java
+05:45:44 PM  1000   1202942  222.00   27.00    0.00    0.00  249.00    12  vegeta
+
+05:45:44 PM   UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+05:45:45 PM  1000   1202345   83.00   36.00    0.00    0.00  119.00     7  java
+
+Average:      UID       PID    %usr %system  %guest   %wait    %CPU   CPU  Command
+Average:     1000   1202345  102.10   38.00    0.00    0.00  140.10     -  java

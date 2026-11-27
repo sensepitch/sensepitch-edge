@@ -11,6 +11,10 @@ server {
     listen 443 ssl;
     server_name _;
 
+    # the image links the log to standard out; NGINX_PROXY_ACCESS_LOG=off switches it off, to
+    # compare with the edge without its request log, see docker-compose.yml
+    access_log ${NGINX_PROXY_ACCESS_LOG};
+
     ssl_certificate     /etc/nginx/ssl/nginx.crt;
     ssl_certificate_key /etc/nginx/ssl/nginx.key;
 

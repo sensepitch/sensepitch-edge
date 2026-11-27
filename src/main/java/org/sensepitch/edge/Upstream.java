@@ -31,6 +31,38 @@ public interface Upstream {
     return null;
   }
 
+  /// Ends the use of the channel of an exchange. A pooling upstream keeps a `reusable` channel for
+  /// the next exchange, see [DefaultUpstream]; otherwise, and by default, the channel is closed.
+  ///
+  /// @param reusable the exchange ended cleanly and the connection is ready for the next request,
+  ///   see [DownstreamHandler]
+  default void release(Channel channel, boolean reusable) {
+    channel.close();
+  }
+
+  /// Like [#connect(ChannelHandlerContext)], but always a new connection, never an idle one of a
+  /// pool, for the retry after a reused connection failed, see [DownstreamHandler]
+  default Future<Channel> connectNew(ChannelHandlerContext downstreamContext) {
+    return connect(downstreamContext);
+  }
+
+  /// Whether the channel was an idle connection taken from a pool, so it may have been closed by
+  /// the upstream just as the request was sent
+  default boolean reused(Channel channel) {
+    return false;
+  }
+
+  /// The upstream has as many connections as it may open, see
+  /// [ConnectionPoolConfig#maxConnections()]; the exchange is answered with `503`, see
+  /// [DownstreamHandler]. Without a stack trace: it is an expected event under load, the request
+  /// log records type and message.
+  final class ConnectionLimitException extends RuntimeException {
+
+    public ConnectionLimitException(String target) {
+      super("connection limit of upstream " + target + " reached", null, false, false);
+    }
+  }
+
   /// Called when a configuration reload removed or changed this upstream. Exchanges that are
   /// in flight may still use it.
   default void close() {}

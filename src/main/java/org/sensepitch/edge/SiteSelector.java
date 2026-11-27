@@ -291,7 +291,7 @@ public class SiteSelector {
       throw new IllegalArgumentException("upstream missing: " + name);
     }
     if (cfg.ref() != null) {
-      if (cfg.target() != null) {
+      if (cfg.target() != null || !ConnectionPoolConfig.DEFAULT.equals(cfg.connectionPool())) {
         throw new IllegalArgumentException(
             "Upstream ref must not be combined with other settings: " + cfg.ref());
       }

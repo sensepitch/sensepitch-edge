@@ -20,6 +20,10 @@ public enum RequestOutcome {
   /// The connection to the upstream failed
   UPSTREAM_CONNECT_FAILED,
 
+  /// The upstream had as many connections as `connectionPool.maxConnections` allows, the request
+  /// was answered with `503`, see [ConnectionPoolConfig]
+  UPSTREAM_CONNECTION_LIMIT,
+
   /// Forwarding the request to the upstream failed
   UPSTREAM_WRITE_FAILED,
 

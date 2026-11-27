@@ -1,0 +1,18 @@
+rate 10000, warm-up 10 s at 1000, request log disabled: true, TIME_WAIT before: 400
+Requests      [total, rate, throughput]         100000, 10000.10, 9999.98
+Duration      [total, attack, wait]             10s, 10s, 118.22µs
+Latencies     [min, mean, 50, 90, 95, 99, max]  60.823µs, 4.373ms, 210.586µs, 1.363ms, 7.606ms, 138.651ms, 327.877ms
+Bytes In      [total, mean]                     1024000000, 10240.00
+Bytes Out     [total, mean]                     0, 0.00
+Success       [ratio]                           100.00%
+Status Codes  [code:count]                      200:100000  
+Error Set:
+TIME_WAIT after: 2340, by the side that closed first:
+  18 other
+  1807 vegeta closed a connection to the edge
+  514 edge closed an upstream connection
+sensepitch_upstream_connections{upstream="sites.localhost.upstream"} 39.0
+sensepitch_upstream_connections_opened_total{upstream="sites.localhost.upstream"} 634.0
+sensepitch_upstream_connections_reused_total{upstream="sites.localhost.upstream"} 109366.0
+sensepitch_upstream_idle_closed_total{reason="idle_timeout",upstream="sites.localhost.upstream"} 513.0
+sensepitch_upstream_idle_connections{upstream="sites.localhost.upstream"} 39.0

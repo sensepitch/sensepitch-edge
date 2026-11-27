@@ -56,6 +56,15 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
     this.upstream = upstream;
   }
 
+  /// Binds the next exchange to this connection, taken idle from the pool, see
+  /// [UpstreamConnectionPool]. Call on the event loop of the upstream channel; [DefaultUpstream]
+  /// takes the connection on that loop.
+  void attach(Channel ingress) {
+    downstream = ingress;
+    informationalResponse = false;
+    pausedDownstreamReads = false;
+  }
+
   /// Tells the client pipeline that the upstream channel of its exchange closed. Fired after the
   /// response parts read before, a response delimited by the close is complete by then: the HTTP
   /// decoder emits its last content before `channelInactive` reaches this handler.
@@ -85,6 +94,9 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
           msg.getClass().getName()
               + " -> downstream is null, getting unexpected data from upstream");
       ReferenceCountUtil.release(msg);
+      // out of sync with the upstream, not usable for another exchange; an idle pooled
+      // connection leaves the pool with the close
+      ctx.close();
       return;
     }
     if (msg instanceof HttpResponse) {

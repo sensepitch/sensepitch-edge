@@ -163,6 +163,18 @@ class ProxyRejectedConfigBDDTest {
                     .build()),
             "Upstream ref must not be combined"),
         rejected(
+            "upstream ref combined with a connection pool",
+            routingConfig(
+                SiteConfig.builder()
+                    .upstream(
+                        UpstreamConfig.builder()
+                            .ref("api")
+                            .connectionPool(
+                                ConnectionPoolConfig.builder().idleTimeoutMillis(1000).build())
+                            .build())
+                    .build()),
+            "Upstream ref must not be combined"),
+        rejected(
             "upstream target with more than one colon",
             routingConfig(
                 SiteConfig.builder()

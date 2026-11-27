@@ -1,22 +1,25 @@
-# Upstream connection pool (draft)
+# Upstream connection pool
 
-**Draft, nothing decided.** This is the research for the `NOT-YET.md` entry "upstream connection
-pool with keep-alive" under "Upstream", which asks for a draft design first. The options marked
-`[ ]` are open choices for the maintainer. It covers the upstream connect in
-[`DefaultUpstream`](../../src/main/java/org/sensepitch/edge/DefaultUpstream.java) behind the
-[`Upstream`](../../src/main/java/org/sensepitch/edge/Upstream.java) interface, and the exchange in
-[`DownstreamHandler`](../../src/main/java/org/sensepitch/edge/DownstreamHandler.java) and
-[`ForwardHandler`](../../src/main/java/org/sensepitch/edge/ForwardHandler.java). Once the choices
-are made, the document becomes `upstream-connection-pool.md` and records the decisions.
+Keep-alive connections to the upstreams, reused per event loop. Implemented in
+[`UpstreamConnectionPool`](../../src/main/java/org/sensepitch/edge/UpstreamConnectionPool.java),
+used by [`DefaultUpstream`](../../src/main/java/org/sensepitch/edge/DefaultUpstream.java) behind
+the [`Upstream`](../../src/main/java/org/sensepitch/edge/Upstream.java) interface; the exchange in
+[`DownstreamHandler`](../../src/main/java/org/sensepitch/edge/DownstreamHandler.java) decides
+whether a connection is reused and retries a request on a stale one,
+[`ForwardHandler`](../../src/main/java/org/sensepitch/edge/ForwardHandler.java) binds a pooled
+connection to the next exchange. Configured by
+[`ConnectionPoolConfig`](../../src/main/java/org/sensepitch/edge/ConnectionPoolConfig.java). This
+document records why it is built this way and the research it is based on; it started as a
+draft with open choices, decided on 2026-11-27.
 
 ## Purpose and scope
 
-Today every exchange opens a TCP connection to the upstream on the event loop of its client
-channel, and `DownstreamHandler` closes it after the response. A pool saves the connect per
-request: a round trip of latency, an ephemeral port in `TIME_WAIT` on our side, and the accept
+Before the pool, every exchange opened a TCP connection to the upstream on the event loop of its
+client channel, and `DownstreamHandler` closed it after the response. A pool saves the connect per
+exchange: a round trip of latency, an ephemeral port in `TIME_WAIT` on our side, and the accept
 work of the upstream.
 
-The ports are a hard limit today. The edge closes the upstream connection first, so each one
+The ports were a hard limit. The edge closed the upstream connection first, so each one
 holds a local port in `TIME_WAIT` for 60 s. With the Linux default `ip_local_port_range`
 (28232 ports) and `tcp_tw_reuse` for loopback only, that allows about 470 requests per second to
 one upstream address; above it the connects fail and the client gets `502 Upstream connection
@@ -65,21 +68,17 @@ connection is handed to a request on another thread.
 The two that keep a connection on its worker thread without hops, NGINX and Envoy, partition the
 pool per worker. Only HAProxy moves an established connection to another thread, as a fallback.
 
-## Design decisions (open)
-
-None of these is decided.
+## Design decisions
 
 ### One pool partition per event loop and upstream
 
-Proposed. A partition is used only by its own event loop, so it needs no lock and no task hop,
-and `Upstream#connect` keeps returning a channel on the client's loop. This is the model of NGINX
-and Envoy. `DefaultUpstream` creates the partitions when it is built, one per event loop of the
-group. `ProxyContext` no longer offers the group, it was dropped when nothing used it, so the pool
-passes it in again; there is still no static or thread local state.
+A partition is used only by its own event loop, so it needs no lock and no task hop, and
+`Upstream#connect` keeps returning a channel on the client's loop. This is the model of NGINX and
+Envoy. The partitions are created on first use, keyed by the event loop that releases a
+connection, so the pool needs no event loop group.
 
-Consequence: up to (event loops) x (max idle) idle connections per upstream, and a loop may open
-a new connection while another loop has idle ones. With the round robin of accepted client
-connections over the loops, the partitions see about the same load.
+Consequence: a loop may open a new connection while another loop has idle ones. With the round
+robin of accepted client connections over the loops, the partitions see about the same load.
 
 The handlers do not depend on it: `DownstreamHandler` hands the listener of a failed upstream
 write over to the client's loop when it runs on another one, and `ForwardHandler` reaches the
@@ -91,95 +90,126 @@ partition, stays possible without changes to the handlers.
 
 ### No connection moves between event loops
 
-Proposed. Netty 4.2.21 can do it: `AbstractChannel.AbstractUnsafe.register` accepts a channel
-after `deregister()` and clears the cached executors of its handler contexts "from prior event
-loop registrations"; `deregister` is deferred with `invokeLater` (netty#4435) so a handler still
+Netty 4.2.21 can do it: `AbstractChannel.AbstractUnsafe.register` accepts a channel after
+`deregister()` and clears the cached executors of its handler contexts "from prior event loop
+registrations"; `deregister` is deferred with `invokeLater` (netty#4435) so a handler still
 running on the old loop finishes first. Read in `netty-transport-4.2.21.Final-sources.jar`. Not
 built on, because:
 
 - Netty 5 removed it on purpose: netty#8513 says re-registration "defeats the threading model
   assumptions ... requires careful user level coordination", PR netty#8587 binds the event loop
   in the `Channel` constructor. Building on it blocks a later upgrade.
-- Timers scheduled on the old loop do not move, e.g. an idle timeout of the pooled connection;
+- Timers scheduled on the old loop do not move, e.g. the idle timeout of the pooled connection;
   they have to be cancelled before and armed again after.
 - A move costs a task on the owning loop (deregister) and one on the new loop (register), about
   the hops the binding to the client's loop saves for a small exchange.
 - None of Armeria, Reactor Netty, Vert.x or Netty's own pool does it.
 
-For a partition that is empty while others have idle connections, which matters only once there
-is a limit of connections per upstream:
-
-- [ ] Connect a new connection on the client's loop. The default without a limit.
-- [ ] Borrow an idle connection of another loop and accept the hops for that exchange, like
-  Vert.x.
-- [ ] Move it with deregister and register, like the HAProxy takeover. Netty 4 only.
+A partition that is empty opens a new connection on the client's loop. Borrowing from another
+partition (Vert.x) or moving a connection (HAProxy takeover) only pays off once there is a limit of
+connections per upstream, see "Planned improvements".
 
 ### Idle connections keep reading
 
-Proposed. A pooled idle connection stays registered for reads. A close, an error or any data on
-it removes it from the partition and closes it, as NGINX (`recv(MSG_PEEK)` in its read handler),
-HAProxy and Pingora do. `ForwardHandler` without an exchange already counts unexpected data as
-`unexpected_data`; in the pool it also evicts the connection. An acquire checks `isActive()`.
+A pooled idle connection stays registered for reads, as with NGINX (`recv(MSG_PEEK)` in its read
+handler), HAProxy and Pingora. A close by the upstream removes it at once, its close listener in
+the partition; data closes it, `ForwardHandler` without an exchange counts it as
+`unexpected_data` and closes the channel. So a connection in a partition is always open. The
+release switches reading on: backpressure of the last exchange may have paused it, see
+`DownstreamHandler.channelWritabilityChanged`, and then neither a close nor the next response
+would be read. The removed pool of 2025 did the same on acquire.
 
 ### Most recently used first
 
-Proposed. The partition hands out the connection released last (LIFO, like Armeria and Netty's
-`SimpleChannelPool`), so the surplus after a load peak stays idle and ages out by the idle
-timeout. Reactor Netty leases FIFO by default, which keeps all connections warm.
+The partition hands out the connection released last (LIFO, like Armeria and Netty's
+`SimpleChannelPool`), so the surplus after a load peak stays idle at the tail and ages out by the
+idle timeout. Reactor Netty leases FIFO by default, which keeps all connections warm.
 
-### Idle timeout
+### Idle connections end by the idle timeout only, there is no idle limit
 
-An idle connection is closed after a timeout, scheduled on the event loop of its partition and
-tested on the simulated clock. It has to be shorter than the keep-alive timeout of the upstream,
-or the race of RFC 9112 section 9.5 becomes the normal case.
+A release keeps every open connection; the number of idle connections is not limited. The first
+version had a `maxIdle` of 32 per event loop, like NGINX `keepalive` and Pingora
+`upstream_keepalive_pool_size`: a release beyond it closed the connection idle for the longest
+time. The benchmarks of 2026-11-27 showed that this churns under bursts: more exchanges were in
+flight on a loop than `maxIdle`, their connections were closed when they ended (2 418 to 9 784
+`limit` closes per 10 s run), were needed again milliseconds later, and each close held a local
+port in `TIME_WAIT`, see
+[performance-test/runs/2026-11-27-upstream-pool](../../performance-test/runs/2026-11-27-upstream-pool/README.md).
+An idle limit cannot protect against a burst either, the connections of a burst are in use, not
+idle; that is the job of `maxConnections`, see below. Without the idle limit, the surplus of a
+burst is closed by the idle timeout once the burst is over, like with Envoy and Armeria, which have
+an idle timeout and no idle limit. HAProxy shrinks the idle connections gradually instead
+(`pool-purge-delay`, half of them per interval); one timeout is simpler to explain and to tune.
 
-- [ ] 4 s, below the 5 s keep-alive timeout of Node.js and Apache httpd. Unverified, from memory.
-- [ ] 10 s, like Armeria.
-- [ ] 60 s, like NGINX `keepalive_timeout` and Vert.x `keepAliveTimeout`.
+### A hard limit of 10 000 connections per upstream, shared by the event loops
+
+`maxConnections` limits all connections to an upstream, in use, idle and connecting, so the edge
+does not run out of local ports (about 28 000 on Linux with the default range) and does not
+overwhelm the upstream. Each event loop may hold `maxConnections` divided by the number of loops,
+rounded down, at least 1, counted in its partition: the loops together come near the limit but
+never exceed it, and no counter is shared by the threads. An exchange that needs a further
+connection gets `503` with the outcome `upstream_connection_limit`, counted in
+`sensepitch_upstream_connection_limit`; an idle connection is still taken at the limit.
+
+The name is the one of Envoy (`max_connections`) and Reactor Netty (`maxConnections`); HAProxy has
+`maxconn`, NGINX `max_conns` (from memory, not verified). Envoy enables it by default (1024) and
+queues up to `max_pending_requests` before answering 503; Reactor Netty and Vert.x queue the
+acquire; NGINX and HAProxy have it off by default, open source NGINX answers 502 at once. Here the
+default is high, a protection rather than a tuning value, so reaching it is exceptional and there
+is no queue; a queue is a planned improvement.
+
+### Idle timeout of 4 seconds
+
+An idle connection is closed after `idleTimeoutMillis`, a timer on the event loop of its partition,
+cancelled when the connection is taken, tested on the mock ticker of an embedded channel. It has
+to be shorter than the keep-alive timeout of the upstream, or the race of RFC 9112, section 9.5,
+becomes the normal case. The default 4 s is below the 5 s keep-alive timeout of Node.js and Apache
+httpd (from memory, not verified); 10 s (Armeria) and 60 s (NGINX, Vert.x) were the other
+candidates.
 
 ### Only a clean connection goes back to the pool
 
-Proposed. The connection is released to its partition only if the request was sent completely,
-the final response ended with its `LastHttpContent`, the response was not delimited by the close,
-the upstream sent no `Connection: close` (read before `DownstreamHandler` removes the connection
-headers from the response), the status is not `101`, and no error, timeout or client abort ended
-the exchange. Any other end closes the connection, as today.
+The connection is released as reusable only if the request was forwarded completely (its
+`LastHttpContent` was written upstream), the final response ended with its `LastHttpContent`, the
+upstream allows keep-alive (`HttpUtil.isKeepAlive` of the final response, read before
+`DownstreamHandler` removes the connection headers), no `101` was seen, and no error, timeout or
+client abort ended the exchange. Any other end closes the connection. A response delimited by the
+close leaves the connection inactive, the partition does not keep it.
 
-### Retry on a stale connection
+### Hop-by-hop headers are removed from the request too
 
-The upstream closes a reused connection while the request is on its way.
+Before, only the response lost its hop-by-hop headers. With pooling a client's `Connection: close`
+would end the pooled connection, and RFC 9110, section 7.6.1, requires a proxy to remove them
+anyway. `DownstreamHandler.stripHopByHopHeaders` serves both directions.
 
-- [ ] No retry: the client gets a `502` and the event is counted, like Envoy and Armeria by
-  default.
-- [ ] Retry once on a new connection if the connection was reused, nothing of the response
-  arrived, the method is idempotent and the request has no body, like NGINX and Pingora. The
-  body condition keeps the edge from buffering request bodies, it streams them today.
-- [ ] Never put the first request of a client connection on a reused connection, like HAProxy
-  `http-reuse safe`, so the client itself can retry it.
+### Retry of idempotent requests without a body on a stale connection
 
-### Limits
-
-- [ ] Max idle connections per partition: 32, like NGINX `keepalive`. When it is reached the
-  oldest idle connection is closed.
-- [ ] Max requests per connection and max connection age: 1000 and 1 h, like NGINX
-  `keepalive_requests` and `keepalive_time`. The age lets a DNS change of the upstream take
-  effect.
-- No limit of the total connections per upstream in the first step, as NGINX `keepalive`.
+The upstream may close an idle connection just as the edge sends a request on it. If a connection
+taken from the pool fails before any response arrived (write failure, close, or an exception such
+as a reset), and the method is idempotent (GET, HEAD, OPTIONS, TRACE, PUT, DELETE, RFC 9110,
+section 9.2.2) and the request has no body, the request is sent once more on a new connection,
+counted in `sensepitch_upstream_retries`. A new connection is never retried, so there is at most
+one retry. Like NGINX and Pingora. The body condition keeps the edge from buffering request
+bodies, it streams them. Not chosen: no retry (Envoy, Armeria), which turns the race into `502`s
+that did not exist without the pool; HAProxy's `http-reuse safe`, which keeps the first request
+of each client connection off reused connections and so loses most of the reuse for short client
+connections.
 
 ### Lifecycle on reload and shutdown
 
-Proposed. A reload builds new upstreams. The partitions of the old one close their idle
-connections, a connection in use closes after its exchange instead of going back. Shutdown closes
-all idle connections at once.
+A reload that removes or changes an upstream calls `Upstream#close()`: the pool closes the idle
+connections on the loop of each partition, a connection in use is closed when its exchange
+releases it. An unchanged upstream is taken over with its pool, see `UpstreamRegistry`. Shutdown
+closes the idle connections with the event loops.
 
-### Configuration and metrics
+### On by default, configured per upstream
 
-- [ ] A `pool` record on `UpstreamConfig`, on by default (NGINX caches by default since 1.29.7).
-- [ ] The same, off by default.
-
-Counters labelled with the upstream name: connections created, connections reused, connections
-closed by reason (`idle_timeout`, `closed_while_idle`, `not_reusable`, `limit`), retries on a
-stale connection; a gauge of the idle connections.
+`connectionPool` on each upstream (`enable`, `idleTimeoutMillis`, `maxConnections`), enabled by
+default like NGINX since 1.29.7: without the pool the edge reaches the limit of local ports at
+about 470 requests per second per upstream address, see "Purpose and scope". `enable: false`
+restores the connection per request. Metrics, labelled with the upstream name: connections opened, connections
+reused, open connections and idle connections (gauges), idle connections closed by reason
+(`idle_timeout`, `closed_by_upstream`, `removed`), refusals at the connection limit, retries.
 
 ## Implementations investigated
 
@@ -279,10 +309,19 @@ measured. Points marked **unverified** were not found in the sources.
 
 ## Limitations
 
+- The connections of a burst stay open until the idle timeout after it; the edge closes them, so
+  they hold local ports in `TIME_WAIT` for 60 s afterwards. `maxConnections` bounds how many.
+- At the connection limit an exchange is refused at once, there is no queue.
+- The limit is split evenly over the event loops: a loop that has its share open refuses although
+  another loop has room.
+
 - HTTP/1.1 only, no HTTP/2 multiplexing to the upstream, no pipelining.
 - No preconnect (Envoy `per_upstream_preconnect_ratio`).
 - One server per upstream; multiple servers are a separate entry in `NOT-YET.md`.
 
 ## Planned improvements
 
-The entry "upstream connection pool with keep-alive" in [`NOT-YET.md`](../../NOT-YET.md).
+Listed in [`NOT-YET.md`](../../NOT-YET.md) under "Upstream": a maximum of requests per connection
+and a maximum connection age (NGINX `keepalive_requests` 1000 and `keepalive_time` 1 h; the age
+lets a DNS change of the upstream take effect), a queue before refusing at the connection limit,
+borrowing an idle connection of another event loop, preconnect, pool metrics on a dashboard.

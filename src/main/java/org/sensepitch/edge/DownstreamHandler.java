@@ -13,6 +13,7 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -25,10 +26,22 @@ import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
 import java.net.InetSocketAddress;
+import java.util.Set;
 
 /// Sends a request upstream and forwards the response to the client. Informational responses (1xx)
 /// are forwarded before the final response; only the `LastHttpContent` of that final response ends
-/// the exchange and closes the upstream.
+/// the exchange and releases the upstream connection.
+///
+/// After a clean exchange the connection is released as reusable, so a pooling [Upstream] keeps it
+/// for the next exchange, see [DefaultUpstream]: the request was forwarded completely and the
+/// final response allows keep-alive. Every other end closes it. Hop-by-hop headers are removed in
+/// both directions, see [#stripHopByHopHeaders], so a client's `Connection: close` does not end a
+/// pooled connection.
+///
+/// A connection taken from a pool may have been closed by the upstream just as the request was
+/// sent (RFC 9112, section 9.5). If it fails before any response arrived, and the request is
+/// idempotent and has no body, it is sent once more on a new connection, see
+/// [#retryOnNewConnection]; RFC 9110, section 9.2.2 allows this for idempotent requests only.
 ///
 /// Every close of the upstream by the edge clears [#upstreamChannelFuture] first, so a close
 /// reported afterwards by the [ForwardHandler] belongs to no active exchange and is ignored. A close
@@ -43,6 +56,16 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   private static final AsciiString STRICT_TRANSPORT_SECURITY =
       AsciiString.cached("Strict-Transport-Security");
   private static final String DEFAULT_HSTS_POLICY = "max-age=31536000";
+
+  /// Methods whose request may be sent again after a connection failure, RFC 9110, section 9.2.2
+  private static final Set<HttpMethod> IDEMPOTENT_METHODS =
+      Set.of(
+          HttpMethod.GET,
+          HttpMethod.HEAD,
+          HttpMethod.OPTIONS,
+          HttpMethod.TRACE,
+          HttpMethod.PUT,
+          HttpMethod.DELETE);
 
   private final Upstream upstream;
   private final ProxyMetrics metrics;
@@ -60,6 +83,19 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// An informational response was written, its `LastHttpContent` follows, then the final response.
   /// Its last content ends neither the exchange nor [responseStarted].
   private boolean informationalResponse;
+
+  /// The `LastHttpContent` of the HTTP request was written upstream, a condition for reusing the
+  /// connection
+  private boolean requestForwarded;
+
+  /// The upstream allows keep-alive so far: no `101`, the final response is checked when it is
+  /// written, see [#write]
+  private boolean upstreamKeepAlive;
+
+  /// The HTTP request of the active exchange while a retry on a new connection is still possible:
+  /// idempotent, without a body, and no response arrived yet, see [#retryOnNewConnection].
+  /// `null` otherwise.
+  private HttpRequest retryableRequest;
 
   public DownstreamHandler(Upstream upstream, ProxyMetrics metrics) {
     this.upstream = upstream;
@@ -93,6 +129,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
       responseStarted = false;
       informationalResponse = false;
+      requestForwarded = false;
+      upstreamKeepAlive = true;
+      retryableRequest = retryable(request) ? request : null;
       upstreamChannelFuture = upstream.connect(ctx);
       augmentHeadersAndForwardRequest(ctx, request);
     } else if (msg instanceof LastHttpContent) {
@@ -126,6 +165,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   void forwardLastContentAndFlush(
       ChannelHandlerContext ctx, Future<Channel> future, LastHttpContent msg) {
     if (future.isSuccess()) {
+      if (upstreamChannelFuture == future) {
+        requestForwarded = true;
+      }
       future
           .resultNow()
           .writeAndFlush(msg)
@@ -134,13 +176,16 @@ public class DownstreamHandler extends ChannelDuplexHandler {
                   f -> {
                     if (!f.isSuccess()) {
                       Runnable fail =
-                          () ->
+                          () -> {
+                            if (!retryOnNewConnection(ctx, future)) {
                               failExchange(
                                   ctx,
                                   future,
                                   f.cause(),
                                   RequestOutcome.UPSTREAM_WRITE_FAILED,
                                   HttpResponseStatus.valueOf(502, "Upstream write problem"));
+                            }
+                          };
                       if (ctx.executor().inEventLoop()) {
                         fail.run();
                       } else {
@@ -152,6 +197,15 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // upstream future listener is called within ingress event loop
       assert ctx.executor().inEventLoop();
       ReferenceCountUtil.release(msg);
+      if (future.cause() instanceof Upstream.ConnectionLimitException) {
+        failExchange(
+            ctx,
+            future,
+            future.cause(),
+            RequestOutcome.UPSTREAM_CONNECTION_LIMIT,
+            HttpResponseStatus.valueOf(503, "Upstream connection limit"));
+        return;
+      }
       failExchange(
           ctx,
           future,
@@ -205,7 +259,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   /// from a complete one by the content length or the missing last chunk.
   void completeWithError(ChannelHandlerContext ctx, HttpResponseStatus status) {
     assert ctx.executor().inEventLoop() : "exchange state changed off the client's event loop";
-    dropUpstream();
+    dropUpstream(false);
     if (responseStarted) {
       responseStarted = false;
       ctx.channel().close();
@@ -216,27 +270,71 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
   }
 
-  /// Ends the use of the upstream of the active exchange and closes it. The reference is cleared
-  /// before the close, so the [ForwardHandler] report of this close, which may arrive at once since
+  /// Ends the use of the upstream of the active exchange and releases it. The reference is cleared
+  /// before the release, so the [ForwardHandler] report of a close, which may arrive at once since
   /// both channels share an event loop, belongs to no exchange, see [#userEventTriggered].
-  private void dropUpstream() {
+  ///
+  /// @param reusable the exchange ended cleanly, see the class doc; `false` closes the connection
+  private void dropUpstream(boolean reusable) {
     Future<Channel> exchangeUpstream = upstreamChannelFuture;
     if (exchangeUpstream != null) {
       upstreamChannelFuture = null;
-      closeUpstream(exchangeUpstream);
+      retryableRequest = null;
+      releaseUpstream(exchangeUpstream, reusable);
     }
   }
 
-  /// Closes the upstream connection of an exchange once it is established, also when it is still
-  /// connecting, since there is no connection pool to return it to
-  private static void closeUpstream(Future<Channel> upstreamChannelFuture) {
-    upstreamChannelFuture.addListener(
+  /// Releases the upstream connection of an exchange once it is established; one that is still
+  /// connecting is closed when the connect completes, nobody takes it
+  private void releaseUpstream(Future<Channel> exchangeUpstream, boolean reusable) {
+    exchangeUpstream.addListener(
         (FutureListener<Channel>)
             future -> {
               if (future.isSuccess()) {
-                future.resultNow().close();
+                upstream.release(future.resultNow(), reusable);
               }
             });
+  }
+
+  /// Whether the HTTP request may be sent once more after its reused connection failed: an
+  /// idempotent method (RFC 9110, section 9.2.2) and no body. A message with content is excluded,
+  /// its buffer is released by the first write.
+  private static boolean retryable(HttpRequest request) {
+    return IDEMPOTENT_METHODS.contains(request.method())
+        && !(request instanceof HttpContent)
+        && !HttpUtil.isTransferEncodingChunked(request)
+        && HttpUtil.getContentLength(request, 0) == 0;
+  }
+
+  /// Sends the HTTP request of the active exchange once more on a new connection, if its upstream
+  /// connection `failed` was taken from a pool and the request is retryable, see the class doc.
+  /// The new connection is never retried, it is not [Upstream#reused].
+  ///
+  /// @return `true` if the request was sent again, the failure then ends nothing
+  private boolean retryOnNewConnection(ChannelHandlerContext ctx, Future<Channel> failed) {
+    HttpRequest request = retryableRequest;
+    // every caller passes a connected future
+    if (request == null
+        || upstreamChannelFuture != failed
+        || !upstream.reused(failed.resultNow())) {
+      return false;
+    }
+    retryableRequest = null;
+    requestForwarded = false;
+    metrics.upstreamRetries.labelValues(ProxyMetrics.upstreamLabel(upstream)).inc();
+    // replaced before the old connection is closed, so its close belongs to no exchange
+    upstreamChannelFuture = upstream.connectNew(ctx);
+    upstream.release(failed.resultNow(), false);
+    Future<Channel> retry = upstreamChannelFuture;
+    retry.addListener(
+        (FutureListener<Channel>)
+            future -> {
+              if (future.isSuccess()) {
+                future.resultNow().write(request);
+              }
+              forwardLastContentAndFlush(ctx, future, LastHttpContent.EMPTY_LAST_CONTENT);
+            });
+    return true;
   }
 
   /// Send the HTTP request, which may include content, upstream
@@ -248,6 +346,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       // turn off reading until the upstream connection is established to avoid overflowing
       ctx.channel().config().setAutoRead(false);
     }
+    stripHopByHopHeaders(request.headers());
     addProxyHeaders(ctx, request);
     upstreamChannelFuture.addListener(
         (FutureListener<Channel>)
@@ -308,9 +407,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     ctx.executor().execute(flushTask);
   }
 
-  /// When the client connection closes during an exchange, the upstream connection is dropped at
-  /// once, also while it is still connecting: nobody takes the rest of the response, and there is
-  /// no pool to return the connection to. Without this, the end of the response would never reach
+  /// When the client connection closes during an exchange, the upstream connection is closed at
+  /// once, also while it is still connecting: nobody takes the rest of the response, and a
+  /// connection in the middle of a response cannot go back to a pool. Without this, the end of the response would never reach
   /// [#write], since Netty removes the handlers of a closed channel, and the upstream connection
   /// would stay open until the upstream closes it.
   ///
@@ -320,7 +419,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     if (upstreamChannelFuture != null) {
-      dropUpstream();
+      dropUpstream(false);
     }
     super.channelInactive(ctx);
   }
@@ -332,9 +431,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     return responseStarted ? "responding" : "waiting";
   }
 
-  /// Remove upstream reference when the exchange is complete. The upstream channel
-  /// is closed, so we need to ensure that we don't have it anymore for throttling. Throttling can
-  /// only occur in response to a write, so we are sure that there is no pending throttling.
+  /// Remove upstream reference when the exchange is complete. The upstream channel is released, so
+  /// we need to ensure that we don't have it anymore for throttling. Throttling can only occur in
+  /// response to a write, so we are sure that there is no pending throttling.
   ///
   /// @see #channelWritabilityChanged(ChannelHandlerContext)
   @Override
@@ -342,7 +441,16 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       throws Exception {
     if (msg instanceof HttpResponse response) {
       HttpHeaders headers = response.headers();
-      sanitizeResponseHeaders(headers);
+      if (upstreamChannelFuture != null) {
+        // a response arrived, sending the request again could repeat it
+        retryableRequest = null;
+        if (response.status().code() == HttpResponseStatus.SWITCHING_PROTOCOLS.code()
+            || response.status().codeClass() != HttpStatusClass.INFORMATIONAL
+                && !HttpUtil.isKeepAlive(response)) {
+          upstreamKeepAlive = false;
+        }
+      }
+      stripHopByHopHeaders(headers);
       // forwarded and configured static responses, edge generated ones do not pass here
       if (upstreamChannelFuture != null && !headers.contains(STRICT_TRANSPORT_SECURITY)) {
         headers.set(STRICT_TRANSPORT_SECURITY, DEFAULT_HSTS_POLICY);
@@ -362,19 +470,20 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       boolean informational = informationalResponse;
       informationalResponse = false;
       if (!informational) {
-        // there is no connection pool, so the upstream connection is closed after each response,
-        // also if the upstream would keep it alive. The reference is cleared here to ensure no more
-        // throttling is done.
-        dropUpstream();
+        // the reference is cleared here to ensure no more throttling is done
+        dropUpstream(requestForwarded && upstreamKeepAlive);
         responseStarted = false;
       }
     }
     super.write(ctx, msg, promise);
   }
 
-  /// Keep upstream connection options out of the client connection. Transfer-Encoding stays so
-  /// the downstream HTTP codec can frame the decoded content as chunks.
-  private static void sanitizeResponseHeaders(HttpHeaders headers) {
+  /// Removes the hop-by-hop headers (RFC 9110, section 7.6.1), of a response before it goes to the
+  /// client and of an HTTP request before it goes upstream: the options of one connection do not
+  /// apply to the other, e.g. a client's `Connection: close` must not end a pooled upstream
+  /// connection. Transfer-Encoding stays so the HTTP codec of the other side can frame the decoded
+  /// content as chunks.
+  static void stripHopByHopHeaders(HttpHeaders headers) {
     // Read all Connection fields before removing any: Connection can name itself or another field.
     for (String connection : headers.getAll(HttpHeaderNames.CONNECTION)) {
       for (String option : connection.split(",")) {
@@ -392,10 +501,16 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     headers.remove(HttpHeaderNames.UPGRADE);
   }
 
-  /// Drops the upstream of the active exchange, the [ExceptionHandler] further down ends it
+  /// Drops the upstream of the active exchange, the [ExceptionHandler] further down ends it. An
+  /// exception of a reused upstream connection before the response, e.g. a reset, sends a
+  /// retryable request once more instead, see [#retryOnNewConnection].
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-    dropUpstream();
+    if (cause instanceof ForwardHandler.UpstreamException
+        && retryOnNewConnection(ctx, upstreamChannelFuture)) {
+      return;
+    }
+    dropUpstream(false);
     super.exceptionCaught(ctx, cause);
   }
 
@@ -414,6 +529,9 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     if (upstreamChannelFuture == null
         || !upstreamChannelFuture.isSuccess()
         || upstreamChannelFuture.resultNow() != closed.upstream()) {
+      return;
+    }
+    if (retryOnNewConnection(ctx, upstreamChannelFuture)) {
       return;
     }
     metrics

@@ -1,0 +1,14 @@
+rate 2000, maxIdle 32, TIME_WAIT before: 6
+Requests      [total, rate, throughput]         20000, 2000.06, 1999.99
+Duration      [total, attack, wait]             10s, 10s, 305.858µs
+Latencies     [min, mean, 50, 90, 95, 99, max]  111.096µs, 5.55ms, 291.014µs, 662.264µs, 2.71ms, 175.181ms, 333.636ms
+Bytes In      [total, mean]                     204800000, 10240.00
+Bytes Out     [total, mean]                     0, 0.00
+Success       [ratio]                           100.00%
+Status Codes  [code:count]                      200:20000  
+Error Set:
+TIME_WAIT after: 978
+sensepitch_upstream_connections_opened_total{upstream="sites.localhost.upstream"} 290.0
+sensepitch_upstream_connections_reused_total{upstream="sites.localhost.upstream"} 19710.0
+sensepitch_upstream_idle_closed_total{reason="idle_timeout",upstream="sites.localhost.upstream"} 268.0
+sensepitch_upstream_idle_connections{upstream="sites.localhost.upstream"} 5.0

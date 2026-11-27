@@ -245,10 +245,11 @@ public class ConfigTest {
     }
   }
 
-  /// The connection pool was removed, a configuration still setting it is rejected instead of
-  /// silently ignored.
+  /// The keys of the connection pool removed in 2025 (`maxSize`, `idleTimeoutSeconds`) are not
+  /// those of the current one, a configuration still setting them is rejected instead of silently
+  /// ignored.
   @Test
-  public void removedConnectionPoolIsRejected() {
+  public void keyOfTheEarlierConnectionPoolIsRejected() {
     String yaml =
         """
         upstreams:
@@ -259,7 +260,7 @@ public class ConfigTest {
         """;
     IllegalArgumentException ex =
         assertThrows(IllegalArgumentException.class, () -> Main.parseConfig(yaml));
-    assertThat(ex).hasMessageContaining("Unknown parameter in UpstreamConfig: connectionPool");
+    assertThat(ex).hasMessageContaining("Unknown parameter in ConnectionPoolConfig: maxSize");
   }
 
   /// A nested record starts from its `DEFAULT`, so the YAML only needs the values that differ.
