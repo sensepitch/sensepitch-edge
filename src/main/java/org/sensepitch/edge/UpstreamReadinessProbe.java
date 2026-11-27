@@ -8,10 +8,10 @@ import java.util.function.Supplier;
 
 /// Checks whether at least one configured network upstream accepts a plain TCP connection.
 ///
-/// Upstreams are plain HTTP with one connection per request and no pool or circuit breaker, so a
+/// Upstreams are plain HTTP with one connection per exchange and no pool or circuit breaker, so a
 /// short-timeout TCP connect is the probe: it succeeds as soon as an upstream accepts the
-/// connection, without sending a request, and short-circuits on the first success. A configuration
-/// with only static-response sites has no network target and is ready immediately.
+/// connection, without sending an HTTP request, and short-circuits on the first success. A
+/// configuration with only static-response sites has no network target and is ready immediately.
 ///
 /// @author Jens Wilke
 public final class UpstreamReadinessProbe {

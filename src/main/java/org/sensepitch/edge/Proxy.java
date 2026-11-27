@@ -511,8 +511,8 @@ public class Proxy implements ProxyContext {
   /// 3. Closes idle connections, the others after their response, see
   ///    [TrackIngressConnectionsHandler#drain()]. Waits for that until only the drain timeout
   ///    of the request log is left, see [RequestLogConfig#drainTimeoutMillis()].
-  /// 4. Shuts down the event loops, which closes the remaining connections, their requests are
-  ///    logged as aborted. Each loop writes its end marker into the request log when it ends.
+  /// 4. Shuts down the event loops, which closes the remaining connections, their exchanges
+  ///    are logged as aborted. Each loop writes its end marker into the request log when it ends.
   /// 5. Waits until the request log destinations sent everything, or the shutdown timeout is
   ///    over.
   ///

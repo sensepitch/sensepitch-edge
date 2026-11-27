@@ -222,7 +222,7 @@ class RequestLogFieldsWriterTest {
         .contains("cookie");
   }
 
-  /// Fields for operations: why the request ended, the route, the configuration and the
+  /// Fields for operations: why the exchange ended, the route, the configuration and the
   /// protection
   @Test
   void operationalFields() {

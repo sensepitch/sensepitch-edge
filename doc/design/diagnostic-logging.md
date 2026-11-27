@@ -108,7 +108,7 @@ origin. The counter of type `other` shows such faults without the flood.
 - Messages logged after `LogManager.shutdown()`, e.g. by a thread that outlives the shutdown, are
   dropped.
 - A premature upstream close is counted in `sensepitch_upstream_errors{type="closed_in_flight"}`
-  and ends the request at once with the outcome `upstream_closed`; a close by the edge itself is
+  and ends the exchange at once with the outcome `upstream_closed`; a close by the edge itself is
   not counted, see `DownstreamHandler`.
 
 [log4j]: https://logging.apache.org/log4j/2.x/manual/systemproperties.html#log4j2.shutdownHookEnabled

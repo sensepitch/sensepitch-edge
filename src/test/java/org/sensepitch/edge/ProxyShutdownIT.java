@@ -51,7 +51,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.parallel.Isolated;
 
-/// Graceful shutdown on a real TCP port: the listener closes, requests in flight complete with
+/// Graceful shutdown on a real TCP port: the listener closes, exchanges in flight complete with
 /// `Connection: close`, idle connections close at once, and the request log is sent before the
 /// shutdown returns. The OTLP destination flushes only every minute, so its records arrive only
 /// because the event loops write their end markers when they terminate.
@@ -229,7 +229,7 @@ class ProxyShutdownIT {
     }
   }
 
-  /// A request in flight completes, its response closes the connection, and it is logged in all
+  /// An exchange in flight completes, its response closes the connection, and it is logged in all
   /// destinations before the shutdown returns. The upstream answers only after the drain reached
   /// the connection, so the response follows the `Connection: close` decision. No phase runs into
   /// its timeout: each one would log a `Shutdown:` diagnostic.

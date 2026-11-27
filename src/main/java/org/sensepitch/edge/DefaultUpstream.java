@@ -14,7 +14,7 @@ import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 
-/// Opens a new connection to the upstream on the client channel's event loop for each request.
+/// Opens a new connection to the upstream on the client channel's event loop for each exchange.
 /// There is no connection pool. The [DownstreamHandler] closes the connection after the response.
 /// The upstream connections are spread over the event loops like the accepted client connections,
 /// so their load balance is that of the clients.

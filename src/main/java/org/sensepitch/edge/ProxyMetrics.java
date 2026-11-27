@@ -313,9 +313,10 @@ public class ProxyMetrics implements HasMultipleMetrics {
     return ingress != null ? ingress : SanitizeHostHandler.MISSING_HOST;
   }
 
-  /// The `ingress` label value for an error or timeout on the connection: the host of the request
-  /// in progress. Without one, e.g. a handshake error, or a timeout before the first request or
-  /// between keep-alive requests, the TLS server name, see [SanitizeHostHandler#serverName].
+  /// The `ingress` label value for an error or timeout on the connection: the host of the exchange
+  /// in progress. Without one, e.g. a handshake error, or a timeout before the first HTTP request
+  /// or between the exchanges of a keep-alive connection, the TLS server name, see
+  /// [SanitizeHostHandler#serverName].
   /// Looked up only when counting, so connections without errors pay nothing for it.
   static String ingress(ChannelHandlerContext ctx) {
     RequestLoggingHandler handler = RequestLoggingHandler.find(ctx);

@@ -258,10 +258,6 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
 
 ## Evergreen / Cleanups
 
-- [ ] Use *exchange* where docs, comments and internal names say "request" but mean the request
-  with its response, see the [glossary](doc/glossary.md), e.g. "the request then ends by its
-  timeout" in the class doc of `ForwardHandler`. Names that are part of an interface (metric
-  names such as `sensepitch_ingress_requests_in_flight`, log fields, config keys) stay.
 - [ ] Replace deprecated library calls, found with `javac -Xlint:deprecation` on 2026-11-27 (Maven
   does not show them by default):
   - Netty `HttpHeaderNames.KEEP_ALIVE` in `DownstreamHandler` and `IngressTimeoutHandler`, and in

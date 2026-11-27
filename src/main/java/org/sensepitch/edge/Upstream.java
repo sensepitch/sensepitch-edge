@@ -17,21 +17,21 @@ public interface Upstream {
   Future<Channel> connect(ChannelHandlerContext downstreamContext);
 
   /// Name of the upstream in the configuration, e.g. `upstreams.backend` or
-  /// `sites.example.com.paths./api/*.upstream`, see [UpstreamRegistry]. Logged with each request.
+  /// `sites.example.com.paths./api/*.upstream`, see [UpstreamRegistry]. Logged with each exchange.
   ///
   /// @return the name, or `null` if unnamed
   default String name() {
     return null;
   }
 
-  /// Configured target, `host:port`, logged with each request
+  /// Configured target, `host:port`, logged with each exchange
   ///
   /// @return the target, or `null` if the upstream has none, e.g. a static response
   default String target() {
     return null;
   }
 
-  /// Called when a configuration reload removed or changed this upstream. Requests that are in
-  /// flight may still use it.
+  /// Called when a configuration reload removed or changed this upstream. Exchanges that are
+  /// in flight may still use it.
   default void close() {}
 }

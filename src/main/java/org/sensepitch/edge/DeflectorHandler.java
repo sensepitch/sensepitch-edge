@@ -68,7 +68,7 @@ public class DeflectorHandler implements ProtectionPlugin {
       deflector.outputChallengeResources(ctx, request);
     } else if (request.uri().startsWith(Deflector.CHALLENGE_ANSWER_URL)) {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_HUMAN);
-      // reported before responding, the request is logged when the response is written
+      // reported before responding, the exchange is logged when the response is written
       boolean correct = deflector.verifyChallengeAnswer(request);
       DeflectorOutcome outcome =
           correct ? DeflectorOutcome.ANSWER_ACCEPTED : DeflectorOutcome.ANSWER_REJECTED;

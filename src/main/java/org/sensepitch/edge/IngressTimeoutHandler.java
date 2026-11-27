@@ -99,8 +99,8 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   /// response head, so a 1xx without its `LastHttpContent` cannot hide the final response
   private boolean informational;
 
-  /// No request in progress: before the first request, and after a response on a keep-alive
-  /// connection
+  /// No exchange in progress: before the first HTTP request, and after a response on a
+  /// keep-alive connection
   private boolean idle = true;
 
   /// The proxy shuts down, the connection closes after the current response
@@ -152,7 +152,7 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
   }
 
   /// Counts a receive timeout of the phase, then answers 408 and closes the connection. Used by
-  /// the timeouts that end a request the client did not send in time.
+  /// the timeouts that end an exchange whose HTTP request the client did not send in time.
   private void answerRequestTimeout(ChannelHandlerContext ctx, String phase) {
     proxyMetrics.countReceiveTimeout(ctx, phase);
     RequestLoggingHandler.reportOutcome(ctx, RequestOutcome.REQUEST_TIMEOUT);

@@ -332,7 +332,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     return responseStarted ? "responding" : "waiting";
   }
 
-  /// Remove upstream reference when processing for this request is complete. The upstream channel
+  /// Remove upstream reference when the exchange is complete. The upstream channel
   /// is closed, so we need to ensure that we don't have it anymore for throttling. Throttling can
   /// only occur in response to a write, so we are sure that there is no pending throttling.
   ///

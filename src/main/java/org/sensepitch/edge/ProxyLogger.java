@@ -27,25 +27,25 @@ import java.util.List;
 /// - `INFO`: lifecycle, e.g. start, configuration, shutdown.
 /// - `DEBUG`: what an operator needs to find the root cause of a request level event: channel,
 ///   phase, cause and stack trace. Off in the default configuration.
-/// - `TRACE`: internals, several lines per request.
+/// - `TRACE`: internals, several lines per exchange.
 ///
 /// **Request level events are logged at `DEBUG`, errors included, except the first occurrence of
 /// each kind at `WARNING`, never at `INFO` or `ERROR`; those the request log represents are not
 /// logged at all, see below.** A request level event is one
-/// that can happen for a request or a connection: a client or upstream misbehaving, an upstream
+/// that can happen for an exchange or a connection: a client or upstream misbehaving, an upstream
 /// outage, a timeout, but also an unexpected exception that may be a bug of ours. Such an event can
-/// repeat for every request, thousands of times per second, e.g. during an outage or an attack. At
+/// repeat for every exchange, thousands of times per second, e.g. during an outage or an attack. At
 /// `ERROR` it would flood the log, bury the lifecycle messages and cost I/O on the event loops.
 ///
 /// **Every request level event is counted in a metric**, see [ProxyMetrics], or recorded in the
 /// request log, so it is never silent: the metric is what an operator watches and alerts on, and
 /// `DEBUG` is switched on to investigate. An `ERROR` is for faults that do not repeat per
-/// request; one that may, e.g. a failing request log export, logs once and counts the rest.
+/// exchange; one that may, e.g. a failing request log export, logs once and counts the rest.
 ///
 /// **The first occurrence of each kind of request level event is logged at `WARNING`.** With
 /// `DEBUG` off, as in the default configuration, a misconfiguration that makes every connection
 /// fail, e.g. TLS handshakes failing after a broken setup, would otherwise leave no trace in the
-/// log. A failing request, e.g. one to an unreachable upstream, leaves its trace in the request
+/// log. A failing exchange, e.g. one with an unreachable upstream, leaves its trace in the request
 /// log. The kind of an event is the series that counts it, the data point of a counter for its
 /// label values, e.g. `sensepitch_upstream_errors_total{type="closed_in_flight",upstream="a"}`.
 /// [#incrementAndWarnOnce(Counter, String[], Channel, String, Throwable)] counts the event and

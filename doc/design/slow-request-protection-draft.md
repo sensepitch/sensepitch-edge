@@ -52,7 +52,7 @@ fixed deadline (`requestDeadline`). The phases, in the order of a connection:
 | head of the first request | `readTimeoutSeconds` from accept | nothing, see below | 408, `first_request` |
 | body | `readTimeoutSeconds`, idle | every `HttpContent` | 408, `first_request` or `keep_alive` |
 | body, total | `requestTimeoutSeconds` from the complete head, `0` = off (default) | nothing | 408, `request_total` |
-| wait for the response | `responseTimeoutSeconds` from the end of the request | nothing | 504, outcome `upstream_timeout` |
+| wait for the response | `responseTimeoutSeconds` from the end of the HTTP request | nothing | 504, outcome `upstream_timeout` |
 | writing the response | `writeTimeoutSeconds`, idle | every completed write | close, outcome `response_write_timeout` |
 | rest of the body after an early response | `readTimeoutSeconds`, idle | every `HttpContent` | close, `after_response` |
 | keep-alive wait and head of the next request | `readTimeoutSeconds` from the end of the response | nothing, see below | 408, `keep_alive` |

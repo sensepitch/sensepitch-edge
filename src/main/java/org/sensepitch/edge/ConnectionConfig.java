@@ -9,8 +9,8 @@ import lombok.Builder;
 ///   applies also for keep alive connections. A slow upload is bounded by `requestTimeoutSeconds`.
 /// @param writeTimeoutSeconds if the HTTP response or chunked content is not successfully written
 ///   within the specified time, the request is aborted. If the upstream server fails to send data
-///   within the timeout, the request will be aborted as well.
-/// @param responseTimeoutSeconds if the HTTP response is not arriving within the defined tme, the
+///   within the timeout, the request is aborted as well.
+/// @param responseTimeoutSeconds if the HTTP response is not arriving within the defined time, the
 ///   request is aborted
 /// @param requestTimeoutSeconds total time to receive the body of a request, counted from its
 ///   complete head. When the body is not complete by then and no response has started, the request

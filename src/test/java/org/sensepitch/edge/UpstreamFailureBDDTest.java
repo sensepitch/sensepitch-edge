@@ -452,7 +452,7 @@ class UpstreamFailureBDDTest {
       return this;
     }
 
-    /// @param outcome the outcome of the single logged request
+    /// @param outcome the outcome of the single logged exchange
     @Step
     Steps then_the_outcome_is(RequestOutcome outcome) {
       assertThat(requestLog.outcomes()).containsExactly(outcome);

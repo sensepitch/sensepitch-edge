@@ -158,7 +158,7 @@ thread signals its own end:
   and hands it to the sender.
 - An event loop writes it when it terminates: Netty removes its `FastThreadLocal`s after the loop
   ran its last tasks, and `onRemoval` closes the batcher. That comes after the loop closed its
-  channels and logged their aborted requests, so the order is right by construction, see "The
+  channels and logged their aborted exchanges, so the order is right by construction, see "The
   event loops close the remaining connections" below.
 - On reload, `BatchingRequestLogger.endThread()` runs as a task on each event loop after the
   destination array was switched, so it runs after the last `logRequest` of that loop into the old
@@ -192,15 +192,15 @@ configuration leaves the active ones untouched, then switches (`apply`).
 ### Graceful shutdown drains the request log last
 
 The shutdown in `Proxy` follows the data: keep accepting for `shutdownAcceptGraceMillis` while
-readiness is already false, stop the listener, let the requests in flight complete (up to
+readiness is already false, stop the listener, let the exchanges in flight complete (up to
 `shutdownTimeoutMillis − requestLog.drainTimeoutMillis` from the start), shut down the event
-loops, which closes the remaining connections, logs their requests as aborted (499) and writes
+loops, which closes the remaining connections, logs their exchanges as aborted (499) and writes
 the end markers, then wait for the destinations to send everything until `shutdownTimeoutMillis`.
 Loop shutdown and the final wait each take the time left at their start, so preparing the drain
 consumes the same shutdown budget.
 The request log gets its own budget, by default a third of the total, because the records of the
-aborted requests only exist after the connections are gone. What is left at a deadline is logged
-at `INFO`: the requests in flight per upstream, the total of unsent request log records, and
+aborted exchanges only exist after the connections are gone. What is left at a deadline is logged
+at `INFO`: the exchanges in flight per upstream, the total of unsent request log records, and
 whether the event loop group is still running. A reload and the start of the shutdown run one at
 a time.
 

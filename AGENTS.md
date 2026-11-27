@@ -9,6 +9,10 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 - `performance-test/` includes benchmarking setup and notes.
 - `doc/glossary.md` defines the terms we use (e.g. *exchange* vs. *request*, the two meanings of
   *ingress*). Use them as defined there, and add a term when a word turns out to be ambiguous.
+  In short: internally (design documents, comments, our APIs) the round trip is an *exchange* and
+  the client's message the *HTTP request*; in operator-facing text (README, config record docs,
+  metrics, log fields and messages, config keys) *request* means the whole exchange, never
+  "exchange".
 - `doc/design/` holds the design documents, one per topic, see "Design Documents" below.
   `doc/kubernetes-support/` is a numbered plan for one feature.
 - `pom.xml` is the Maven build definition; `mvnw`/`mvnw.cmd` are the recommended entry points.

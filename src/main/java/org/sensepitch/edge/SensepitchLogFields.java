@@ -12,7 +12,7 @@ public final class SensepitchLogFields {
   /// Value of [OtelLogFields#EVENT_NAME] identifying a request log record
   public static final String EVENT_NAME_VALUE = "sensepitch.request";
 
-  /// How the exchange ended for the client, see [RequestOutcome]
+  /// How the request ended for the client, see [RequestOutcome]
   public static final String REQUEST_OUTCOME = "sensepitch.request.outcome";
 
   /// Who produced the response, see [ResponseSource]

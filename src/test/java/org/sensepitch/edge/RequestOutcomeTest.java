@@ -164,7 +164,7 @@ class RequestOutcomeTest {
     assertThat(logged).extracting(Logged::outcome).containsExactly(RequestOutcome.UPSTREAM_TIMEOUT);
   }
 
-  /// The metric counts each logged request once, with the outcome of the log: the timeout reported
+  /// The metric counts each logged exchange once, with the outcome of the log: the timeout reported
   /// first, not the abort when the connection closes
   @Test
   void metricCountsTheLoggedOutcome() {

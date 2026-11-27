@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 /// Everything built from the configuration that a reload replaces: routing, known hosts,
 /// certificates and the IP lookup. Immutable, [Proxy] swaps the complete state, and the handlers
-/// read the current state once per request.
+/// read the current state once per HTTP request.
 ///
 /// @param config the configuration the state was built from, with map keys injected
 /// @param ssl the SSL contexts by SNI host and the loaded certificates, the next state takes over
@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 /// @param upstreams the upstreams in use, handed to the next state to take over unchanged ones
 /// @param ipLookupFiles the database files of the IP lookup, it is taken over by the next state
 ///   only if they are unchanged, see [ConfigFiles.Snapshot#unchanged()]
-/// @param configId short hash of the masked configuration, logged with each request,
+/// @param configId short hash of the masked configuration, logged with each exchange,
 ///   see [#configId(ProxyConfig)]
 /// @author Jens Wilke
 record EdgeState(

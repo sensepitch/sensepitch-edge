@@ -42,7 +42,16 @@ send one, see [`SensepitchHeaders`](../src/main/java/org/sensepitch/edge/Sensepi
 RFC 9110 and in `HttpExchange` (JDK), `HttpServerExchange` (Undertow) or `ServerWebExchange`
 (Spring). "The request" is the message of the client, "the exchange" the whole round trip: an
 exchange is in flight until its response is complete, it ends with a request outcome. In the code:
-`DownstreamHandler#failExchange`, `exchangePhase`. Avoid "request" where the exchange is meant.
+`DownstreamHandler#failExchange`, `exchangePhase`.
+- Externally, in all text operators see, a *request* is the complete exchange, as in "requests
+  per second" or `sensepitch_ingress_requests_in_flight`, the common usage of other proxies and of
+  OpenTelemetry; "exchange" does not appear there. That is the README, the docs of the
+  configuration records (the configuration reference), metric names and help texts, log fields
+  and their docs, log messages, the shipped Log4j2 configuration and configuration keys.
+- Internally, in the design documents, code comments and our APIs, the round trip is an
+  *exchange*: there are finished exchanges, not finished requests. The message of the client is
+  the *HTTP request* or the *incoming request*; plain "request" only where the context leaves no
+  doubt, e.g. "the request headers".
 
 **fingerprint**: a value that identifies a UA variant from what the client sends: JA4 from the TLS
 handshake, sp1 from the request headers. Never one that identifies a client, see
