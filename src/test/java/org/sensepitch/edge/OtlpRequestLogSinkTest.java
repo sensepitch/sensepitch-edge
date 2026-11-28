@@ -20,7 +20,6 @@ class OtlpRequestLogSinkTest {
     TestRequestLogInfo info =
         TestRequestLogInfo.of(HttpMethod.POST, 502)
             .withClientAddress("2001:db8::1")
-            .withTls("TLSv1.3")
             .withError(new IllegalStateException("gone"));
     LogRecord record = LogRecord.parseFrom(OtlpRequestLogSink.encode(info));
     RequestLogFieldsWriterTest.RecordingSink expected = RequestLogFieldsWriterTest.fields(info);

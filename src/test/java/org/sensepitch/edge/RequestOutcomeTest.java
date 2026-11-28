@@ -104,7 +104,9 @@ class RequestOutcomeTest {
 
   @Test
   void upstreamResponseIsCompleted() {
-    channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.OK, true));
+    channel =
+        new EmbeddedChannel(
+            TestTls.HANDLER, loggingHandler(), respond(HttpResponseStatus.OK, true));
     request();
     assertThat(logged)
         .containsExactly(
@@ -116,7 +118,9 @@ class RequestOutcomeTest {
   /// edge
   @Test
   void noUpstreamIsAnsweredByTheEdge() {
-    channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.NOT_FOUND, false));
+    channel =
+        new EmbeddedChannel(
+            TestTls.HANDLER, loggingHandler(), respond(HttpResponseStatus.NOT_FOUND, false));
     request();
     assertThat(logged)
         .containsExactly(new Logged(RequestOutcome.COMPLETED, ResponseSource.EDGE, 0, null, null));
@@ -128,6 +132,7 @@ class RequestOutcomeTest {
   void fallbackReportsTheUpstreamStatus() {
     channel =
         new EmbeddedChannel(
+            TestTls.HANDLER,
             loggingHandler(),
             new Fallback(
                     FallbackConfig.builder()
@@ -148,7 +153,8 @@ class RequestOutcomeTest {
   /// The connection closes before the response was sent
   @Test
   void closedConnectionIsClientAborted() {
-    channel = new EmbeddedChannel(loggingHandler(), new ChannelInboundHandlerAdapter());
+    channel =
+        new EmbeddedChannel(TestTls.HANDLER, loggingHandler(), new ChannelInboundHandlerAdapter());
     channel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"));
     channel.close();
     assertThat(logged).extracting(Logged::outcome).containsExactly(RequestOutcome.CLIENT_ABORTED);
@@ -157,7 +163,8 @@ class RequestOutcomeTest {
   /// The first report wins, e.g. a timeout before the connection closes
   @Test
   void firstReportWins() {
-    channel = new EmbeddedChannel(loggingHandler(), new ChannelInboundHandlerAdapter());
+    channel =
+        new EmbeddedChannel(TestTls.HANDLER, loggingHandler(), new ChannelInboundHandlerAdapter());
     channel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"));
     channel.pipeline().get(RequestLoggingHandler.class).setOutcome(RequestOutcome.UPSTREAM_TIMEOUT);
     channel.close();
@@ -168,7 +175,9 @@ class RequestOutcomeTest {
   /// first, not the abort when the connection closes
   @Test
   void metricCountsTheLoggedOutcome() {
-    channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.OK, true));
+    channel =
+        new EmbeddedChannel(
+            TestTls.HANDLER, loggingHandler(), respond(HttpResponseStatus.OK, true));
     request();
     request();
     channel.writeInbound(new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/"));
@@ -181,7 +190,9 @@ class RequestOutcomeTest {
   /// The ingress label is the host header, as set by [SanitizeHostHandler]
   @Test
   void metricIngressIsTheHost() {
-    channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.OK, true));
+    channel =
+        new EmbeddedChannel(
+            TestTls.HANDLER, loggingHandler(), respond(HttpResponseStatus.OK, true));
     HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
     request.headers().set(HttpHeaderNames.HOST, "example.com");
     channel.writeInbound(request, new DefaultLastHttpContent());
@@ -201,7 +212,9 @@ class RequestOutcomeTest {
   /// A report arriving after the request was logged does not leak into the next request
   @Test
   void lateReportIsIgnored() {
-    channel = new EmbeddedChannel(loggingHandler(), respond(HttpResponseStatus.OK, false));
+    channel =
+        new EmbeddedChannel(
+            TestTls.HANDLER, loggingHandler(), respond(HttpResponseStatus.OK, false));
     request();
     RequestLoggingHandler handler = channel.pipeline().get(RequestLoggingHandler.class);
     handler.setOutcome(RequestOutcome.EDGE_ERROR);

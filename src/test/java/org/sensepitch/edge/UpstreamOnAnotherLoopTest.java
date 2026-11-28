@@ -166,7 +166,7 @@ class UpstreamOnAnotherLoopTest {
                 ch.pipeline()
                     .addLast(
                         new HttpServerCodec(),
-                        new TimeoutsTest.FakeSslHandler(),
+                        TestTls.HANDLER,
                         new RequestLoggingHandler(
                             metrics,
                             info -> {

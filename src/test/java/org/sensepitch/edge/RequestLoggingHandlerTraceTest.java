@@ -75,7 +75,9 @@ class RequestLoggingHandlerTraceTest {
           }
         };
     return new EmbeddedChannel(
-        new RequestLoggingHandler(new ProxyMetrics(), logger, trustTraceparent), upstream);
+        TestTls.HANDLER,
+        new RequestLoggingHandler(new ProxyMetrics(), logger, trustTraceparent),
+        upstream);
   }
 
   void request(EmbeddedChannel channel, HttpRequest request, String body) {
@@ -107,10 +109,10 @@ class RequestLoggingHandlerTraceTest {
     assertThat(logged.traceFlags()).isEqualTo("01");
     assertThat(logged.clientTraceparent()).isNull();
     assertThat(logged.requestBodyBytes()).isEqualTo(5);
-    // an embedded channel has neither an IP address nor TLS
+    // an embedded channel has no IP address, the TLS session is the stand-in of the test
     assertThat(logged.clientAddress()).isNull();
     assertThat(logged.serverPort()).isZero();
-    assertThat(logged.tlsProtocol()).isNull();
+    assertThat(logged.tlsProtocol()).isEqualTo(TestTls.PROTOCOL);
     channel.finishAndReleaseAll();
   }
 

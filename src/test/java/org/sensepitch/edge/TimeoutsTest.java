@@ -8,7 +8,6 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -26,7 +25,6 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
-import io.netty.handler.ssl.SslHandshakeCompletionEvent;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Promise;
@@ -76,7 +74,7 @@ class TimeoutsTest {
     return EmbeddedChannel.builder()
         .ticker(ticker)
         .handlers(
-            new FakeSslHandler(),
+            TestTls.HANDLER,
             new RequestLoggingHandler(proxyMetrics, requestLog),
             new IngressTimeoutHandler(config, proxyMetrics),
             new DownstreamHandler(new MockUpstream(), proxyMetrics),
@@ -759,19 +757,6 @@ class TimeoutsTest {
                   }
                 })
             .build();
-  }
-
-  static class FakeSslHandler extends ChannelInboundHandlerAdapter {
-
-    @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
-      ctx.executor()
-          .execute(
-              () -> {
-                ctx.fireUserEventTriggered(SslHandshakeCompletionEvent.SUCCESS);
-              });
-      super.channelActive(ctx);
-    }
   }
 
   class MockUpstream implements Upstream {

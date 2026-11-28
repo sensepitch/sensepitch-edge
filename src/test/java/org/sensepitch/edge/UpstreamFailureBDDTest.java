@@ -259,7 +259,7 @@ class UpstreamFailureBDDTest {
       RequestLogger logger = requestLog.plainText();
       ingress =
           new EmbeddedChannel(
-              new TimeoutsTest.FakeSslHandler(),
+              TestTls.HANDLER,
               new RequestLoggingHandler(
                   metrics,
                   info -> {

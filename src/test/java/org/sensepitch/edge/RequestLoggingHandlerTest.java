@@ -72,6 +72,7 @@ class RequestLoggingHandlerTest {
     IllegalStateException cause = new IllegalStateException("broken destination");
     EmbeddedChannel channel =
         new EmbeddedChannel(
+            TestTls.HANDLER,
             new RequestLoggingHandler(
                 metrics,
                 info -> {
@@ -196,7 +197,8 @@ class RequestLoggingHandlerTest {
             HttpVersion.HTTP_1_1,
             HttpResponseStatus.CREATED,
             Unpooled.copiedBuffer("body", StandardCharsets.UTF_8));
-    EmbeddedChannel channel = new EmbeddedChannel(handler, respond(true, response));
+    EmbeddedChannel channel =
+        new EmbeddedChannel(TestTls.HANDLER, handler, respond(true, response));
 
     request(channel);
 
@@ -234,6 +236,7 @@ class RequestLoggingHandlerTest {
   static EmbeddedChannel failingChannel(
       RequestLoggingHandler handler, ChannelInboundHandlerAdapter responder) {
     return new EmbeddedChannel(
+        TestTls.HANDLER,
         new ChannelOutboundHandlerAdapter() {
           @Override
           public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {

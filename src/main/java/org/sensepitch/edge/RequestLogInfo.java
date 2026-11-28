@@ -71,10 +71,11 @@ public interface RequestLogInfo {
   /// @return the outcome, or `null` if no deflector handled the request
   String protectionOutcome();
 
-  /// Negotiated TLS protocol as reported by the JDK, e.g. `TLSv1.3`, or `null` without TLS
+  /// Negotiated TLS protocol as reported by the JDK, e.g. `TLSv1.3`. Never `null`: only
+  /// encrypted connections reach the request pipeline, see [Proxy#addHttpHandlers(ChannelPipeline)].
   String tlsProtocol();
 
-  /// Negotiated TLS cipher suite, IANA name, e.g. `TLS_AES_128_GCM_SHA256`, or `null` without TLS
+  /// Negotiated TLS cipher suite, IANA name, e.g. `TLS_AES_128_GCM_SHA256`, never `null`
   String tlsCipher();
 
   /// Short id of the connection, unique within this proxy instance

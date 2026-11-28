@@ -47,9 +47,7 @@ class OtlpAllocationIT {
 
   static TestRequestLogInfo browserRequest() {
     TestRequestLogInfo info =
-        TestRequestLogInfo.of(HttpMethod.GET, 200)
-            .withClientAddress("192.0.2.7")
-            .withTls("TLSv1.3");
+        TestRequestLogInfo.of(HttpMethod.GET, 200).withClientAddress("192.0.2.7");
     info.request().setUri("/search?q=edge");
     info.request().headers().set(HttpHeaderNames.USER_AGENT, "Mozilla/5.0 (X11; Linux x86_64)");
     info.request().headers().set(HttpHeaderNames.ACCEPT_LANGUAGE, "de-DE,de;q=0.9");

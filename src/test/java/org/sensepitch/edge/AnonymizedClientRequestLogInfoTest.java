@@ -71,7 +71,6 @@ class AnonymizedClientRequestLogInfoTest {
     TestRequestLogInfo info =
         TestRequestLogInfo.of(HttpMethod.GET, 502)
             .withClientAddress("192.0.2.7")
-            .withTls("TLSv1.3")
             .withError(new IllegalStateException());
     AnonymizedClientRequestLogInfo anonymized = new AnonymizedClientRequestLogInfo(info);
     Set<String> changed = Set.of("clientAddress", "clientPort");

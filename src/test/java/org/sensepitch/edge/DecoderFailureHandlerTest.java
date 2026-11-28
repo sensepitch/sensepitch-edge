@@ -44,7 +44,7 @@ class DecoderFailureHandlerTest {
           new ChannelInitializer<EmbeddedChannel>() {
             @Override
             protected void initChannel(EmbeddedChannel ch) {
-              ch.pipeline().addLast(new HttpServerCodec());
+              ch.pipeline().addLast(TestTls.HANDLER, new HttpServerCodec());
               proxy.addHttpHandlers(ch.pipeline());
             }
           });

@@ -226,17 +226,15 @@ public final class RequestLogFieldsWriter {
   private static <E extends Exception> void writeTls(RequestLogInfo info, RequestLogSink<E> sink)
       throws E {
     String protocol = info.tlsProtocol();
-    sink.string(OtelLogFields.URL_SCHEME, protocol != null ? "https" : "http");
-    if (protocol == null) {
-      return;
-    }
+    // only encrypted requests are logged, see RequestLogInfo#tlsProtocol()
+    sink.string(OtelLogFields.URL_SCHEME, "https");
     String[] nameAndVersion = TLS_PROTOCOLS.get(protocol);
     if (nameAndVersion == null) {
       nameAndVersion = parseTlsProtocol(protocol);
     }
     sink.optionalString(OtelLogFields.TLS_PROTOCOL_NAME, nameAndVersion[0]);
     sink.optionalString(OtelLogFields.TLS_PROTOCOL_VERSION, nameAndVersion[1]);
-    sink.optionalString(OtelLogFields.TLS_CIPHER, info.tlsCipher());
+    sink.string(OtelLogFields.TLS_CIPHER, info.tlsCipher());
   }
 
   /// Splits e.g. `SSLv3` into `ssl` and `3`, entries are `null` if absent

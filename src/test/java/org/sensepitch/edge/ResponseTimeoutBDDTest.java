@@ -102,7 +102,7 @@ class ResponseTimeoutBDDTest {
               .ticker(ticker)
               .handlers(
                   writes,
-                  new TimeoutsTest.FakeSslHandler(),
+                  TestTls.HANDLER,
                   new RequestLoggingHandler(metrics, requestLog.plainText()),
                   new IngressTimeoutHandler(
                       ConnectionConfig.DEFAULT.toBuilder().responseTimeoutSeconds(30).build(),

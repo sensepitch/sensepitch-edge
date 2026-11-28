@@ -287,7 +287,7 @@ class UpstreamReuseBDDTest {
     private final PoolingUpstream upstream = new PoolingUpstream();
     private final EmbeddedChannel ingress =
         new EmbeddedChannel(
-            new TimeoutsTest.FakeSslHandler(),
+            TestTls.HANDLER,
             new RequestLoggingHandler(metrics, requestLog.plainText()),
             new IngressTimeoutHandler(ConnectionConfig.DEFAULT, metrics),
             new DownstreamHandler(upstream, metrics),

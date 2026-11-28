@@ -53,6 +53,7 @@ class AdmissionRevisitTest {
   private final RequestLogCapture requestLog = new RequestLogCapture();
   private final EmbeddedChannel channel =
       new EmbeddedChannel(
+          TestTls.HANDLER,
           new RequestLoggingHandler(new ProxyMetrics(), new JsonRequestLogger(requestLog)),
           new ProtectionHandler(
               new DeflectorHandler(

@@ -38,13 +38,15 @@ public class ExceptionHandlerTest {
 
   EmbeddedChannel beforeHandshake() {
     return new EmbeddedChannel(
-        new RequestLoggingHandler(new ProxyMetrics(), requestLog.plainText()), handler);
+        TestTls.BEFORE_HANDSHAKE,
+        new RequestLoggingHandler(new ProxyMetrics(), requestLog.plainText()),
+        handler);
   }
 
   EmbeddedChannel afterHandshake() {
     EmbeddedChannel channel =
         new EmbeddedChannel(
-            new TimeoutsTest.FakeSslHandler(),
+            TestTls.HANDLER,
             new RequestLoggingHandler(new ProxyMetrics(), requestLog.plainText()),
             handler);
     channel.runPendingTasks();

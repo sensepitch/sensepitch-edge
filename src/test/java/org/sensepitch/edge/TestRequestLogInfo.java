@@ -26,7 +26,7 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
   private final HttpRequest request;
   private final HttpResponse response;
   private InetAddress clientAddress;
-  private String tlsProtocol;
+  private String tlsProtocol = TestTls.PROTOCOL;
   private Throwable error;
   private String upstreamName;
   private String upstreamTarget;
@@ -70,7 +70,7 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
     return this;
   }
 
-  /// With a TLS connection, cipher is always `TLS_AES_128_GCM_SHA256`
+  /// The TLS protocol, `TLSv1.3` if not set; the cipher is always the one of [TestTls#CIPHER]
   TestRequestLogInfo withTls(String protocol) {
     tlsProtocol = protocol;
     return this;
@@ -192,7 +192,7 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
 
   @Override
   public String tlsCipher() {
-    return tlsProtocol != null ? "TLS_AES_128_GCM_SHA256" : null;
+    return TestTls.CIPHER;
   }
 
   @Override

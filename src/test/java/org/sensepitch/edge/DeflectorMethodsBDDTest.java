@@ -117,6 +117,7 @@ class DeflectorMethodsBDDTest {
               .build();
       channel =
           new EmbeddedChannel(
+              TestTls.HANDLER,
               new RequestLoggingHandler(metrics, info -> outcomes.add(info.protectionOutcome())),
               new ProtectionHandler(
                   new DeflectorHandler(new Deflector(config, new ConfigFiles()), metrics)));

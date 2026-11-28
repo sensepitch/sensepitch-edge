@@ -176,15 +176,37 @@ The invariant holds by construction: in production the only way into `addHttpHan
 through the `SslHandler` of the TLS listener. No runtime check per request is needed to keep
 plaintext out.
 
-On top of that, a component that relies on the encryption verifies it where it uses it, and
-fails closed: a missing TLS session is an error, not a default. This catches a wiring mistake,
-e.g. a new listener that calls `addHttpHandlers` without TLS, instead of serving it quietly. The
-code does not do this everywhere yet: the
+On top of that, the pipeline verifies it and fails closed: a missing TLS session is an error,
+not a default. This catches a wiring mistake, e.g. a new listener that calls `addHttpHandlers`
+without TLS, instead of serving it quietly with `X-Forwarded-Proto: https`, `Secure` cookies and
+HSTS that claim an encryption that is not there.
+
+The TLS listener puts a
+[`TlsSessionHandler`](../../src/main/java/org/sensepitch/edge/TlsSessionHandler.java) right after
+the `SniHandler`. It keeps the protocol and cipher when the handshake succeeds, and the
 [`RequestLoggingHandler`](../../src/main/java/org/sensepitch/edge/RequestLoggingHandler.java)
-treats a missing `SslHandler` as "no TLS", and the request log then reports `url.scheme` `http`.
-That branch exists because the unit tests drive `addHttpHandlers` on an `EmbeddedChannel`
-without TLS; closing it needs a test seam that stands in for the TLS session, see
-[Planned improvements](#planned-improvements).
+takes them from it, like it takes the byte counts from the `CountByteIoHandler`. So `url.scheme`
+is always `https`; there is no branch for a request without TLS.
+
+The check runs once per connection, when the channel is set up:
+[`Proxy#addHttpHandlers`](../../src/main/java/org/sensepitch/edge/Proxy.java) throws unless the
+`TlsSessionHandler` is in the pipeline and it finds an `SniHandler` or an `SslHandler` in front,
+and Netty's `ChannelInitializer` closes the connection. At that point the TLS listener has the
+`SniHandler`; it replaces itself by the `SslHandler` after the ClientHello, so both are accepted.
+The check is not done in `handlerAdded` of the `TlsSessionHandler`: Netty (4.2.21,
+`DefaultChannelPipeline.callHandlerAdded0`) does not pass an exception from there to the caller,
+it removes the handler and fires `exceptionCaught`.
+
+A check per request was not chosen: a wiring mistake breaks the whole listener, not single
+requests, so the setup is the place to see it, and requests pay nothing for it. The failure is
+not counted as a request level event, it is a bug that fails every connection of the listener.
+
+The unit tests drive the request pipeline on an `EmbeddedChannel` without TLS. They put the
+stand-in of
+[`TestTls`](../../src/test/java/org/sensepitch/edge/TestTls.java) at the place of the TLS
+handlers: a `TlsSessionHandler` that reports fixed values, accepts the pipeline and fires the
+handshake event. It is the only way past the check, and it lives in test sources; production
+code has no bypass and no extra parameter for the tests.
 
 The properties of the encryption are kept per connection, so they can be told apart later: the
 request log has the protocol and cipher (`tls.protocol.*`, `tls.cipher`) and the JA4 fingerprint
@@ -254,8 +276,7 @@ the narrower compatibility for the simpler security model, see
 The invariant is about the client side. Today the edge connects to its upstreams in plaintext,
 which assumes a trusted network between them, e.g. the same host or the pod network. Encrypting
 that leg has other trade-offs (certificates of internal services, latency of the second
-handshake, connection reuse) and is decided on its own, see
-[Planned improvements](#planned-improvements).
+handshake, connection reuse) and is decided on its own; it is not planned yet.
 
 ## Alternatives considered
 
@@ -267,7 +288,10 @@ handshake, connection reuse) and is decided on its own, see
   later change to the pipeline would have to keep the redirect first.
 - **Trusting `X-Forwarded-Proto` from configured proxy addresses**, for a load balancer that
   terminates TLS. Rejected, see [TLS terminates at the edge](#tls-terminates-at-the-edge).
-
+- **The TLS session as a lookup function passed to the `RequestLoggingHandler`**, with an
+  unchecked `addHttpHandlers` overload for the tests. Tried and dropped: a second way to the
+  session next to the pipeline, and a bypass of the check in production code. The
+  `TlsSessionHandler` in the pipeline needs neither.
 - **Netty's default suites minus an exclude list** (static RSA, CBC). Rejected: the base is a
   list fixed in Netty, not what BoringSSL offers, it lacks ChaCha20 for TLS 1.2, and a suite
   Netty adds later is enabled without review.
@@ -283,8 +307,6 @@ handshake, connection reuse) and is decided on its own, see
 - Clients without TLS get only the redirect.
 - The plain HTTP listener is counted, not logged: an individual request on port 80 cannot be
   investigated afterwards, see [Port 80 is counted, not logged](#port-80-is-counted-not-logged).
-- The fail closed check in the pipeline is missing, see [The invariant is structural, and
-  verified where it is relied on](#the-invariant-is-structural-and-verified-where-it-is-relied-on).
 - Responses the edge generates itself carry no HSTS header: the protection challenge, the
   fallback pages of `FallbackHandler`, the error pages of `ExceptionHandler` and the answers to
   an unserviced host. They are written before `DownstreamHandler` or after it dropped the
@@ -293,5 +315,5 @@ handshake, connection reuse) and is decided on its own, see
 
 ## Planned improvements
 
-Listed in [`TODO.md`](../../TODO.md) under "Transport encryption": fail closed without a TLS
-session, HTTP/2 over TLS, and upstream TLS.
+HTTP/2 downstream is parked in [`NOT-YET.md`](../../NOT-YET.md). Encrypting the connection to
+the upstream is not planned yet.

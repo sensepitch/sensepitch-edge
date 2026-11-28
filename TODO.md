@@ -213,14 +213,6 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   admission, so later requests and the upstream see them; see
   [browser fingerprinting](doc/design/browser-fingerprinting.md)
 
-## Transport encryption
-
-Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md).
-
-- [ ] fail closed in the request pipeline when a request has no TLS session, instead of logging
-  `url.scheme` `http`; needs a test seam that stands in for the TLS session of the
-  `EmbeddedChannel` tests
-
 ## Ingress, HTTP
 
 - [ ] Request size limits: decide the options below, then implement the chosen ones. Research,

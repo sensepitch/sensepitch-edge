@@ -152,9 +152,7 @@ class RequestLogFieldsWriterTest {
   @Test
   void semanticConventionFields() {
     TestRequestLogInfo info =
-        TestRequestLogInfo.of(HttpMethod.POST, 201)
-            .withClientAddress("192.0.2.7")
-            .withTls("TLSv1.3");
+        TestRequestLogInfo.of(HttpMethod.POST, 201).withClientAddress("192.0.2.7");
     info.request().setUri("/search?q=edge");
     info.request().headers().set(HttpHeaderNames.USER_AGENT, "curl/8");
     info.request().headers().set(HttpHeaderNames.REFERER, "https://example.org/");
@@ -277,13 +275,11 @@ class RequestLogFieldsWriterTest {
     Map<String, Object> fields = fields(TestRequestLogInfo.of(HttpMethod.GET, 200)).fields;
     assertThat(fields)
         .containsEntry("url.path", "/")
-        .containsEntry("url.scheme", "http")
+        .containsEntry("url.scheme", "https")
         .doesNotContainKeys(
             "client.address",
             "client.port",
             "url.query",
-            "tls.protocol.name",
-            "tls.cipher",
             "user_agent.original",
             "geo.country.iso_code",
             "sensepitch.client.asn",

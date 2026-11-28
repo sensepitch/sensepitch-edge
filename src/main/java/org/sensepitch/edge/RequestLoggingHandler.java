@@ -14,14 +14,13 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpStatusClass;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
-import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Ticker;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
-import javax.net.ssl.SSLSession;
 
 /// Listens to incoming and outgoing http messages and collects all relevant information during
 /// request processing and calls the request logger when the final response's last content is
@@ -108,11 +107,9 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   /// Headers as the client sent them, from the [FingerprintHandler] before this handler
   private FingerprintHandler.ClientHeaders clientHeaders = FingerprintHandler.ClientHeaders.NONE;
 
-  /// TLS session data, read once per connection, when the first request is logged
-  private boolean tlsResolved;
-
-  private String tlsProtocol;
-  private String tlsCipher;
+  /// The TLS parameters of the connection, taken from the pipeline with the first request, kept
+  /// so they are still there when a request is logged after the channel was deregistered
+  private TlsSessionHandler tls;
 
   /// Handler that never trusts a `traceparent` header from the client
   public RequestLoggingHandler(ProxyMetrics metrics, RequestLogger logger) {
@@ -158,6 +155,12 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof HttpRequest) {
       request = (HttpRequest) msg;
+      if (tls == null) {
+        // Proxy#addHttpHandlers refused a pipeline without it
+        tls =
+            Objects.requireNonNull(
+                ctx.pipeline().get(TlsSessionHandler.class), "no TLS session handler");
+      }
       clientHeaders = FingerprintHandler.takeClientHeaders(ctx.channel());
       metrics.countRequestStarted(request);
       requestStartTime = System.currentTimeMillis();
@@ -266,9 +269,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   private void log(ChannelHandlerContext ctx) {
     channel = ctx.channel();
-    if (!tlsResolved) {
-      resolveTls(ctx);
-    }
     responseReceivedTimeNanos = ticker.nanoTime();
     metrics.countRequestOutcome(request, outcome());
     try {
@@ -304,21 +304,6 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
     traceContext = null;
     clientTraceparent = null;
     clientHeaders = FingerprintHandler.ClientHeaders.NONE;
-  }
-
-  /// The SNI handler replaces itself by the SSL handler, so it is looked up when the handshake is
-  /// done, which is the case when a request was received
-  private void resolveTls(ChannelHandlerContext ctx) {
-    tlsResolved = true;
-    SslHandler sslHandler = ctx.pipeline().get(SslHandler.class);
-    if (sslHandler == null) {
-      return;
-    }
-    SSLSession session = sslHandler.engine().getSession();
-    if (session != null) {
-      tlsProtocol = session.getProtocol();
-      tlsCipher = session.getCipherSuite();
-    }
   }
 
   private void consolidateTimes() {
@@ -515,12 +500,12 @@ public class RequestLoggingHandler extends ChannelDuplexHandler implements Reque
 
   @Override
   public String tlsProtocol() {
-    return tlsProtocol;
+    return tls.protocol();
   }
 
   @Override
   public String tlsCipher() {
-    return tlsCipher;
+    return tls.cipher();
   }
 
   @Override

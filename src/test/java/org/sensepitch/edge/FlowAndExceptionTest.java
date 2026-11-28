@@ -84,7 +84,7 @@ public class FlowAndExceptionTest {
     ingressFlushBlocker = new FlushBlocker();
     ChannelHandler[] handlers = {
       ingressFlushBlocker,
-      new TimeoutsTest.FakeSslHandler(),
+      TestTls.HANDLER,
       new RequestLoggingHandler(proxyMetrics, requestLog),
       new IngressTimeoutHandler(ConnectionConfig.DEFAULT, proxyMetrics),
       new DownstreamHandler(new MockUpstream(), proxyMetrics),

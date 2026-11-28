@@ -439,6 +439,7 @@ public class Proxy implements ProxyContext {
                     pipeline.addLast(new Ja4Handler(metrics));
                   }
                   pipeline.addLast(new SniHandler(hostToContext));
+                  pipeline.addLast(new TlsSessionHandler());
                   pipeline.addLast(new CountByteIoHandler());
                   pipeline.addLast(new HttpServerCodec());
                   addHttpHandlers(pipeline);
@@ -664,9 +665,22 @@ public class Proxy implements ProxyContext {
 
   private static final DecoderFailureHandler DECODER_FAILURE_HANDLER = new DecoderFailureHandler();
 
-  /// Adds the HTTP handlers of a connection, without the socket and TLS. Tests drive them on an
-  /// `EmbeddedChannel`, see `ProxyConstructBDDTest`.
+  /// Adds the HTTP handlers of a connection behind its TLS handlers, the request pipeline. Fails
+  /// closed: only encrypted traffic may enter it, see `doc/design/encrypted-transport.md`, so a
+  /// pipeline without TLS in front is refused once, when the channel is set up, not per request.
+  /// The exception makes Netty's `ChannelInitializer` close the connection and log it; that is a
+  /// wiring bug that fails every connection of the listener, not a request level event, so it is
+  /// not counted. Tests drive the handlers on an `EmbeddedChannel` with a stand-in for the
+  /// [TlsSessionHandler], see `ProxyConstructBDDTest`.
+  ///
+  /// @throws IllegalStateException if the pipeline has no [TlsSessionHandler], or no TLS, see
+  ///   [TlsSessionHandler#requireTls(ChannelPipeline)]
   void addHttpHandlers(ChannelPipeline pipeline) {
+    TlsSessionHandler tls = pipeline.get(TlsSessionHandler.class);
+    if (tls == null) {
+      throw new IllegalStateException("No TLS session handler in front of the request pipeline");
+    }
+    tls.requireTls(pipeline);
     pipeline.addLast(STRIP_EDGE_HEADERS_HANDLER);
     // takes the headers before any handler below changes their order
     pipeline.addLast(fingerprintHandler);

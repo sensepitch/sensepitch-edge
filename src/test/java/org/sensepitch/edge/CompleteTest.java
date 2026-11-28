@@ -453,6 +453,7 @@ class CompleteTest {
             new ChannelInitializer<>() {
               @Override
               protected void initChannel(EmbeddedChannel ch) throws Exception {
+                ch.pipeline().addLast(TestTls.HANDLER);
                 proxy.addHttpHandlers(ch.pipeline());
               }
             };
