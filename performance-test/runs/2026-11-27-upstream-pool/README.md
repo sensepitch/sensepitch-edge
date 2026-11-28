@@ -169,8 +169,9 @@ grep -c '"sensepitch.connection.request_count":0,' results-probe/5000-pool.log
 
 ## Next comparison
 
-Planned on 2026-11-27, tracked in [NOT-YET.md](../../../NOT-YET.md) under "Benchmark: edge
-against NGINX, done fairly". It builds on these findings of this run:
+Built on 2026-11-28 as [`performance-test/benchmark`](../../benchmark/README.md), with HAProxy
+added and `/proc` sampling instead of `mpstat` and `pidstat`. Planned on 2026-11-27, on these
+findings of this run:
 
 - vegeta is the bottleneck on one machine: at a requested 40k req/s it reached 28 to 30k, the
   machine 93 % busy with NGINX on 3.7 cores. `h2load` 1.71 and `shb` (io_uring) reach about 50k

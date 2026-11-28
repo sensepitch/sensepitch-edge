@@ -5,18 +5,6 @@ node ingress, see [TODO.md](TODO.md). Moved out of `TODO.md` on 2026-11-21; the 
 their text, numbers and priorities from there. An entry moves back to `TODO.md` when it becomes a
 need, e.g. a bug or a production requirement. Bugs and robustness issues are never parked here.
 
-## Benchmark: edge against NGINX, done fairly
-
-- [ ] Rebuild the comparison in `performance-test/runs/2026-11-27-upstream-pool` on `shb` and
-  replace the numbers of the README benchmark section
-  - P2, operator-visible only through the README: today's README numbers (2025, vegeta, edge with
-    the earlier pool) and most numbers of 2026-11-27 compare unequal setups.
-  - The findings it builds on and the method (`shb` with warm-up, each server with its log on and
-    off, 10 to 1 000 connections, three runs, CPU per 10 000 req/s, later more response sizes,
-    HTTP/2, HAProxy and Envoy) are in the run README
-    [2026-11-27-upstream-pool](performance-test/runs/2026-11-27-upstream-pool/README.md), section
-    "Next comparison".
-
 ## Kubernetes, Gateway API controller
 
 The Gateway API implementation with its Go controller (milestones M1 to M3, plan in

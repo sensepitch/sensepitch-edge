@@ -16,3 +16,15 @@ services:
       - ./nginx-proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./ssl/nginx.crt:/etc/nginx/ssl/nginx.crt:ro
       - ./ssl/nginx.key:/etc/nginx/ssl/nginx.key:ro
+
+  haproxy:
+    image: haproxy:3.2.27-alpine
+    # as root, as the NGINX master: the mounted key is readable by its owner only
+    user: root
+    # on: access log to standard out, as NGINX by default; off: none, see haproxy/haproxy.cfg
+    environment:
+      HAPROXY_ACCESS_LOG: ${HAPROXY_ACCESS_LOG:-on}
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./ssl/nginx.crt:/usr/local/etc/haproxy/nginx.crt:ro
+      - ./ssl/nginx.key:/usr/local/etc/haproxy/nginx.crt.key:ro
