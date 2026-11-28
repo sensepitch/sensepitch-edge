@@ -65,6 +65,7 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] 9. node ingress mode in the chart, and a restart without refused connections: DaemonSet on
   labelled ingress nodes, ports 80 and 443 on the node addresses. How the ports are bound decides
   whether a restart can overlap the old and the new pod.
+  - BLOCKED: requires the passing kind deployment check in item 3.
   - P1.
   - Port binding, tick one; rule: first the option with the least extra configuration that works
     in the most setups:
@@ -174,6 +175,12 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   - Metrics: the crawler counter gets a `tier` label and a `tag` label, one increment per tag of
     the deciding match. Both values come from the configured data, not from the request, so the
     cardinality is bounded by the loaded lists; check it stays small with the real release.
+  - Done: `KnownCrawlerLists` reads the zips of a directory and returns every matching feed in
+    the order above, checked against `expectations.json`; not wired into the request path yet.
+    Open: the configuration (directory, `admittedTierLevel`, `excludeTypes`, the `WARNING` when
+    unset), the match list in `IpTraits`, the request log and headers, the reload by the watcher,
+    the metric labels, and removing `src/main/resources/crawler-ips/` with
+    `readCrawlerIpLists`.
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
