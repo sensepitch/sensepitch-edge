@@ -231,6 +231,14 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     - [x] separate `head`, `body_idle`, `body_rate`, `request_total`
     - [ ] today's phases plus `body_rate`
 
+- [ ] QUIC support, HTTP/3 to the clients
+  - The [benchmark](performance-test/benchmark/README.md) can measure it: `shb` speaks HTTP/3.
+  - Fits the rule that only encrypted traffic enters the request pipeline: QUIC always runs
+    TLS 1.3, see [encrypted-transport.md](doc/design/encrypted-transport.md).
+  - enabled by default, listener gets quic.disable. QuickConfig just has disable for now, maybe we need more protocol options (ideas?)
+  - Do some IT tests with a minimal Netty client, if that is possible, shb otherwise
+  - Add QUIC to the benchmarks, meaning benchmark needs to run twice the time with HTTP1.1 and QUIC
+
 ## Evergreen / Cleanups
 
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without

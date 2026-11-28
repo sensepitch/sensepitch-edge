@@ -136,8 +136,6 @@ Decisions, alternatives and limitations are in
 
 - [ ] HTTP/2 support, downstream
   - P3: scope protocol negotiation, stream lifecycle, backpressure and compatibility tests.
-- [ ] quic support
-  - P3
 - [ ] Implement server-timing, https://www.w3.org/TR/server-timing/
   - P3: enable/disable forward of upstream Server-Timing info, log all of it, add own timing info,
     e.g. upstream connect latency
