@@ -3,6 +3,9 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.handler.ssl.SslProtocols;
+import io.netty.util.ReferenceCountUtil;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,6 +28,20 @@ import org.junit.jupiter.api.io.TempDir;
 ///
 /// @author Jens Wilke
 class SslSetupTest {
+
+  @Test
+  void enablesOnlyTls12And13() {
+    var setup = build(ListenConfig.builder().ssl(ConfigReloadTest.TEST_SSL).build());
+    var engine = setup.map(null).newEngine(ByteBufAllocator.DEFAULT);
+    try {
+      // SSLv2Hello describes a ClientHello format, not a negotiable version.
+      assertThat(List.of(engine.getEnabledProtocols()))
+          .filteredOn(protocol -> !SslProtocols.SSL_v2_HELLO.equals(protocol))
+          .containsExactlyInAnyOrder("TLSv1.2", "TLSv1.3");
+    } finally {
+      ReferenceCountUtil.release(engine);
+    }
+  }
 
   // SNI selection
 

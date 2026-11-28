@@ -5,6 +5,8 @@ node ingress, see [TODO.md](TODO.md). Moved out of `TODO.md` on 2026-11-21; the 
 their text, numbers and priorities from there. An entry moves back to `TODO.md` when it becomes a
 need, e.g. a bug or a production requirement. Bugs and robustness issues are never parked here.
 
+- TLS config, finish TODO
+
 ## Upstream pool fine tuning
 
 - enable -> disable

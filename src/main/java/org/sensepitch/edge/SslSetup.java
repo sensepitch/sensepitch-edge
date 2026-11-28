@@ -3,6 +3,7 @@ package org.sensepitch.edge;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProtocols;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.util.DomainWildcardMappingBuilder;
 import io.netty.util.Mapping;
@@ -308,6 +309,7 @@ final class SslSetup implements Mapping<String, SslContext> {
     try {
       SslContext context =
           SslContextBuilder.forServer(new ByteArrayInputStream(cert), new ByteArrayInputStream(key))
+              .protocols(SslProtocols.TLS_v1_2, SslProtocols.TLS_v1_3)
               .clientAuth(ClientAuth.NONE)
               .sslProvider(SslProvider.OPENSSL)
               .build();

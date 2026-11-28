@@ -213,8 +213,8 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
 - [ ] fail closed in the request pipeline when a request has no TLS session, instead of logging
   `url.scheme` `http`; needs a test seam that stands in for the TLS session of the
   `EmbeddedChannel` tests
-- [ ] a TLS policy of the edge instead of the library defaults: pin and test the minimum
-  TLS 1.2, decide on the suites without forward secrecy and with CBC/SHA-1
+- [ ] decide which TLS 1.2 cipher suites to allow, including whether to keep suites without
+  forward secrecy or with CBC/SHA-1
 
 ## Ingress, HTTP
 

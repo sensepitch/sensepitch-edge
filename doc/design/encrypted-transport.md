@@ -65,9 +65,9 @@ TCP listen.httpsPort (443)
 UDP 443, QUIC, HTTP/3: not started
 ```
 
-What the TLS listener negotiates today, measured on 2026-11-26 with Netty 4.2.21 and its BoringSSL
-build, by creating a server context like `SslSetup` does and reading the enabled protocols and
-cipher suites of a new engine:
+On 2026-11-26, before the edge pinned its TLS versions, a measurement with Netty 4.2.21 and its
+BoringSSL build found the following defaults by reading the enabled protocols and cipher suites
+from a new server engine.
 
 - protocols TLS 1.3 and TLS 1.2; `SSLv2Hello` is listed as well, it only accepts the old hello
   format and negotiates no SSLv2
@@ -75,9 +75,13 @@ cipher suites of a new engine:
   have no forward secrecy; 4 of the 12 use CBC with SHA-1
 - no ALPN protocols, so every client speaks HTTP/1.1
 
-These are library defaults; `SslSetup` sets neither protocols nor ciphers.
-
 ## Design decisions
+
+### Pin the client-facing TLS versions
+
+`SslSetup` enables TLS 1.2 and TLS 1.3 on the shared server context builder for all certificates.
+This keeps the supported versions stable across provider upgrades and changes to provider defaults.
+The cipher suites still come from the provider.
 
 ### Port 80 is a separate pipeline, not a route
 
@@ -226,9 +230,8 @@ handshake, connection reuse) and is decided on its own, see
 ## Limitations
 
 - Clients without TLS get only the redirect.
-- The protocols and ciphers are library defaults, not a policy of the edge: TLS 1.2 is enabled
-  with suites without forward secrecy and with CBC, see [Overview](#overview). Nothing tests
-  that the minimum stays TLS 1.2.
+- The default TLS 1.2 cipher suites include suites without forward secrecy and suites using CBC,
+  see [Overview](#overview).
 - The plain HTTP listener is counted, not logged: an individual request on port 80 cannot be
   investigated afterwards, see [Port 80 is counted, not logged](#port-80-is-counted-not-logged).
 - The fail closed check in the pipeline is missing, see [The invariant is structural, and
@@ -242,4 +245,4 @@ handshake, connection reuse) and is decided on its own, see
 ## Planned improvements
 
 Listed in [`TODO.md`](../../TODO.md) under "Transport encryption": fail closed without a TLS
-session, a tested TLS policy, HTTP/2 over TLS, and upstream TLS.
+session, a TLS 1.2 cipher-suite policy, HTTP/2 over TLS, and upstream TLS.
