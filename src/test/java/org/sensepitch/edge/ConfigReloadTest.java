@@ -423,24 +423,23 @@ class ConfigReloadTest {
   }
 
   /// A renewed certificate whose key is not written yet: the reload is rejected, TLS goes on
-  /// with the active context
+  /// with the active context. The other key is a fixture: generating an RSA key took about
+  /// 0.65 s of this test (sequential run, 2026-11-28).
   @Test
-  void keyOfAnotherCertificateKeepsActiveContext(@TempDir Path dir) throws Exception {
+  void keyOfAnotherCertificateKeepsActiveContext() {
     var activeContext = steps.proxy.state().ssl().map("a.com");
-    Path key = SslSetupTest.writeNewKey("RSA", dir);
+    String key = "classpath:ssl/other.key";
     ProxyConfig mismatched =
         CONFIG.toBuilder()
             .listen(
-                CONFIG.listen().toBuilder()
-                    .ssl(TEST_SSL.toBuilder().keyPath(key.toString()).build())
-                    .build())
+                CONFIG.listen().toBuilder().ssl(TEST_SSL.toBuilder().keyPath(key).build()).build())
             .build();
     assertThat(reload(mismatched)).isFalse();
     assertThat(logs.errors())
         .extracting(LogCapture.Entry::message)
         .singleElement(STRING)
         .startsWith("Configuration rejected")
-        .contains(key.toString());
+        .contains(key);
     assertThat(steps.proxy.state().ssl().map("a.com")).isSameAs(activeContext);
     steps.when_requesting("a.com", "/").then_expect_content("A");
   }

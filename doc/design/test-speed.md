@@ -42,6 +42,7 @@ Where the unit test time went at the start, and what became of it:
 | Tests waiting on real timers | about 6 s | unchanged, see [Planned improvements](#planned-improvements) |
 | JaCoCo agent | about 2 s | kept, skippable with `-Dfast` |
 | JVM start and warm-up | 1.5 to 2.5 s | fixed |
+| C2 compilation in the test JVM (measured 2026-11-28, 16 cores) | about 1.6 s wall, half the CPU | C1 only |
 
 The switches, all in the [`pom.xml`](../../pom.xml):
 
@@ -74,6 +75,23 @@ about 15 s, before the Serenity change.
 - The number of threads follows the cores, so one CPU means a sequential run and the test runner
   never oversubscribes the machine.
 - It is set for surefire only. Integration tests and runs from an IDE stay sequential.
+
+### The unit test JVM compiles with C1 only
+
+Surefire starts the unit test JVM with `-XX:TieredStopAtLevel=1` (property `test.jitArgLine` in
+the [`pom.xml`](../../pom.xml)), as `.mvn/jvm.config` does for Maven's own JVM. The unit tests
+are short and run on many threads at once, so most of the CPU of the run went into C2
+compilation of code that ran only a few times: run sequentially, all test classes together took
+6.4 s, run concurrently the same classes took 37 s, and the CPU, not waiting, set the wall time.
+Measured on 2026-11-28 on a 16 core machine, `./mvnw -q test` after a build, three alternating
+runs each: with C2 6.9 to 7.3 s wall and 46 to 50 s user CPU, with C1 only 5.3 to 5.8 s and 21 to
+23 s. All tests passed, coverage was unchanged (the known variance of two branches).
+
+The integration tests keep the production JIT: they run against the real thing, and the
+`excessive` tests, which measure allocation and timing, are integration tests. A unit test that
+depends on C2 optimizations, e.g. allocations removed by escape analysis, belongs there too;
+`CircuitBreakerBDDTest.closed_doesNotAllocate` passes with C1, its code allocates nothing in the
+first place. `-Dtest.jitArgLine=` runs the unit tests with C2.
 
 ### Classes that depend on JVM wide state run alone
 

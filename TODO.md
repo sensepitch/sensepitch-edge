@@ -19,16 +19,6 @@ First, because every other task depends on it: a quick test loop and a failure t
 means a defect speed up and secure all work below. Measurements, the fake clock library and what
 was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 
-- [ ] `./mvnw test` at about 5 s wall time: move a test that does real socket connections or
-  sleeps to an `*IT`, or put it on simulated time
-  - P1. The classes run in parallel, the methods of a class in order, so one slow class sets the
-    wall time and a few hundred ms count.
-  - Move only what adds no coverage of its own: compare `target/site/jacoco/jacoco.csv` of
-    `./mvnw clean test jacoco:report` with and without the test (exclude with
-    `-Dtest='**/*Test,**/*BDDTest,!Class#method'`, a bare exclusion pulls in the `*IT`s). One
-    branch of `AsyncRequestLogWriter` varies between runs, rerun before reading a difference.
-  - What cannot move for coverage gets a fake clock instead, see the planned improvements in the
-    [test speed design](doc/design/test-speed.md#planned-improvements).
 - [ ] JaCoCo coverage varies between runs: lines that passing tests execute are sometimes
   reported as missed, e.g. `AdminServer` lines 48 and 73–74 and `IpTraits` lines 31, 81 and 85
   (seen 2026-11-24 in `./mvnw verify`, while `AdminServerTest` and `CombinedIpTraitsLookupTest`
