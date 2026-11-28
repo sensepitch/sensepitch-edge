@@ -35,3 +35,9 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   answers); today only forwarded and configured static responses (these responses simulate an upstream) carry it, since only those pass
   `DownstreamHandler.write` with an upstream attached. Operators, medium importance, a client
   whose first response is a challenge learns no policy.
+- Other tests that close an `HttpBatchSender` and then stop their JDK test server with
+  `TestingParameters.stop` (`OtlpLogDestinationTest.stop`, `HttpBatchSenderTest`,
+  `OtlpAllocationIT`, `OtlpSlowStartIT`) can hit the same 10 s stop that
+  `OtlpLogDestinationIT.concurrentRequestsUpToTheLimit` had; none was slow in one full gate. A
+  shared helper that stops without grace once the sender is closed would cover them. Developers,
+  low importance. From the `shorten-otlp-destination-it` turn, 2026-11-27.

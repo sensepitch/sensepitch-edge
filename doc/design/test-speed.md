@@ -213,6 +213,27 @@ the two cases 12.80 / 12.81 to 2.79 / 2.85 seconds, the gate 82.5 to 60.7 second
 A test server handler must answer every exchange it receives; one that only closes it costs the
 whole grace.
 
+A second way to lose the grace, found on 2026-11-27 in
+`OtlpLogDestinationIT.concurrentRequestsUpToTheLimit`: the test closes the sender, whose
+`shutdownNow` drops the idle client connections, and then stops its server with
+`TestingParameters.stop`. When the stop request finds exchanges still ending or a connection in
+`reqConnections`, the server waits; per the JDK 25 sources it checks again only on a
+`WriteFinished` event, not when a connection closes. If the dropped connection ends last, the stop
+waits all 10 seconds. Read by reflection right before the stop, a slow case showed two exchanges
+and one request connection pending; afterwards all were zero and the stop still waited. The
+method repeated 25 times in one JVM had four and one such stops in two runs (42.8 s for the
+class). Once the sender is closed every post has its answer, so the test now stops that server
+with `stop(0)`; 50 repetitions then took 3.4 s, none slower than 1 s (the first, cold one).
+
+One machine, the sandbox above (2 CPUs, AMD EPYC-Milan, OpenJDK 25.0.5). With
+`./mvnw -o package -DskipTests` once, then `./mvnw -o failsafe:integration-test failsafe:verify
+-Dit.test=OtlpLogDestinationIT` three times, the class took 11.39 / 11.37 / 1.34 seconds before
+(`concurrentRequestsUpToTheLimit` 10.65 / 10.63 / 0.62) and 1.40 / 1.52 / 1.48 after (0.66 /
+0.61 / 0.63). In a full `./mvnw -o clean verify` before, the class took 0.98 seconds without a
+slow stop. The other four methods take 0.02 to 0.35 seconds each; their record counts and
+backoffs stay, see [Waste in single tests is removed, margins are not
+cut](#waste-in-single-tests-is-removed-margins-are-not-cut).
+
 ### Move only redundant server scenarios
 
 The selective move on 2026-11-17 compares the unit suite alone, rather than the combined gate.
@@ -270,7 +291,8 @@ The baseline unit builds took 33.79 and 23.60 seconds; the actual move took 22.7
 class times were 13.625 / 3.752 seconds before and 2.461 after; reload class times were 2.632 /
 2.247 before and 1.458 after. In the unchanged baselines the concurrency-limit method alone varied
 from 10.189 to 0.185 seconds. An HTTP server consuming its teardown grace is a plausible cause of
-that ten-second difference, not established by these runs. The move reduces work in the unit
+that ten-second difference, not established by these runs (established and fixed on 2026-11-27,
+see [Asynchronous waits share one upper bound](#asynchronous-waits-share-one-upper-bound)). The move reduces work in the unit
 phase, but these observations do not establish a stable wall-clock speedup; integration tests
 now pay for the nine moved scenarios. The two packing timers and draining-finish retry remain
 unit costs for the separate fake-clock task.

@@ -103,7 +103,10 @@ class OtlpLogDestinationIT {
       assertThat(fixture.destination.droppedCount()).isZero();
     } finally {
       release.countDown();
-      TestingParameters.stop(slow);
+      // Without grace: once the sender is closed, every post has its answer and nothing logs late.
+      // A grace stop took the whole 10 s in 5 of 50 runs: the closing sender drops its connections
+      // while the JDK server stops, which then misses that the last one ended (2026-11-27).
+      slow.stop(0);
     }
   }
 
