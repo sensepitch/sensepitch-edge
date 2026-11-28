@@ -104,8 +104,18 @@ class DefaultUpstreamIT {
             assertThat(second).isNotSameAs(first);
             first.closeFuture().get(EVENT_TIMEOUT_SECONDS, SECONDS);
             assertThat(upstream.reused(second)).isFalse();
+            // on the loop: its close listener counts the close, a waiter may wake before that
+            double notReusable =
+                loop.submit(
+                        () ->
+                            metrics
+                                .upstreamPoolConnectionsClosed
+                                .labelValues("backend", ProxyMetrics.CloseReason.NOT_REUSABLE.label)
+                                .get())
+                    .get(EVENT_TIMEOUT_SECONDS, SECONDS);
+            assertThat(notReusable).isOne();
           }
-          assertThat(metrics.upstreamConnectionsOpened.labelValues("backend").get())
+          assertThat(metrics.upstreamPoolConnectionsOpened.labelValues("backend").get())
               .isEqualTo(pooling ? 1 : 2);
           second.close().get(EVENT_TIMEOUT_SECONDS, SECONDS);
         } finally {
@@ -149,7 +159,7 @@ class DefaultUpstreamIT {
               loop.submit(() -> upstream.connectNew(ingressContext))
                   .get(EVENT_TIMEOUT_SECONDS, SECONDS);
           assertThat(refused.cause()).isInstanceOf(Upstream.ConnectionLimitException.class);
-          assertThat(metrics.upstreamConnectionLimit.labelValues("backend").get()).isOne();
+          assertThat(metrics.upstreamPoolRequestsRejected.labelValues("backend").get()).isOne();
           loop.submit(() -> upstream.release(first, true)).get(EVENT_TIMEOUT_SECONDS, SECONDS);
           assertThat(connectOnLoop(upstream, ingressContext))
               .as("idle one at the limit")
@@ -157,7 +167,7 @@ class DefaultUpstreamIT {
           first.close().get(EVENT_TIMEOUT_SECONDS, SECONDS);
           Channel next = connectOnLoop(upstream, ingressContext);
           assertThat(next).isNotSameAs(first);
-          assertThat(metrics.upstreamConnections.labelValues("backend").get()).isOne();
+          assertThat(metrics.upstreamPoolConnections.labelValues("backend").get()).isOne();
           next.close().get(EVENT_TIMEOUT_SECONDS, SECONDS);
         } finally {
           ingress.close().get(EVENT_TIMEOUT_SECONDS, SECONDS);

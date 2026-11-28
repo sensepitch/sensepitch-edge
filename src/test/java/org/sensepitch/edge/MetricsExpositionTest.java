@@ -115,6 +115,22 @@ class MetricsExpositionTest {
     first.close();
     proxyMetrics.countPlainHttpRequest(ProxyMetrics.PlainHttpOutcome.REDIRECT);
 
+    String upstream = "backend";
+    proxyMetrics.upstreamPoolConnectionsOpened.labelValues(upstream).inc(4);
+    proxyMetrics.upstreamPoolConnectionsReused.labelValues(upstream).inc(9);
+    proxyMetrics.upstreamPoolConnections.labelValues(upstream).set(3);
+    proxyMetrics.upstreamPoolConnectionsIdle.labelValues(upstream).set(2);
+    proxyMetrics
+        .upstreamPoolConnectionsClosed
+        .labelValues(upstream, ProxyMetrics.CloseReason.IDLE_TIMEOUT.label)
+        .inc();
+    proxyMetrics.upstreamPoolRequestsRejected.labelValues(upstream).inc();
+    proxyMetrics.upstreamPoolRequestsRetried.labelValues(upstream).inc();
+    proxyMetrics
+        .upstreamErrorCounter
+        .labelValues(upstream, ProxyMetrics.UpstreamErrorType.CLOSED_IN_FLIGHT.label)
+        .inc();
+
     RequestLogMetrics requestLogMetrics = new RequestLogMetrics();
     requestLogMetrics.registerCollectors(registry::register);
     requestLogMetrics.add(new FixedQueue("stdout", 7, -1));

@@ -7,7 +7,6 @@ need, e.g. a bug or a production requirement. Bugs and robustness issues are nev
 
 ## Upstream pool fine tuning
 
-- finanlise metric names
 - max age, see below
 - put circuit breaker into it
 

@@ -312,27 +312,43 @@ warning:
 To see the details, enable debug for the package `org.sensepitch.edge` in the Log4j2
 configuration.
 
-### Upstream connections: `sensepitch_upstream_*{upstream="..."}`
+### Upstream connection pool: `sensepitch_upstream_pool_*{upstream="..."}`
 
-The kept-alive connections to the upstreams, see [Upstream connections](#upstream-connections),
-labelled by the upstream name:
+The connections to the upstreams, see [Upstream connections](#upstream-connections), labelled by
+the upstream name. With `connectionPool.disabled: true` the connections are still counted and
+limited, nothing is reused, idle or retried:
 
-- `sensepitch_upstream_connections_opened_total`: connections opened. Compared with
-  `sensepitch_upstream_connections_reused_total`, the requests sent on a kept-alive connection,
-  it shows how well the connections are reused.
-- `sensepitch_upstream_connections`: open connections, in use, idle and connecting, of all event
-  loops; what `maxConnections` limits.
-- `sensepitch_upstream_connection_limit_total`: requests answered with `503`, because the
-  connection limit was reached. It should stay at zero; if not, raise `maxConnections` or look at
+- `sensepitch_upstream_pool_connections_opened_total`: connections opened. Compared with
+  `sensepitch_upstream_pool_connections_reused_total`, the requests sent on a kept-alive
+  connection, it shows how well the connections are reused.
+- `sensepitch_upstream_pool_connections`: open connections, in use, idle and connecting, of all
+  event loops; what `maxConnections` limits.
+- `sensepitch_upstream_pool_connections_idle`: idle connections, of all event loops.
+- `sensepitch_upstream_pool_connections_closed_total{reason}`: connections closed, each opened
+  connection once, so opened minus closed is the number of connected ones. `reason`:
+  - `closed_by_upstream`: the upstream closed or reset the connection, in use or idle. Many of
+    them mean the upstream's keep-alive timeout is shorter than `idleTimeoutMillis`.
+  - `idle_timeout`: idle for `idleTimeoutMillis`.
+  - `not_reusable`: the edge closed it after its request, because the exchange did not end
+    cleanly (e.g. a timeout, the client left, a response without keep-alive) or the pool is
+    disabled.
+  - `unexpected_data`: the edge closed it, because the upstream sent data without a request.
+  - `exception`: the edge closed it after an error on the connection that is no I/O error.
+  - `removed`: a reload removed or changed the upstream.
+  - `shutdown`: closed at shutdown.
+- `sensepitch_upstream_pool_requests_rejected_total`: requests rejected with `503`, because the
+  upstream had `maxConnections` connections open; the request outcome is
+  `upstream_connection_limit`. It should stay at zero; if not, raise `maxConnections` or look at
   why the upstream is slow.
-- `sensepitch_upstream_idle_connections`: idle connections, of all event loops.
-- `sensepitch_upstream_idle_closed_total{reason}`: idle connections closed, `idle_timeout`,
-  `closed_by_upstream` (also when the upstream sent data to an idle connection) or `removed` (a
-  reload removed or changed the upstream). Many
-  `closed_by_upstream` mean the upstream's keep-alive timeout is shorter than `idleTimeoutMillis`.
-- `sensepitch_upstream_retries_total`: requests sent once more on a new connection, because a
-  kept-alive connection was closed before the response. A few are normal, many point to the same
-  timeout mismatch.
+- `sensepitch_upstream_pool_requests_retried_total`: requests sent once more on a new connection,
+  because a kept-alive connection was closed before the response. A few are normal, many point to
+  the same timeout mismatch.
+
+Renamed, so that the pool metrics are listed together: `sensepitch_upstream_connections*` are now
+`sensepitch_upstream_pool_connections*`, `sensepitch_upstream_idle_connections` is
+`…_pool_connections_idle`, `…_idle_closed_total` is `…_pool_connections_closed_total` and now counts every close,
+`…_connection_limit_total` is `…_pool_requests_rejected_total` and `…_retries_total` is
+`…_pool_requests_retried_total`.
 
 ### `sensepitch_request_log_dropped_total{destination="..."}`
 

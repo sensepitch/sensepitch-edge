@@ -94,7 +94,7 @@ public class DefaultUpstream implements Upstream {
   public Future<Channel> connectNew(ChannelHandlerContext ingressCtx) {
     EventLoop loop = ingressCtx.channel().eventLoop();
     if (!pool.reserve(loop)) {
-      metrics.upstreamConnectionLimit.labelValues(metricsName()).inc();
+      metrics.upstreamPoolRequestsRejected.labelValues(metricsName()).inc();
       return ingressCtx.executor().newFailedFuture(new ConnectionLimitException(target));
     }
     ChannelFuture upstreamFuture = connectToUpstream(ingressCtx.channel());
@@ -103,8 +103,7 @@ public class DefaultUpstream implements Upstream {
         (ChannelFutureListener)
             cf -> {
               if (cf.isSuccess()) {
-                cf.channel().closeFuture().addListener(closed -> pool.unreserve(loop));
-                metrics.upstreamConnectionsOpened.labelValues(metricsName()).inc();
+                pool.opened(loop, cf.channel());
                 promise.setSuccess(cf.channel());
               } else {
                 pool.unreserve(loop);
@@ -136,7 +135,7 @@ public class DefaultUpstream implements Upstream {
     if (pooling && reusable) {
       pool.release(channel);
     } else {
-      channel.close();
+      UpstreamConnectionPool.close(channel, ProxyMetrics.CloseReason.NOT_REUSABLE);
     }
   }
 

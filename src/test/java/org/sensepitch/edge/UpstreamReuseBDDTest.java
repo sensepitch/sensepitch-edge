@@ -38,9 +38,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.sensepitch.edge.ProxyMetrics.CloseReason;
 
-/// When [DownstreamHandler] releases an upstream connection as reusable, and when it sends a
-/// request once more after a connection taken from the pool failed. The pool itself is tested by
+/// When [DownstreamHandler] releases an upstream connection as reusable, when it sends a request
+/// once more after a connection taken from the pool failed, and the reason each close is counted
+/// with. The pool itself is tested by
 /// [UpstreamConnectionPoolTest], the failures of a new connection by [UpstreamFailureBDDTest].
 @ExtendWith(SerenityJUnit5Extension.class)
 class UpstreamReuseBDDTest {
@@ -89,7 +91,8 @@ class UpstreamReuseBDDTest {
       steps
           .when_the_client_sends_a_get()
           .when_the_client_closes()
-          .then_the_connection_is_released(false);
+          .then_the_connection_is_released(false)
+          .then_one_connection_closed_with(CloseReason.NOT_REUSABLE);
     }
   }
 
@@ -112,6 +115,7 @@ class UpstreamReuseBDDTest {
           .when_the_client_sends_a_get()
           .when_the_upstream_closes()
           .then_the_request_was_sent_again_on_a_new_connection()
+          .then_one_connection_closed_with(CloseReason.CLOSED_BY_UPSTREAM)
           .when_the_upstream_responds()
           .then_the_client_received(200)
           .then_the_outcome_is(RequestOutcome.COMPLETED);
@@ -139,6 +143,7 @@ class UpstreamReuseBDDTest {
           .when_the_client_sends_a_get()
           .when_the_upstream_resets_the_connection()
           .then_the_request_was_sent_again_on_a_new_connection()
+          .then_one_connection_closed_with(CloseReason.CLOSED_BY_UPSTREAM)
           .when_the_upstream_responds()
           .then_the_client_received(200);
     }
@@ -255,6 +260,30 @@ class UpstreamReuseBDDTest {
     }
   }
 
+  // close reasons, see ProxyMetrics.CloseReason
+
+  /// An error on the connection that is no `IOException` is no close by the upstream
+  @Test
+  void exceptionDuringTheExchangeClosesWithException() {
+    try (Steps steps = new Steps()) {
+      steps
+          .when_the_client_sends_a_get()
+          .when_the_upstream_connection_fails(new IllegalStateException("handler bug"))
+          .then_one_connection_closed_with(CloseReason.EXCEPTION);
+    }
+  }
+
+  /// The upstream sent data to an idle connection: out of sync, the edge closes it
+  @Test
+  void dataOnAnIdleConnectionClosesWithUnexpectedData() {
+    try (Steps steps = new Steps()) {
+      steps
+          .given_a_pooled_connection()
+          .when_the_idle_connection_receives_data()
+          .then_one_connection_closed_with(CloseReason.UNEXPECTED_DATA);
+    }
+  }
+
   /// The event loop has its share of `maxConnections` open: no further connection, a `503`
   @Test
   void connectionLimitIsAnswered503() {
@@ -285,6 +314,12 @@ class UpstreamReuseBDDTest {
     private final ProxyMetrics metrics = new ProxyMetrics();
     private final RequestLogCapture requestLog = new RequestLogCapture();
     private final PoolingUpstream upstream = new PoolingUpstream();
+
+    /// Counts the closes of the connections by reason, as for [DefaultUpstream]
+    private final UpstreamConnectionPool pool =
+        new UpstreamConnectionPool(
+            ConnectionPoolConfig.DEFAULT, metrics, UpstreamFailureBDDTest.UPSTREAM, 1);
+
     private final EmbeddedChannel ingress =
         new EmbeddedChannel(
             TestTls.HANDLER,
@@ -457,8 +492,34 @@ class UpstreamReuseBDDTest {
 
     @Step
     Steps when_the_upstream_resets_the_connection() {
-      upstream.current.pipeline().fireExceptionCaught(new IOException("Connection reset"));
+      return when_the_upstream_connection_fails(new IOException("Connection reset"));
+    }
+
+    @Step
+    Steps when_the_upstream_connection_fails(Exception cause) {
+      upstream.current.pipeline().fireExceptionCaught(cause);
       ingress.runPendingTasks();
+      return this;
+    }
+
+    @Step
+    Steps when_the_idle_connection_receives_data() {
+      upstream.idle.peek().writeInbound(Unpooled.copiedBuffer("late", StandardCharsets.US_ASCII));
+      return this;
+    }
+
+    /// Exactly one connection closed, with this reason
+    @Step
+    Steps then_one_connection_closed_with(CloseReason reason) {
+      for (CloseReason each : CloseReason.values()) {
+        assertThat(
+                metrics
+                    .upstreamPoolConnectionsClosed
+                    .labelValues(UpstreamFailureBDDTest.UPSTREAM, each.label)
+                    .get())
+            .as(each.label)
+            .isEqualTo(each == reason ? 1 : 0);
+      }
       return this;
     }
 
@@ -512,7 +573,7 @@ class UpstreamReuseBDDTest {
     }
 
     private double retries() {
-      return metrics.upstreamRetries.labelValues(UpstreamFailureBDDTest.UPSTREAM).get();
+      return metrics.upstreamPoolRequestsRetried.labelValues(UpstreamFailureBDDTest.UPSTREAM).get();
     }
 
     @Step
@@ -522,9 +583,13 @@ class UpstreamReuseBDDTest {
     }
 
     private EmbeddedChannel upstreamChannel(Channel ingressChannel) {
-      return new EmbeddedChannel(
-          new UpstreamFailureBDDTest.HoldLastContentWrite(),
-          new ForwardHandler(ingressChannel, metrics, UpstreamFailureBDDTest.UPSTREAM));
+      EmbeddedChannel channel =
+          new EmbeddedChannel(
+              new UpstreamFailureBDDTest.HoldLastContentWrite(),
+              new ForwardHandler(ingressChannel, metrics, UpstreamFailureBDDTest.UPSTREAM));
+      pool.reserve(channel.eventLoop());
+      pool.opened(channel.eventLoop(), channel);
+      return channel;
     }
 
     @Override
@@ -590,7 +655,7 @@ class UpstreamReuseBDDTest {
       public void release(Channel channel, boolean reusable) {
         released.add(reusable);
         if (!reusable) {
-          channel.close();
+          UpstreamConnectionPool.close(channel, CloseReason.NOT_REUSABLE);
         }
       }
 

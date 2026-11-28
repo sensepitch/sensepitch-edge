@@ -321,7 +321,7 @@ public class DownstreamHandler extends ChannelDuplexHandler {
     }
     retryableRequest = null;
     requestForwarded = false;
-    metrics.upstreamRetries.labelValues(ProxyMetrics.upstreamLabel(upstream)).inc();
+    metrics.upstreamPoolRequestsRetried.labelValues(ProxyMetrics.upstreamLabel(upstream)).inc();
     // replaced before the old connection is closed, so its close belongs to no exchange
     upstreamChannelFuture = upstream.connectNew(ctx);
     upstream.release(failed.resultNow(), false);

@@ -237,4 +237,28 @@ sensepitch_request_log_sent_bytes_total{destination="otlp"} 1234.0
 # TYPE sensepitch_request_log_sent_records counter
 # HELP sensepitch_request_log_sent_records Request log records sent successfully
 sensepitch_request_log_sent_records_total{destination="otlp"} 5.0
+# TYPE sensepitch_upstream_errors counter
+# HELP sensepitch_upstream_errors Upstream connections closed before the response was complete, or with data or an exception after it, by type
+sensepitch_upstream_errors_total{type="closed_in_flight",upstream="backend"} 1.0
+# TYPE sensepitch_upstream_pool_connections gauge
+# HELP sensepitch_upstream_pool_connections Open connections to the upstream, in use, idle and connecting
+sensepitch_upstream_pool_connections{upstream="backend"} 3.0
+# TYPE sensepitch_upstream_pool_connections_closed counter
+# HELP sensepitch_upstream_pool_connections_closed Connections to the upstream closed, by reason
+sensepitch_upstream_pool_connections_closed_total{reason="idle_timeout",upstream="backend"} 1.0
+# TYPE sensepitch_upstream_pool_connections_idle gauge
+# HELP sensepitch_upstream_pool_connections_idle Idle kept-alive connections to the upstream
+sensepitch_upstream_pool_connections_idle{upstream="backend"} 2.0
+# TYPE sensepitch_upstream_pool_connections_opened counter
+# HELP sensepitch_upstream_pool_connections_opened Connections opened to the upstream
+sensepitch_upstream_pool_connections_opened_total{upstream="backend"} 4.0
+# TYPE sensepitch_upstream_pool_connections_reused counter
+# HELP sensepitch_upstream_pool_connections_reused Requests sent on a kept-alive connection instead of a new one
+sensepitch_upstream_pool_connections_reused_total{upstream="backend"} 9.0
+# TYPE sensepitch_upstream_pool_requests_rejected counter
+# HELP sensepitch_upstream_pool_requests_rejected Requests rejected with 503, the upstream had as many connections as the pool allows
+sensepitch_upstream_pool_requests_rejected_total{upstream="backend"} 1.0
+# TYPE sensepitch_upstream_pool_requests_retried counter
+# HELP sensepitch_upstream_pool_requests_retried Requests sent again on a new connection, after a kept-alive connection was closed before the response
+sensepitch_upstream_pool_requests_retried_total{upstream="backend"} 1.0
 # EOF

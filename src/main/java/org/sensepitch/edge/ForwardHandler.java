@@ -14,6 +14,7 @@ import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpStatusClass;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
+import java.io.IOException;
 
 /// Handler for upstream communication, receives response from upstream and passes it downstream.
 ///
@@ -24,7 +25,8 @@ import io.netty.util.ReferenceCountUtil;
 /// where [ExceptionHandler] counts and logs it, so it is not logged here. The other events of a misbehaving upstream are
 /// counted in [ProxyMetrics#upstreamErrorCounter] and logged at debug, see [ProxyLogger] for the
 /// levels: data after the response and an exception after the response. Their first occurrences
-/// are logged at warning, see [ProxyLogger#incrementAndWarnOnce].
+/// are logged at warning, see [ProxyLogger#incrementAndWarnOnce]. Each close by this handler
+/// records its [ProxyMetrics.CloseReason] for the pool metrics, see [UpstreamConnectionPool].
 ///
 /// A close while the exchange is attached is passed to the client pipeline as [UpstreamClosed].
 /// Only the [DownstreamHandler] knows whether it closed the upstream itself, e.g. after a timeout
@@ -96,7 +98,7 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
       ReferenceCountUtil.release(msg);
       // out of sync with the upstream, not usable for another exchange; an idle pooled
       // connection leaves the pool with the close
-      ctx.close();
+      UpstreamConnectionPool.close(ctx.channel(), ProxyMetrics.CloseReason.UNEXPECTED_DATA);
       return;
     }
     if (msg instanceof HttpResponse) {
@@ -171,6 +173,12 @@ public class ForwardHandler extends ChannelInboundHandlerAdapter {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+    // before the exchange sees it: its release as not reusable keeps this reason
+    UpstreamConnectionPool.closeReason(
+        ctx.channel(),
+        cause instanceof IOException
+            ? ProxyMetrics.CloseReason.CLOSED_BY_UPSTREAM
+            : ProxyMetrics.CloseReason.EXCEPTION);
     if (downstream != null) {
       // cleared first: the exception handling closes the upstream, which is no close in flight
       Channel exchangeDownstream = downstream;

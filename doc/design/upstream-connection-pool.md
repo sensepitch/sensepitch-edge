@@ -149,7 +149,7 @@ overwhelm the upstream. Each event loop may hold `maxConnections` divided by the
 rounded down, at least 1, counted in its partition: the loops together come near the limit but
 never exceed it, and no counter is shared by the threads. An exchange that needs a further
 connection gets `503` with the outcome `upstream_connection_limit`, counted in
-`sensepitch_upstream_connection_limit`; an idle connection is still taken at the limit.
+`sensepitch_upstream_pool_requests_rejected_total`; an idle connection is still taken at the limit.
 
 The name is the one of Envoy (`max_connections`) and Reactor Netty (`maxConnections`); HAProxy has
 `maxconn`, NGINX `max_conns` (from memory, not verified). Envoy enables it by default (1024) and
@@ -188,12 +188,12 @@ The upstream may close an idle connection just as the edge sends a request on it
 taken from the pool fails before any response arrived (write failure, close, or an exception such
 as a reset), and the method is idempotent (GET, HEAD, OPTIONS, TRACE, PUT, DELETE, RFC 9110,
 section 9.2.2) and the request has no body, the request is sent once more on a new connection,
-counted in `sensepitch_upstream_retries`. A new connection is never retried, so there is at most
-one retry. Like NGINX and Pingora. The body condition keeps the edge from buffering request
-bodies, it streams them. Not chosen: no retry (Envoy, Armeria), which turns the race into `502`s
-that did not exist without the pool; HAProxy's `http-reuse safe`, which keeps the first request
-of each client connection off reused connections and so loses most of the reuse for short client
-connections.
+counted in `sensepitch_upstream_pool_requests_retried_total`. A new connection is never retried,
+so there is at most one retry. Like NGINX and Pingora. The body condition keeps the edge from
+buffering request bodies, it streams them. Not chosen: no retry (Envoy, Armeria), which turns the
+race into `502`s that did not exist without the pool; HAProxy's `http-reuse safe`, which keeps the
+first request of each client connection off reused connections and so loses most of the reuse for
+short client connections.
 
 ### Lifecycle on reload and shutdown
 
@@ -209,9 +209,31 @@ default like NGINX since 1.29.7: without the pool the edge reaches the limit of 
 about 470 requests per second per upstream address, see "Purpose and scope". `disabled: true`
 restores the connection per request. An off switch rather than `enable`, so the key is absent
 normally and a later configuration layer only switches the default off, as with
-`requestLog.disabled`. Metrics, labelled with the upstream name: connections opened, connections
-reused, open connections and idle connections (gauges), idle connections closed by reason
-(`idle_timeout`, `closed_by_upstream`, `removed`), refusals at the connection limit, retries.
+`requestLog.disabled`.
+
+Metrics, labelled with the upstream name, all named `sensepitch_upstream_pool_…`, so
+`sensepitch_upstream_…` stays for metrics of the upstream itself, like `sensepitch_upstream_errors`:
+`…_connections_opened_total`, `…_connections_reused_total`, the gauges `…_connections` (open) and
+`…_connections_idle`, `…_connections_closed_total{reason}`, and per request
+`…_requests_rejected_total` (at the connection limit) and `…_requests_retried_total`.
+
+### Every close is counted once, the edge names its reason
+
+The closes are counted in one place, the close listener that
+[`UpstreamConnectionPool#opened`](../../src/main/java/org/sensepitch/edge/UpstreamConnectionPool.java)
+adds to each new connection, which also gives the reservation against `maxConnections` back. So
+each connection in `…_connections_opened_total` is counted once in `…_connections_closed_total`,
+in use or idle, and a close cannot be missed or counted twice by one of the several paths that
+close a connection. Every close the edge makes sets its reason on the channel first
+(`UpstreamConnectionPool.close` and `closeReason`); the first reason wins. A close without a
+reason came from the other side and is counted as `closed_by_upstream`, or as `shutdown` while
+the event loop shuts down. The
+[`ForwardHandler`](../../src/main/java/org/sensepitch/edge/ForwardHandler.java) sets the reason of
+an exception before the exchange sees it: an `IOException` (reset, broken pipe) is
+`closed_by_upstream`, any other is `exception`. Otherwise the exchange would release the
+connection as `not_reusable` first and hide that the upstream reset it. Before, only the closes of
+idle connections were counted, as `…_idle_closed_total`, and a close by the edge without a reason,
+e.g. after unexpected data, counted as `closed_by_upstream`.
 
 ## Implementations investigated
 
@@ -316,6 +338,8 @@ measured. Points marked **unverified** were not found in the sources.
 - At the connection limit an exchange is refused at once, there is no queue.
 - The limit is split evenly over the event loops: a loop that has its share open refuses although
   another loop has room.
+- An `IOException` counts as `closed_by_upstream`, inferred: a reset or a broken pipe comes from
+  the upstream, an `IOException` of local origin would be counted the same way.
 
 - HTTP/1.1 only, no HTTP/2 multiplexing to the upstream, no pipelining.
 - No preconnect (Envoy `per_upstream_preconnect_ratio`).

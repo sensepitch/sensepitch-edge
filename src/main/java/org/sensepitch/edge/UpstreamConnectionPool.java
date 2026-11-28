@@ -12,6 +12,7 @@ import java.util.ArrayDeque;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
+import org.sensepitch.edge.ProxyMetrics.CloseReason;
 
 /// The idle keep-alive connections to one upstream, and the count of all its connections against
 /// `maxConnections`, see [ConnectionPoolConfig] and `doc/design/upstream-connection-pool.md`.
@@ -35,6 +36,11 @@ final class UpstreamConnectionPool {
   /// a new connection, see [DownstreamHandler]. A new connection has no value.
   static final AttributeKey<Boolean> REUSED =
       AttributeKey.valueOf(UpstreamConnectionPool.class, "reused");
+
+  /// Why the edge closed a connection, set before the close, see [#closeReason(Channel,
+  /// CloseReason)]; without a value the close came from the upstream or the shutdown
+  private static final AttributeKey<CloseReason> CLOSE_REASON =
+      AttributeKey.valueOf(UpstreamConnectionPool.class, "closeReason");
 
   private final ConnectionPoolConfig config;
   private final ProxyMetrics metrics;
@@ -68,9 +74,44 @@ final class UpstreamConnectionPool {
     return partition(loop).reserve();
   }
 
-  /// A connection counted by [#reserve(EventLoop)] closed or was not opened. Call on `loop`.
+  /// A connection counted by [#reserve(EventLoop)] was not opened. Call on `loop`.
   void unreserve(EventLoop loop) {
     partition(loop).unreserve();
+  }
+
+  /// Counts a connection opened after [#reserve(EventLoop)], and when it closes, gives the
+  /// reservation back and counts the close by its [CloseReason]. Call on `loop`, the event loop of
+  /// the channel.
+  void opened(EventLoop loop, Channel channel) {
+    metrics.upstreamPoolConnectionsOpened.labelValues(upstream).inc();
+    channel
+        .closeFuture()
+        .addListener(
+            closed -> {
+              unreserve(loop);
+              CloseReason reason = channel.attr(CLOSE_REASON).get();
+              if (reason == null) {
+                reason =
+                    channel.eventLoop().isShuttingDown()
+                        ? CloseReason.SHUTDOWN
+                        : CloseReason.CLOSED_BY_UPSTREAM;
+              }
+              countClosed(reason);
+            });
+  }
+
+  /// Closes a connection and records why, see [#closeReason(Channel, CloseReason)]
+  static void close(Channel channel, CloseReason reason) {
+    closeReason(channel, reason);
+    channel.close();
+  }
+
+  /// Records why the connection is about to be closed, so its close is counted with the reason,
+  /// see [#opened(EventLoop, Channel)]. The first reason wins: e.g. a reset reported to the
+  /// exchange stays `closed_by_upstream` when the exchange then releases the connection as not
+  /// reusable.
+  static void closeReason(Channel channel, CloseReason reason) {
+    channel.attr(CLOSE_REASON).setIfAbsent(reason);
   }
 
   /// An idle, still open connection of the partition of `loop`, marked [#REUSED], or `null`.
@@ -86,7 +127,7 @@ final class UpstreamConnectionPool {
   /// opens it on the loop of the client channel, where the exchange releases it.
   void release(Channel channel) {
     if (closed) {
-      channel.close();
+      close(channel, CloseReason.REMOVED);
       return;
     }
     // backpressure of the last exchange may have paused reading, see DownstreamHandler; an idle
@@ -116,8 +157,8 @@ final class UpstreamConnectionPool {
         });
   }
 
-  private void countClosed(ProxyMetrics.IdleCloseReason reason) {
-    metrics.upstreamIdleClosed.labelValues(upstream, reason.label).inc();
+  private void countClosed(CloseReason reason) {
+    metrics.upstreamPoolConnectionsClosed.labelValues(upstream, reason.label).inc();
   }
 
   /// The idle connections of one event loop, used only on that loop. Most recently released
@@ -144,7 +185,7 @@ final class UpstreamConnectionPool {
       }
       entry.forget();
       entry.channel.attr(REUSED).set(true);
-      metrics.upstreamConnectionsReused.labelValues(upstream).inc();
+      metrics.upstreamPoolConnectionsReused.labelValues(upstream).inc();
       return entry.channel;
     }
 
@@ -154,14 +195,14 @@ final class UpstreamConnectionPool {
         return false;
       }
       open++;
-      metrics.upstreamConnections.labelValues(upstream).inc();
+      metrics.upstreamPoolConnections.labelValues(upstream).inc();
       return true;
     }
 
     private void unreserve() {
       assert loop.inEventLoop();
       open--;
-      metrics.upstreamConnections.labelValues(upstream).dec();
+      metrics.upstreamPoolConnections.labelValues(upstream).dec();
     }
 
     /// Keeps an open connection, until the idle timeout or until it is taken
@@ -171,7 +212,7 @@ final class UpstreamConnectionPool {
         return;
       }
       idle.addFirst(new Idle(channel));
-      metrics.upstreamIdleConnections.labelValues(upstream).inc();
+      metrics.upstreamPoolConnectionsIdle.labelValues(upstream).inc();
     }
 
     /// Number of idle connections, for tests
@@ -183,8 +224,7 @@ final class UpstreamConnectionPool {
       Idle entry;
       while ((entry = idle.pollFirst()) != null) {
         entry.forget();
-        entry.channel.close();
-        countClosed(ProxyMetrics.IdleCloseReason.REMOVED);
+        close(entry.channel, CloseReason.REMOVED);
       }
     }
 
@@ -204,24 +244,23 @@ final class UpstreamConnectionPool {
       private void expire() {
         idle.remove(this);
         forget();
-        channel.close();
-        countClosed(ProxyMetrics.IdleCloseReason.IDLE_TIMEOUT);
+        close(channel, CloseReason.IDLE_TIMEOUT);
       }
 
       /// The connection closed while idle, by the upstream, or by the [ForwardHandler] after
-      /// unexpected data; never after [#forget()], which removes this listener
+      /// unexpected data; never after [#forget()], which removes this listener. The close is
+      /// counted by the listener of [UpstreamConnectionPool#opened(EventLoop, Channel)].
       @Override
       public void operationComplete(ChannelFuture future) {
         idle.remove(this);
         forget();
-        countClosed(ProxyMetrics.IdleCloseReason.CLOSED_BY_UPSTREAM);
       }
 
       /// Ends the watching after the connection left the partition, called once per entry
       void forget() {
         channel.closeFuture().removeListener(this);
         timeout.cancel(false);
-        metrics.upstreamIdleConnections.labelValues(upstream).dec();
+        metrics.upstreamPoolConnectionsIdle.labelValues(upstream).dec();
       }
     }
   }

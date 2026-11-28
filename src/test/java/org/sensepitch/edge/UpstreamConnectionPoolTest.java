@@ -6,7 +6,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.netty.channel.Channel;
 import io.netty.channel.DefaultEventLoop;
 import io.netty.channel.EventLoop;
+import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.channel.local.LocalChannel;
+import io.netty.channel.local.LocalIoHandler;
 import io.netty.util.concurrent.MockTicker;
 import io.netty.util.concurrent.Ticker;
 import java.util.ArrayList;
@@ -14,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.sensepitch.edge.ProxyMetrics.CloseReason;
 
 /// The partition of one event loop, on embedded channels: the event loop of [#loop] schedules the
 /// idle timers on a mock ticker, the connections are further embedded channels
@@ -51,6 +55,15 @@ class UpstreamConnectionPoolTest {
   private EmbeddedChannel connection() {
     EmbeddedChannel channel = new EmbeddedChannel();
     connections.add(channel);
+    return channel;
+  }
+
+  /// A connection opened within the share of the loop, as [DefaultUpstream] does, so its close is
+  /// counted
+  private EmbeddedChannel openedConnection() {
+    assertThat(pool.reserve(eventLoop())).isTrue();
+    EmbeddedChannel channel = connection();
+    pool.opened(eventLoop(), channel);
     return channel;
   }
 
@@ -107,7 +120,6 @@ class UpstreamConnectionPoolTest {
     ticker.advance(IDLE_MILLIS, MILLISECONDS);
     loop.runScheduledPendingTasks();
     assertThat(burst).noneMatch(Channel::isOpen);
-    assertThat(closed(ProxyMetrics.IdleCloseReason.IDLE_TIMEOUT)).isEqualTo(100);
     assertThat(idle()).isZero();
   }
 
@@ -135,7 +147,7 @@ class UpstreamConnectionPoolTest {
 
   @Test
   void idleTimeoutClosesTheConnection() {
-    Channel channel = connection();
+    Channel channel = openedConnection();
     partition.add(channel);
     ticker.advance(IDLE_MILLIS - 1, MILLISECONDS);
     loop.runScheduledPendingTasks();
@@ -144,30 +156,33 @@ class UpstreamConnectionPoolTest {
     loop.runScheduledPendingTasks();
     assertThat(channel.isOpen()).isFalse();
     assertThat(partition.size()).isZero();
-    assertThat(closed(ProxyMetrics.IdleCloseReason.IDLE_TIMEOUT)).isOne();
+    assertThat(closed(CloseReason.IDLE_TIMEOUT)).isOne();
     assertThat(idle()).isZero();
+    assertThat(open()).isZero();
   }
 
-  /// An acquired connection is no longer watched, its idle timer does not close it in use
+  /// An acquired connection is no longer watched, its idle timer does not close it in use; a close
+  /// by the upstream in use is counted too
   @Test
   void acquiredConnectionIsNotClosedByItsIdleTimer() {
-    Channel channel = connection();
+    Channel channel = openedConnection();
     partition.add(channel);
     assertThat(pool.acquire(eventLoop())).isSameAs(channel);
     ticker.advance(IDLE_MILLIS, MILLISECONDS);
     loop.runScheduledPendingTasks();
     assertThat(channel.isOpen()).isTrue();
     channel.close();
-    assertThat(closed(ProxyMetrics.IdleCloseReason.CLOSED_BY_UPSTREAM)).isZero();
+    assertThat(closed(CloseReason.IDLE_TIMEOUT)).isZero();
+    assertThat(closed(CloseReason.CLOSED_BY_UPSTREAM)).isOne();
   }
 
   @Test
   void connectionClosedWhileIdleIsRemoved() {
-    Channel channel = connection();
+    Channel channel = openedConnection();
     partition.add(channel);
     channel.close();
     assertThat(partition.size()).isZero();
-    assertThat(closed(ProxyMetrics.IdleCloseReason.CLOSED_BY_UPSTREAM)).isOne();
+    assertThat(closed(CloseReason.CLOSED_BY_UPSTREAM)).isOne();
     assertThat(pool.acquire(eventLoop())).isNull();
   }
 
@@ -183,16 +198,54 @@ class UpstreamConnectionPoolTest {
   /// afterwards too
   @Test
   void closeOfThePoolClosesIdleAndLaterConnections() {
-    Channel idleConnection = connection();
+    Channel idleConnection = openedConnection();
     partition.add(idleConnection);
     pool.close();
     loop.runPendingTasks();
     assertThat(idleConnection.isOpen()).isFalse();
-    assertThat(closed(ProxyMetrics.IdleCloseReason.REMOVED)).isOne();
-    Channel inUse = connection();
+    assertThat(closed(CloseReason.REMOVED)).isOne();
+    Channel inUse = openedConnection();
     pool.release(inUse);
     assertThat(inUse.isOpen()).isFalse();
+    assertThat(closed(CloseReason.REMOVED)).isEqualTo(2);
     assertThat(idle()).isZero();
+  }
+
+  /// An opened connection is counted until it closes, with the reason of the first close; the
+  /// reservation is given back
+  @Test
+  void openedConnectionIsCountedUntilItCloses() {
+    Channel channel = openedConnection();
+    assertThat(opened()).isOne();
+    assertThat(open()).isOne();
+    UpstreamConnectionPool.close(channel, CloseReason.NOT_REUSABLE);
+    UpstreamConnectionPool.close(channel, CloseReason.REMOVED);
+    assertThat(closed(CloseReason.NOT_REUSABLE)).isOne();
+    assertThat(closed(CloseReason.REMOVED)).isZero();
+    assertThat(open()).isZero();
+  }
+
+  /// A connection the event loop closes when it shuts down is counted as `shutdown`, not as a close
+  /// by the upstream
+  @Test
+  void connectionClosedAtShutdownCountsShutdown() throws Exception {
+    var group = new MultiThreadIoEventLoopGroup(1, LocalIoHandler.newFactory());
+    EventLoop shuttingDown = group.next();
+    LocalChannel channel = new LocalChannel();
+    shuttingDown.register(channel).get(TestingParameters.EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    shuttingDown
+        .submit(
+            () -> {
+              pool.reserve(shuttingDown);
+              pool.opened(shuttingDown, channel);
+            })
+        .get(TestingParameters.EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    group
+        .shutdownGracefully(0, TestingParameters.EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .get(TestingParameters.EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat(channel.isOpen()).isFalse();
+    assertThat(closed(CloseReason.SHUTDOWN)).isOne();
+    assertThat(closed(CloseReason.CLOSED_BY_UPSTREAM)).isZero();
   }
 
   /// An event loop that shut down closed its connections itself, the close of the pool skips it
@@ -204,22 +257,26 @@ class UpstreamConnectionPoolTest {
         .get(TestingParameters.EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     pool.partition(stopped);
     pool.close();
-    assertThat(closed(ProxyMetrics.IdleCloseReason.REMOVED)).isZero();
+    assertThat(closed(CloseReason.REMOVED)).isZero();
   }
 
   private double open() {
-    return metrics.upstreamConnections.labelValues(UPSTREAM).get();
+    return metrics.upstreamPoolConnections.labelValues(UPSTREAM).get();
+  }
+
+  private double opened() {
+    return metrics.upstreamPoolConnectionsOpened.labelValues(UPSTREAM).get();
   }
 
   private double idle() {
-    return metrics.upstreamIdleConnections.labelValues(UPSTREAM).get();
+    return metrics.upstreamPoolConnectionsIdle.labelValues(UPSTREAM).get();
   }
 
   private double reused() {
-    return metrics.upstreamConnectionsReused.labelValues(UPSTREAM).get();
+    return metrics.upstreamPoolConnectionsReused.labelValues(UPSTREAM).get();
   }
 
-  private double closed(ProxyMetrics.IdleCloseReason reason) {
-    return metrics.upstreamIdleClosed.labelValues(UPSTREAM, reason.label).get();
+  private double closed(CloseReason reason) {
+    return metrics.upstreamPoolConnectionsClosed.labelValues(UPSTREAM, reason.label).get();
   }
 }
