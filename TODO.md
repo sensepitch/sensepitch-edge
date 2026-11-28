@@ -231,18 +231,6 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
     - [x] separate `head`, `body_idle`, `body_rate`, `request_total`
     - [ ] today's phases plus `body_rate`
 
-## Benchmark
-
-- [ ] Replace the numbers of the README benchmark section with a `diligent` run of the
-  [benchmark](performance-test/benchmark/README.md): edge, NGINX and HAProxy, logs on and off,
-  0 B to 10 KB, 10 to 1 000 connections, three repeats.
-  - P2, operator-visible through the README: today's numbers (2025, vegeta, edge with the earlier
-    pool) compare unequal setups, see the
-    [2026-11-27 run](performance-test/runs/2026-11-27-upstream-pool/README.md).
-  - Keep one sentence on why the old numbers differ; name the tool, the machine and the date.
-  - Later variants: HTTP/2 and HTTP/3, Envoy, a size mix, an open loop once `shb` has a rate
-    mode, see the benchmark README.
-
 ## Evergreen / Cleanups
 
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without

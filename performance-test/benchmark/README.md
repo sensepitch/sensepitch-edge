@@ -22,7 +22,7 @@ Needs `knockout.sh` (with `--junit-report`, 2026-11-28 or newer), `shb`, `docker
 |---|---|---|---|---|---|
 | `smoke` | each proxy, 10 KB, log on, 10 connections | 1 | 1 s / 1 s | 1 s | 3, about 15 s |
 | `quick` | full | 1 | 5 s / 1 s | 5 s | 54, about 16 min |
-| `diligent` | full | 3 | 10 s / 10 s | 10 s | 162, about 75 min |
+| `diligent` | full | 3 | 10 s / 10 s | 10 s | 162, about 85 min |
 
 The full matrix: the three proxies, the response sizes 0 B, 512 B and 10 KB, the log on and off,
 10, 100 and 1 000 connections. `smoke` only checks that every part works, its numbers mean
@@ -142,3 +142,4 @@ The conversion, the check and the summary are one script without dependencies,
   scheduled send time, so a stall delays the requests that would have been sent during it. Then
   fixed-rate steps at a load all proxies handle, next to the closed-loop steps.
 - HTTP/2 and HTTP/3 (QUIC), which `shb` speaks, for the proxies that support them.
+- Envoy as a fourth proxy, and a mix of response sizes.

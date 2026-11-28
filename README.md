@@ -43,18 +43,54 @@ Traditionally, the JVM was avoided at the network edge because of long start‑u
 
 ## Performance
 
-As we are still in the prototyping / proof of concept stage our main goal is to evaluate whether the chosen architecture is competitive in general. To do this, we compare it with a NGINX reverse proxy which is known to be highly optimized. 
+The edge is compared with NGINX and HAProxy as TLS reverse proxies in front of the same upstream,
+an NGINX serving static files, on one machine. The benchmark, its method and how to run it are in
+[performance-test/benchmark](performance-test/benchmark/README.md); the run below with all
+results, the raw output and the machine data is in
+[performance-test/runs/2026-11-28-175511-benchmark-diligent](performance-test/runs/2026-11-28-175511-benchmark-diligent/summary.md).
 
-- Hardware: Notebook with 8 core, AMD Ryzen AI 7 PRO 360 w/ Radeon 880M
-- NGINX Version 1.29
-- openjdk version "24.0.1" 2025-04-15
-- Load generator: vegeta v12.12.0
+- Run 2026-11-28, mode `diligent`: each variant three times, 10 s warm-up, 10 s measured, a fresh
+  proxy per step, the median of the three; 162 steps, no request failed.
+- Machine: notebook, AMD Ryzen AI 7 PRO 360 (16 threads), Linux 7.0, load generator, proxies and
+  upstream on the same machine.
+- Edge `afabfad` on OpenJDK 25.0.5 with `-XX:+UseZGC`, protection on with the files bypassed;
+  NGINX 1.29.0; HAProxy 3.2.27; load generator `shb` (io_uring, HTTP/1.1, closed loop).
+- Every proxy with its request or access log written to standard out, and without.
 
-The complete setup can be found under `performance-test`. The NGINX setup enables keep alive for upstream connection. However, using keep alive connections is a usual practice and the default for Sensepitch Edge.
+10 KB responses, requests per second (median), p99 latency (median, ms), and the proxy's CPU
+cores per 10 000 requests per second:
 
-The test is run on the developers' notebook with load generator, proxy and target webserver running on the same machine. While this is not ideal since it is not comparable to a production scenario, it is enough for our current purpose. 
+| Connections | Log | NGINX | HAProxy | Edge | Edge / NGINX |
+|---|---|---|---|---|---|
+| 10 | on | 53,772 · 0.44 ms · 0.72 | 56,330 · 0.39 ms · 0.83 | 40,073 · 0.80 ms · 1.52 | 75 % |
+| 10 | off | 59,760 · 0.39 ms · 0.65 | 63,360 · 0.34 ms · 0.74 | 52,006 · 0.56 ms · 1.03 | 87 % |
+| 100 | on | 81,557 · 4.43 ms · 0.80 | 79,875 · 4.22 ms · 0.91 | 53,416 · 6.70 ms · 1.45 | 65 % |
+| 100 | off | 90,176 · 3.96 ms · 0.76 | 81,669 · 4.02 ms · 0.83 | 65,077 · 4.99 ms · 1.15 | 72 % |
+| 1 000 | on | 83,335 · 43.06 ms · 0.91 | 64,113 · 30.45 ms · 1.28 | 53,225 · 67.24 ms · 1.52 | 64 % |
+| 1 000 | off | 89,613 · 41.67 ms · 0.83 | 72,573 · 29.45 ms · 1.13 | 64,252 · 48.29 ms · 1.21 | 72 % |
 
-For testing we use OpenJDK 24 and switch to ZGC for minimal pause times:
+In short:
+
+- The edge reaches 56–87 % of the throughput of NGINX and 61–90 % of HAProxy over all sizes
+  (0 B, 512 B, 10 KB) and connection counts; closest with 10 connections, furthest with 100
+  connections and the log on.
+- It needs about 1.4 to 2.5 times the CPU of NGINX per request. With 10 connections the machine is
+  not saturated, and the latency per request decides; with 100 and 1 000 the CPU does, see
+  [What the steps measure](performance-test/benchmark/README.md#what-the-steps-measure).
+- The request log costs the edge 13 to 23 % of its throughput, NGINX 5 to 12 %: the log is the
+  most promising place for optimisation.
+- With 1 000 connections the tail latency of the edge is the highest, with 10 KB p99 48–67 ms
+  against 42–43 ms for NGINX and 29–30 ms for HAProxy.
+
+The load generator shares the machine, so with 100 and 1 000 connections the proxies compete with
+it for the CPU; the cores per 10 000 requests per second are the fairer comparison there. The
+loop is closed, each connection waits for its answer, so the latencies leave out the requests a
+stalled proxy would have delayed. Earlier numbers in this section, measured in 2025 with vegeta,
+are replaced: vegeta itself was the bottleneck on one machine, the proxies were measured without
+warm-up, and NGINX wrote its access log while the edge did not, see
+[performance-test/runs/2026-11-27-upstream-pool](performance-test/runs/2026-11-27-upstream-pool/README.md).
+
+The edge is started with ZGC for short pauses:
 
     java -XX:+UseZGC --enable-native-access=ALL-UNNAMED -jar target/sensepitch-edge-*-with-dependencies.jar
 
@@ -63,74 +99,6 @@ libc's `malloc` and `free` directly. These allocations bypass both JVM direct bu
 native memory tracking. Use Netty's allocator metrics and process RSS to monitor them, see
 [Exposed metrics](#exposed-metrics). The shaded JAR sets `Enable-Native-Access: ALL-UNNAMED` in its
 manifest, so `java -jar` enables native access also without the flag.
-
-For load testing we use vegeta:
-
-    echo "GET $PROXY_URL/10kb.img" | vegeta attack -insecure -duration=10s -timeout=10s -rate=50000 -keepalive=true | vegeta report
-
-Multiple runs were made and the first one discarded, to allow for warmup and keep alive connections to establish. The target rate of 50000 is above the achievable throughput on the test hardware to cause saturation.
-
-The NGINX result is:
-
-````
-Requests      [total, rate, throughput]         433414, 43341.57, 43294.73
-Duration      [total, attack, wait]             10.011s, 10s, 10.819ms
-Latencies     [min, mean, 50, 90, 95, 99, max]  105.118µs, 3.762ms, 1.578ms, 7.005ms, 13.414ms, 41.816ms, 241.305ms
-Bytes In      [total, mean]                     4438159360, 10240.00
-Bytes Out     [total, mean]                     0, 0.00
-Success       [ratio]                           100.00%
-Status Codes  [code:count]                      200:433414  
-Error Set:
-````
-
-The result for Sensepitch Edge is:
-
-````
-Requests      [total, rate, throughput]         328821, 32882.64, 32780.81
-Duration      [total, attack, wait]             10.031s, 10s, 31.065ms
-Latencies     [min, mean, 50, 90, 95, 99, max]  223.941µs, 44.464ms, 28.368ms, 105.952ms, 143.831ms, 231.852ms, 540.79ms
-Bytes In      [total, mean]                     3367127040, 10240.00
-Bytes Out     [total, mean]                     0, 0.00
-Success       [ratio]                           100.00%
-Status Codes  [code:count]                      200:328821  
-Error Set:
-````
-
-The resulting throughput for Sensepitch Edge is around 75% of the NGINX based reverse proxy. This can be considered "good enough" already. I did not do further profiling. One known bottleneck is the output of the request log to `System.out`, which causes lock contention. Noteworthy is the 10 times higher mean latency. At the time of this benchmark, downstream and upstream operations could run on different threads.
-
-These numbers could not be reproduced without an upstream connection pool: the edge then opened and closed an upstream connection per request, each one held a local port in `TIME_WAIT` for 60 s, which limited a Linux host with the default port range to about 470 requests per second per upstream address. The run above probably still had the earlier pool, removed in `dea0ab4` (inferred, not verified). With the current pool, see [Upstream connections](#upstream-connections), 98 % of the requests reuse a connection at 2 000 requests per second, 93 % at 10 000, where all requests succeed; from 5 000 on, the tail latency on the test workstation is in seconds, with the load generator on the same host, see [performance-test/runs/2026-11-27-upstream-pool](performance-test/runs/2026-11-27-upstream-pool/README.md). Measured on 2026-11-27 at 300 requests per second, below that limit: opening the upstream connection on the client channel's event loop, as the proxy does now, lowers the median latency from 0.51-0.58 ms to 0.41-0.44 ms, NGINX has 0.23 ms. Scripts, reports and the setup are in [performance-test/runs/2026-11-27-upstream-event-loop](performance-test/runs/2026-11-27-upstream-event-loop/README.md).
-
-Lets have a second look with a non saturating request rate of 10K:
-
-    echo "GET $PROXY_URL/10kb.img" | vegeta attack -insecure -duration=10s -timeout=10s -rate=10000 -keepalive=true | vegeta report
-
-The NGINX result is:
-
-````
-Requests      [total, rate, throughput]         100000, 9999.98, 9999.36
-Duration      [total, attack, wait]             10.001s, 10s, 615.394µs
-Latencies     [min, mean, 50, 90, 95, 99, max]  92.455µs, 805.108µs, 370.83µs, 1.287ms, 1.721ms, 6.579ms, 105.089ms
-Bytes In      [total, mean]                     1024000000, 10240.00
-Bytes Out     [total, mean]                     0, 0.00
-Success       [ratio]                           100.00%
-Status Codes  [code:count]                      200:100000  
-Error Set:
-````
-
-The result for Sensepitch Edge is:
-
-````
-Requests      [total, rate, throughput]         100000, 10000.09, 9999.85
-Duration      [total, attack, wait]             10s, 10s, 241.637µs
-Latencies     [min, mean, 50, 90, 95, 99, max]  135.366µs, 1.767ms, 443.975µs, 2.574ms, 3.799ms, 37.192ms, 174.176ms
-Bytes In      [total, mean]                     1024000000, 10240.00
-Bytes Out     [total, mean]                     0, 0.00
-Success       [ratio]                           100.00%
-Status Codes  [code:count]                      200:100000  
-Error Set:
-````
-
-In the unsaturated scenario, which will be the normal mode of operation, the latency is not significantly higher than with NGINX.
 
 ## Proof of concept - phase 1
 

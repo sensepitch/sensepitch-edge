@@ -1,0 +1,21 @@
+URL:          https://172.21.0.3/512b.img
+Protocol:     HTTP/1.1
+Threads:      8
+Connections:  1000
+Requests:     901186 (901186 ok, 0 errors, of which 0 connect) in 10.033s
+Requests/sec: 89826.2
+Transfer:     recv 65.55 MB/s (689558528 bytes), sent 5.69 MB/s (59850174 bytes)
+Status codes:
+  [200] 901186
+Latency (ms):
+  min 0.769  mean 10.750  max 421.026
+Latency distribution:
+  10% in 6.028 ms
+  25% in 8.168 ms
+  50% in 10.367 ms
+  75% in 12.695 ms
+  90% in 15.197 ms
+  95% in 16.970 ms
+  99% in 22.311 ms
+  99.9% in 62.512 ms
+  99.99% in 96.264 ms

@@ -1,0 +1,32 @@
+{
+  "labels": {
+    "bench_run": "2026-11-28-175511-benchmark-diligent",
+    "bench_mode": "diligent",
+    "bench_proxy": "haproxy",
+    "bench_size": "512b",
+    "bench_log": "on",
+    "bench_connections": "10",
+    "bench_repeat": "1",
+    "bench_commit": "afabfad",
+    "bench_edge_version": "0.1-20261128.094812-afabfad"
+  },
+  "host": {
+    "info": {
+      "cpu_model": "AMD Ryzen AI 7 PRO 360 w/ Radeon 880M",
+      "cpu_cores": "16",
+      "kernel": "7.0.0-42-generic",
+      "os": "KDE neon User Edition",
+      "java_version": "openjdk version \"25.0.5\" 2026-10-20 LTS",
+      "nginx_version": "1.29.0",
+      "haproxy_version": "3.2.27-24d5d8c",
+      "shb_version": "sha256:92254d9ea095"
+    },
+    "cpu_cores": 16,
+    "memory_bytes": 66512728064,
+    "cpu_max_hertz": 5090910000
+  },
+  "step_start": 1795860313.8510025,
+  "measure_start": 1795860324.3425174,
+  "measure_end": 1795860334.3771179,
+  "time_wait_sockets": 13
+}

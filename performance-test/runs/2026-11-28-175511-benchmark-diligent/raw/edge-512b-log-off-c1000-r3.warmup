@@ -1,0 +1,21 @@
+URL:          https://127.0.0.1:17443/512b.img
+Protocol:     HTTP/1.1
+Threads:      8
+Connections:  1000
+Requests:     607137 (607137 ok, 0 errors, of which 0 connect) in 10.040s
+Requests/sec: 60473.3
+Transfer:     recv 50.05 MB/s (526878505 bytes), sent 3.78 MB/s (39816770 bytes)
+Status codes:
+  [200] 607137
+Latency (ms):
+  min 0.081  mean 16.157  max 453.604
+Latency distribution:
+  10% in 2.902 ms
+  25% in 6.474 ms
+  50% in 12.469 ms
+  75% in 20.585 ms
+  90% in 30.940 ms
+  95% in 40.507 ms
+  99% in 76.902 ms
+  99.9% in 260.486 ms
+  99.99% in 390.296 ms

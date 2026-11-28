@@ -1,0 +1,37 @@
+{
+  "bytesReceived": 732199422,
+  "bytesReceivedPerSec": 73199665.35102023,
+  "bytesSent": 63325692,
+  "bytesSentPerSec": 6330815.517253686,
+  "connections": 100,
+  "durationSeconds": 10.002770074,
+  "latencySeconds": {
+    "max": 0.039924225,
+    "mean": 0.0010395257332008227,
+    "min": 0.000070661,
+    "percentiles": {
+      "p10": 0.000365348,
+      "p25": 0.00055491,
+      "p50": 0.000891615,
+      "p75": 0.001343855,
+      "p90": 0.001871615,
+      "p95": 0.00226713,
+      "p99": 0.003341896,
+      "p99.9": 0.005457144,
+      "p99.99": 0.012591794
+    }
+  },
+  "protocol": "HTTP/1.1",
+  "requests": {
+    "connectErrors": 0,
+    "errors": 0,
+    "ok": 958916,
+    "total": 958916
+  },
+  "requestsPerSec": 95865.04467322418,
+  "statusCodes": {
+    "200": 958916
+  },
+  "threads": 8,
+  "url": "https://172.21.0.3/512b.img"
+}

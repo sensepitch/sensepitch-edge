@@ -1,0 +1,369 @@
+# TYPE jvm_buffer_pool_capacity_bytes gauge
+# UNIT jvm_buffer_pool_capacity_bytes bytes
+# HELP jvm_buffer_pool_capacity_bytes Bytes capacity of a given JVM buffer pool.
+jvm_buffer_pool_capacity_bytes{pool="direct"} 0.0
+jvm_buffer_pool_capacity_bytes{pool="mapped"} 0.0
+jvm_buffer_pool_capacity_bytes{pool="mapped - 'non-volatile memory'"} 0.0
+# TYPE jvm_buffer_pool_used_buffers gauge
+# HELP jvm_buffer_pool_used_buffers Used buffers of a given JVM buffer pool.
+jvm_buffer_pool_used_buffers{pool="direct"} 1.0
+jvm_buffer_pool_used_buffers{pool="mapped"} 0.0
+jvm_buffer_pool_used_buffers{pool="mapped - 'non-volatile memory'"} 0.0
+# TYPE jvm_buffer_pool_used_bytes gauge
+# UNIT jvm_buffer_pool_used_bytes bytes
+# HELP jvm_buffer_pool_used_bytes Used bytes of a given JVM buffer pool.
+jvm_buffer_pool_used_bytes{pool="direct"} 1.0
+jvm_buffer_pool_used_bytes{pool="mapped"} 0.0
+jvm_buffer_pool_used_bytes{pool="mapped - 'non-volatile memory'"} 0.0
+# TYPE jvm_classes_currently_loaded gauge
+# HELP jvm_classes_currently_loaded The number of classes that are currently loaded in the JVM
+jvm_classes_currently_loaded 6661.0
+# TYPE jvm_classes_loaded counter
+# HELP jvm_classes_loaded The total number of classes that have been loaded since the JVM has started execution
+jvm_classes_loaded_total 6661.0
+# TYPE jvm_classes_unloaded counter
+# HELP jvm_classes_unloaded The total number of classes that have been unloaded since the JVM has started execution
+jvm_classes_unloaded_total 0.0
+# TYPE jvm_compilation_time_seconds counter
+# UNIT jvm_compilation_time_seconds seconds
+# HELP jvm_compilation_time_seconds The total time in seconds taken for HotSpot class compilation
+jvm_compilation_time_seconds_total 42.79
+# TYPE jvm_gc_collection_seconds summary
+# UNIT jvm_gc_collection_seconds seconds
+# HELP jvm_gc_collection_seconds Time spent in a given JVM garbage collector in seconds.
+jvm_gc_collection_seconds_count{gc="ZGC Major Cycles"} 4
+jvm_gc_collection_seconds_sum{gc="ZGC Major Cycles"} 0.402
+jvm_gc_collection_seconds_count{gc="ZGC Major Pauses"} 20
+jvm_gc_collection_seconds_sum{gc="ZGC Major Pauses"} 0.0
+jvm_gc_collection_seconds_count{gc="ZGC Minor Cycles"} 0
+jvm_gc_collection_seconds_sum{gc="ZGC Minor Cycles"} 0.0
+jvm_gc_collection_seconds_count{gc="ZGC Minor Pauses"} 0
+jvm_gc_collection_seconds_sum{gc="ZGC Minor Pauses"} 0.0
+# TYPE jvm_memory_committed_bytes gauge
+# UNIT jvm_memory_committed_bytes bytes
+# HELP jvm_memory_committed_bytes Committed (bytes) of a given JVM memory area.
+jvm_memory_committed_bytes{area="heap"} 5.102370816E9
+jvm_memory_committed_bytes{area="nonheap"} 5.3018624E7
+# TYPE jvm_memory_init_bytes gauge
+# UNIT jvm_memory_init_bytes bytes
+# HELP jvm_memory_init_bytes Initial bytes of a given JVM memory area.
+jvm_memory_init_bytes{area="heap"} 1.040187392E9
+jvm_memory_init_bytes{area="nonheap"} 7667712.0
+# TYPE jvm_memory_max_bytes gauge
+# UNIT jvm_memory_max_bytes bytes
+# HELP jvm_memory_max_bytes Max (bytes) of a given JVM memory area.
+jvm_memory_max_bytes{area="heap"} 1.6628318208E10
+jvm_memory_max_bytes{area="nonheap"} -1.0
+# TYPE jvm_memory_objects_pending_finalization gauge
+# HELP jvm_memory_objects_pending_finalization The number of objects waiting in the finalizer queue.
+jvm_memory_objects_pending_finalization 0.0
+# TYPE jvm_memory_pool_allocated_bytes counter
+# HELP jvm_memory_pool_allocated_bytes Total bytes allocated in a given JVM memory pool. Only updated after GC, not continuously.
+jvm_memory_pool_allocated_bytes_total{pool="CodeHeap 'non-nmethods'"} 7642496.0
+jvm_memory_pool_allocated_bytes_total{pool="CodeHeap 'non-profiled nmethods'"} 1.381312E7
+jvm_memory_pool_allocated_bytes_total{pool="CodeHeap 'profiled nmethods'"} 2.1334016E7
+jvm_memory_pool_allocated_bytes_total{pool="Compressed Class Space"} 1.1027624E7
+jvm_memory_pool_allocated_bytes_total{pool="Metaspace"} 9.27704E7
+jvm_memory_pool_allocated_bytes_total{pool="ZGC Old Generation"} 1.3631488E8
+jvm_memory_pool_allocated_bytes_total{pool="ZGC Young Generation"} 8.938061824E9
+# TYPE jvm_memory_pool_collection_committed_bytes gauge
+# UNIT jvm_memory_pool_collection_committed_bytes bytes
+# HELP jvm_memory_pool_collection_committed_bytes Committed after last collection bytes of a given JVM memory pool.
+jvm_memory_pool_collection_committed_bytes{pool="ZGC Old Generation"} 8.8080384E7
+jvm_memory_pool_collection_committed_bytes{pool="ZGC Young Generation"} 4.46693376E9
+# TYPE jvm_memory_pool_collection_init_bytes gauge
+# UNIT jvm_memory_pool_collection_init_bytes bytes
+# HELP jvm_memory_pool_collection_init_bytes Initial after last collection bytes of a given JVM memory pool.
+jvm_memory_pool_collection_init_bytes{pool="ZGC Old Generation"} 0.0
+jvm_memory_pool_collection_init_bytes{pool="ZGC Young Generation"} 8388608.0
+# TYPE jvm_memory_pool_collection_max_bytes gauge
+# UNIT jvm_memory_pool_collection_max_bytes bytes
+# HELP jvm_memory_pool_collection_max_bytes Max bytes after last collection of a given JVM memory pool.
+jvm_memory_pool_collection_max_bytes{pool="ZGC Old Generation"} 1.6628318208E10
+jvm_memory_pool_collection_max_bytes{pool="ZGC Young Generation"} 1.6628318208E10
+# TYPE jvm_memory_pool_collection_used_bytes gauge
+# UNIT jvm_memory_pool_collection_used_bytes bytes
+# HELP jvm_memory_pool_collection_used_bytes Used bytes after last collection of a given JVM memory pool.
+jvm_memory_pool_collection_used_bytes{pool="ZGC Old Generation"} 8.8080384E7
+jvm_memory_pool_collection_used_bytes{pool="ZGC Young Generation"} 1.4680064E8
+# TYPE jvm_memory_pool_committed_bytes gauge
+# UNIT jvm_memory_pool_committed_bytes bytes
+# HELP jvm_memory_pool_committed_bytes Committed bytes of a given JVM memory pool.
+jvm_memory_pool_committed_bytes{pool="CodeHeap 'non-nmethods'"} 3735552.0
+jvm_memory_pool_committed_bytes{pool="CodeHeap 'non-profiled nmethods'"} 5177344.0
+jvm_memory_pool_committed_bytes{pool="CodeHeap 'profiled nmethods'"} 7929856.0
+jvm_memory_pool_committed_bytes{pool="Compressed Class Space"} 3997696.0
+jvm_memory_pool_committed_bytes{pool="Metaspace"} 3.2178176E7
+jvm_memory_pool_committed_bytes{pool="ZGC Old Generation"} 8.8080384E7
+jvm_memory_pool_committed_bytes{pool="ZGC Young Generation"} 5.014290432E9
+# TYPE jvm_memory_pool_init_bytes gauge
+# UNIT jvm_memory_pool_init_bytes bytes
+# HELP jvm_memory_pool_init_bytes Initial bytes of a given JVM memory pool.
+jvm_memory_pool_init_bytes{pool="CodeHeap 'non-nmethods'"} 2555904.0
+jvm_memory_pool_init_bytes{pool="CodeHeap 'non-profiled nmethods'"} 2555904.0
+jvm_memory_pool_init_bytes{pool="CodeHeap 'profiled nmethods'"} 2555904.0
+jvm_memory_pool_init_bytes{pool="Compressed Class Space"} 0.0
+jvm_memory_pool_init_bytes{pool="Metaspace"} 0.0
+jvm_memory_pool_init_bytes{pool="ZGC Old Generation"} 0.0
+jvm_memory_pool_init_bytes{pool="ZGC Young Generation"} 8388608.0
+# TYPE jvm_memory_pool_max_bytes gauge
+# UNIT jvm_memory_pool_max_bytes bytes
+# HELP jvm_memory_pool_max_bytes Max bytes of a given JVM memory pool.
+jvm_memory_pool_max_bytes{pool="CodeHeap 'non-nmethods'"} 7606272.0
+jvm_memory_pool_max_bytes{pool="CodeHeap 'non-profiled nmethods'"} 1.22028032E8
+jvm_memory_pool_max_bytes{pool="CodeHeap 'profiled nmethods'"} 1.22028032E8
+jvm_memory_pool_max_bytes{pool="Compressed Class Space"} 1.073741824E9
+jvm_memory_pool_max_bytes{pool="Metaspace"} -1.0
+jvm_memory_pool_max_bytes{pool="ZGC Old Generation"} 1.6628318208E10
+jvm_memory_pool_max_bytes{pool="ZGC Young Generation"} 1.6628318208E10
+# TYPE jvm_memory_pool_used_bytes gauge
+# UNIT jvm_memory_pool_used_bytes bytes
+# HELP jvm_memory_pool_used_bytes Used bytes of a given JVM memory pool.
+jvm_memory_pool_used_bytes{pool="CodeHeap 'non-nmethods'"} 2179200.0
+jvm_memory_pool_used_bytes{pool="CodeHeap 'non-profiled nmethods'"} 4233600.0
+jvm_memory_pool_used_bytes{pool="CodeHeap 'profiled nmethods'"} 6747648.0
+jvm_memory_pool_used_bytes{pool="Compressed Class Space"} 3762704.0
+jvm_memory_pool_used_bytes{pool="Metaspace"} 3.1626448E7
+jvm_memory_pool_used_bytes{pool="ZGC Old Generation"} 8.8080384E7
+jvm_memory_pool_used_bytes{pool="ZGC Young Generation"} 5.014290432E9
+# TYPE jvm_memory_used_bytes gauge
+# UNIT jvm_memory_used_bytes bytes
+# HELP jvm_memory_used_bytes Used bytes of a given JVM memory area.
+jvm_memory_used_bytes{area="heap"} 5.102370816E9
+jvm_memory_used_bytes{area="nonheap"} 4.8537904E7
+# TYPE jvm_runtime info
+# HELP jvm_runtime JVM runtime info
+jvm_runtime_info{runtime="OpenJDK Runtime Environment",vendor="Eclipse Adoptium",version="25.0.5+8-LTS"} 1
+# TYPE jvm_threads_current gauge
+# HELP jvm_threads_current Current thread count of a JVM
+jvm_threads_current 48.0
+# TYPE jvm_threads_daemon gauge
+# HELP jvm_threads_daemon Daemon thread count of a JVM
+jvm_threads_daemon 14.0
+# TYPE jvm_threads_deadlocked gauge
+# HELP jvm_threads_deadlocked Cycles of JVM-threads that are in deadlock waiting to acquire object monitors or ownable synchronizers
+jvm_threads_deadlocked 0.0
+# TYPE jvm_threads_deadlocked_monitor gauge
+# HELP jvm_threads_deadlocked_monitor Cycles of JVM-threads that are in deadlock waiting to acquire object monitors
+jvm_threads_deadlocked_monitor 0.0
+# TYPE jvm_threads_peak gauge
+# HELP jvm_threads_peak Peak thread count of a JVM
+jvm_threads_peak 48.0
+# TYPE jvm_threads_started counter
+# HELP jvm_threads_started Started thread count of a JVM
+jvm_threads_started_total 48.0
+# TYPE jvm_threads_state gauge
+# HELP jvm_threads_state Current count of threads by state
+jvm_threads_state{state="BLOCKED"} 0.0
+jvm_threads_state{state="NEW"} 0.0
+jvm_threads_state{state="RUNNABLE"} 38.0
+jvm_threads_state{state="TERMINATED"} 0.0
+jvm_threads_state{state="TIMED_WAITING"} 4.0
+jvm_threads_state{state="UNKNOWN"} 0.0
+jvm_threads_state{state="WAITING"} 6.0
+# TYPE process_cpu_seconds counter
+# UNIT process_cpu_seconds seconds
+# HELP process_cpu_seconds Total user and system CPU time spent in seconds.
+process_cpu_seconds_total 179.43
+# TYPE process_max_fds gauge
+# HELP process_max_fds Maximum number of open file descriptors.
+process_max_fds 1048576.0
+# TYPE process_open_fds gauge
+# HELP process_open_fds Number of open file descriptors.
+process_open_fds 180.0
+# TYPE process_resident_memory_bytes gauge
+# UNIT process_resident_memory_bytes bytes
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+process_resident_memory_bytes 5.411586048E9
+# TYPE process_start_time_seconds gauge
+# UNIT process_start_time_seconds seconds
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+process_start_time_seconds 1.795861665457E9
+# TYPE process_virtual_memory_bytes gauge
+# UNIT process_virtual_memory_bytes bytes
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+process_virtual_memory_bytes 2.73514201088E11
+# TYPE sensepitch_deflector_requests counter
+# HELP sensepitch_deflector_requests Requests handled by the deflector, by ingress and outcome
+sensepitch_deflector_requests_total{ingress="localhost",outcome="bypassed"} 1644656.0
+# TYPE sensepitch_edge_server_live gauge
+# HELP sensepitch_edge_server_live Always 1 per ingress the server knows, might be 0 in the future when the server is not accepting connections, e.g. warming up
+sensepitch_edge_server_live{ingress="localhost"} 1.0
+# TYPE sensepitch_ingress_connections_active gauge
+# HELP sensepitch_ingress_connections_active Number of currently active connections (opened - closed)
+sensepitch_ingress_connections_active 0.0
+# TYPE sensepitch_ingress_connections_closed counter
+# HELP sensepitch_ingress_connections_closed Connections closed
+sensepitch_ingress_connections_closed_total 201.0
+# TYPE sensepitch_ingress_connections_opened counter
+# HELP sensepitch_ingress_connections_opened Connections opened
+sensepitch_ingress_connections_opened_total 201.0
+# TYPE sensepitch_ingress_request_duration_seconds histogram
+# UNIT sensepitch_ingress_request_duration_seconds seconds
+# HELP sensepitch_ingress_request_duration_seconds HTTP total duration of the request from established connection to response received
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.002"} 1602708
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.004"} 1636406
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.008"} 1642114
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.016"} 1643727
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.032"} 1644382
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.064"} 1644525
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.128"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.256"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.512"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="1.024"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="2.048"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="4.096"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="8.192"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="16.384"} 1644568
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="+Inf"} 1644568
+sensepitch_ingress_request_duration_seconds_count{ingress="localhost",method="GET",status_code="200"} 1644568
+sensepitch_ingress_request_duration_seconds_sum{ingress="localhost",method="GET",status_code="200"} 900.7095294749791
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.002"} 39
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.004"} 51
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.008"} 59
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.016"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.032"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.064"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.128"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.256"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.512"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="1.024"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="2.048"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="4.096"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="8.192"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="16.384"} 88
+sensepitch_ingress_request_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="+Inf"} 88
+sensepitch_ingress_request_duration_seconds_count{ingress="localhost",method="GET",status_code="499"} 88
+sensepitch_ingress_request_duration_seconds_sum{ingress="localhost",method="GET",status_code="499"} 0.40174889
+# TYPE sensepitch_ingress_request_errors counter
+sensepitch_ingress_request_errors_total{ingress="localhost",phase="responding",type="reset"} 88.0
+# TYPE sensepitch_ingress_request_flavor_count counter
+sensepitch_ingress_request_flavor_count_total{country="unknown",flavor="unknown"} 1644656.0
+# TYPE sensepitch_ingress_request_outcomes counter
+# HELP sensepitch_ingress_request_outcomes Requests by ingress and outcome, counted when the request is logged
+sensepitch_ingress_request_outcomes_total{ingress="localhost",outcome="client_aborted"} 88.0
+sensepitch_ingress_request_outcomes_total{ingress="localhost",outcome="completed"} 1644568.0
+# TYPE sensepitch_ingress_request_size_bytes histogram
+# UNIT sensepitch_ingress_request_size_bytes bytes
+# HELP sensepitch_ingress_request_size_bytes Bytes of HTTP request traffic received
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="64.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="128.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="256.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="512.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="1024.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="2048.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="4096.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="8192.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="16384.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="32768.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="65536.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="131072.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="262144.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="524288.0"} 1644656
+sensepitch_ingress_request_size_bytes_bucket{ingress="localhost",le="+Inf"} 1644656
+sensepitch_ingress_request_size_bytes_count{ingress="localhost"} 1644656
+sensepitch_ingress_request_size_bytes_sum{ingress="localhost"} 6.7430896E7
+# TYPE sensepitch_ingress_requests_aborted counter
+# HELP sensepitch_ingress_requests_aborted The response could not be sent to the client, e.g. when the connection is reset
+sensepitch_ingress_requests_aborted_total{ingress="localhost"} 88.0
+# TYPE sensepitch_ingress_requests_completed counter
+# HELP sensepitch_ingress_requests_completed Increments once the response was received by the client
+sensepitch_ingress_requests_completed_total{ingress="localhost"} 1644568.0
+# TYPE sensepitch_ingress_requests_in_flight gauge
+# HELP sensepitch_ingress_requests_in_flight Number of requests currently in flight
+sensepitch_ingress_requests_in_flight{ingress="localhost"} 0.0
+# TYPE sensepitch_ingress_requests_started counter
+# HELP sensepitch_ingress_requests_started Increments as soon as an HTTP header from a client is received
+sensepitch_ingress_requests_started_total{ingress="localhost"} 1644656.0
+# TYPE sensepitch_ingress_response_duration_seconds histogram
+# UNIT sensepitch_ingress_response_duration_seconds seconds
+# HELP sensepitch_ingress_response_duration_seconds HTTP request response duration in seconds, from request received to first byte of response, not effected by client connectivity
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.002"} 1610632
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.004"} 1638213
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.008"} 1642666
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.016"} 1643926
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.032"} 1644426
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.064"} 1644554
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.128"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.256"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="0.512"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="1.024"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="2.048"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="4.096"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="8.192"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="16.384"} 1644568
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="200",le="+Inf"} 1644568
+sensepitch_ingress_response_duration_seconds_count{ingress="localhost",method="GET",status_code="200"} 1644568
+sensepitch_ingress_response_duration_seconds_sum{ingress="localhost",method="GET",status_code="200"} 805.4982568629723
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.002"} 52
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.004"} 74
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.008"} 76
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.016"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.032"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.064"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.128"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.256"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="0.512"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="1.024"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="2.048"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="4.096"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="8.192"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="16.384"} 88
+sensepitch_ingress_response_duration_seconds_bucket{ingress="localhost",method="GET",status_code="499",le="+Inf"} 88
+sensepitch_ingress_response_duration_seconds_count{ingress="localhost",method="GET",status_code="499"} 88
+sensepitch_ingress_response_duration_seconds_sum{ingress="localhost",method="GET",status_code="499"} 0.22765498900000003
+# TYPE sensepitch_ingress_response_size_bytes histogram
+# UNIT sensepitch_ingress_response_size_bytes bytes
+# HELP sensepitch_ingress_response_size_bytes Bytes of HTTP response traffic sent
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="256.0"} 0
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="512.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="1024.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="2048.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="4096.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="8192.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="16384.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="32768.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="65536.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="131072.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="262144.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="524288.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="1048576.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="2097152.0"} 1644656
+sensepitch_ingress_response_size_bytes_bucket{ingress="localhost",le="+Inf"} 1644656
+sensepitch_ingress_response_size_bytes_count{ingress="localhost"} 1644656
+sensepitch_ingress_response_size_bytes_sum{ingress="localhost"} 5.37802512E8
+# TYPE sensepitch_ip_lookup_errors counter
+sensepitch_ip_lookup_errors_total 0.0
+# TYPE sensepitch_netty_allocator_used_memory_bytes gauge
+# UNIT sensepitch_netty_allocator_used_memory_bytes bytes
+# HELP sensepitch_netty_allocator_used_memory_bytes Memory used by the netty byte buffer allocators
+sensepitch_netty_allocator_used_memory_bytes{allocator="default",type="direct"} 3.6716544E7
+sensepitch_netty_allocator_used_memory_bytes{allocator="default",type="heap"} 0.0
+sensepitch_netty_allocator_used_memory_bytes{allocator="pooled",type="direct"} 0.0
+sensepitch_netty_allocator_used_memory_bytes{allocator="pooled",type="heap"} 0.0
+sensepitch_netty_allocator_used_memory_bytes{allocator="unpooled",type="direct"} 17719.0
+sensepitch_netty_allocator_used_memory_bytes{allocator="unpooled",type="heap"} 12800.0
+# TYPE sensepitch_request_log_dropped counter
+# HELP sensepitch_request_log_dropped Request log records dropped because the destination could not keep up
+sensepitch_request_log_dropped_total{destination="stdout"} 0.0
+# TYPE sensepitch_request_log_errors counter
+sensepitch_request_log_errors_total 0.0
+# TYPE sensepitch_request_log_queued gauge
+# HELP sensepitch_request_log_queued Request log records waiting to be written
+sensepitch_request_log_queued{destination="stdout"} 0.0
+# TYPE sensepitch_upstream_pool_connections gauge
+# HELP sensepitch_upstream_pool_connections Open connections to the upstream, in use, idle and connecting
+sensepitch_upstream_pool_connections{upstream="sites.localhost.upstream"} 100.0
+# TYPE sensepitch_upstream_pool_connections_closed counter
+# HELP sensepitch_upstream_pool_connections_closed Connections to the upstream closed, by reason
+sensepitch_upstream_pool_connections_closed_total{reason="not_reusable",upstream="sites.localhost.upstream"} 1591.0
+# TYPE sensepitch_upstream_pool_connections_idle gauge
+# HELP sensepitch_upstream_pool_connections_idle Idle kept-alive connections to the upstream
+sensepitch_upstream_pool_connections_idle{upstream="sites.localhost.upstream"} 100.0
+# TYPE sensepitch_upstream_pool_connections_opened counter
+# HELP sensepitch_upstream_pool_connections_opened Connections opened to the upstream
+sensepitch_upstream_pool_connections_opened_total{upstream="sites.localhost.upstream"} 1691.0
+# TYPE sensepitch_upstream_pool_connections_reused counter
+# HELP sensepitch_upstream_pool_connections_reused Requests sent on a kept-alive connection instead of a new one
+sensepitch_upstream_pool_connections_reused_total{upstream="sites.localhost.upstream"} 1642965.0
+# EOF

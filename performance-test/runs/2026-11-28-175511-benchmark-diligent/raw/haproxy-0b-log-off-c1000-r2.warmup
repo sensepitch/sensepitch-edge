@@ -1,0 +1,21 @@
+URL:          https://172.21.0.3/0b.img
+Protocol:     HTTP/1.1
+Threads:      8
+Connections:  1000
+Requests:     986151 (986151 ok, 0 errors, of which 0 connect) in 10.041s
+Requests/sec: 98210.9
+Transfer:     recv 23.32 MB/s (245527297 bytes), sent 6.03 MB/s (63481160 bytes)
+Status codes:
+  [200] 986151
+Latency (ms):
+  min 0.139  mean 9.853  max 404.785
+Latency distribution:
+  10% in 5.425 ms
+  25% in 7.453 ms
+  50% in 9.492 ms
+  75% in 11.627 ms
+  90% in 13.877 ms
+  95% in 15.589 ms
+  99% in 21.466 ms
+  99.9% in 58.858 ms
+  99.99% in 102.053 ms

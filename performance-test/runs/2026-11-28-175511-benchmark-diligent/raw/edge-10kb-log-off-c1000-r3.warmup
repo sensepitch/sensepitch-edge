@@ -1,0 +1,21 @@
+URL:          https://127.0.0.1:17443/10kb.img
+Protocol:     HTTP/1.1
+Threads:      8
+Connections:  1000
+Requests:     502003 (502003 ok, 0 errors, of which 0 connect) in 10.039s
+Requests/sec: 50003.9
+Transfer:     recv 505.46 MB/s (5320928788 bytes), sent 3.13 MB/s (32977145 bytes)
+Status codes:
+  [200] 502003
+Latency (ms):
+  min 0.121  mean 19.498  max 458.847
+Latency distribution:
+  10% in 2.454 ms
+  25% in 7.628 ms
+  50% in 15.705 ms
+  75% in 25.779 ms
+  90% in 37.586 ms
+  95% in 47.211 ms
+  99% in 91.366 ms
+  99.9% in 264.776 ms
+  99.99% in 378.566 ms

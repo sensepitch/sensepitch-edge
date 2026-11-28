@@ -1,0 +1,21 @@
+URL:          https://127.0.0.1:17443/0b.img
+Protocol:     HTTP/1.1
+Threads:      8
+Connections:  10
+Requests:     474518 (474518 ok, 0 errors, of which 0 connect) in 10.003s
+Requests/sec: 47439.7
+Transfer:     recv 15.79 MB/s (165623832 bytes), sent 2.85 MB/s (29898194 bytes)
+Status codes:
+  [200] 474518
+Latency (ms):
+  min 0.046  mean 0.209  max 53.696
+Latency distribution:
+  10% in 0.095 ms
+  25% in 0.120 ms
+  50% in 0.155 ms
+  75% in 0.219 ms
+  90% in 0.331 ms
+  95% in 0.470 ms
+  99% in 1.051 ms
+  99.9% in 3.021 ms
+  99.99% in 6.694 ms

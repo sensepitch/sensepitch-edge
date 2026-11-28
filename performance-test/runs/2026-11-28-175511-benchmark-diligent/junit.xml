@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="knockout.sh" tests="163" failures="0" errors="0" skipped="0" time="4982.061">
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 10 1)" time="27.817">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 10 1)" time="26.949">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 10 1)" time="22.234">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 10 1)" time="21.076">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 10 1)" time="20.964">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 10 1)" time="21.776">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 100 1)" time="31.929">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 100 1)" time="26.571">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 100 1)" time="22.670">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 100 1)" time="21.110">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 100 1)" time="21.046">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 100 1)" time="21.850">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 1000 1)" time="32.118">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 1000 1)" time="42.181">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 1000 1)" time="22.782">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 1000 1)" time="83.069">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 1000 1)" time="21.106">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 1000 1)" time="21.889">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 10 1)" time="90.001">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 10 1)" time="26.276">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 10 1)" time="22.077">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 10 1)" time="21.044">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 10 1)" time="20.985">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 10 1)" time="21.762">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 100 1)" time="30.408">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 100 1)" time="25.855">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 100 1)" time="22.549">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 100 1)" time="21.138">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 100 1)" time="21.007">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 100 1)" time="22.041">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 1000 1)" time="30.758">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 1000 1)" time="25.102">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 1000 1)" time="22.603">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 1000 1)" time="82.065">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 1000 1)" time="21.068">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 1000 1)" time="22.131">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 10 1)" time="88.678">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 10 1)" time="25.639">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 10 1)" time="22.001">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 10 1)" time="21.002">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 10 1)" time="20.928">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 10 1)" time="21.805">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 100 1)" time="28.195">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 100 1)" time="24.973">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 100 1)" time="22.134">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 100 1)" time="21.087">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 100 1)" time="20.952">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 100 1)" time="21.804">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 1000 1)" time="28.492">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 1000 1)" time="51.095">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 1000 1)" time="22.363">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 1000 1)" time="81.009">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 1000 1)" time="21.022">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 1000 1)" time="21.933">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 10 2)" time="90.769">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 10 2)" time="26.950">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 10 2)" time="22.214">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 10 2)" time="21.080">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 10 2)" time="20.962">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 10 2)" time="21.768">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 100 2)" time="31.846">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 100 2)" time="26.631">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 100 2)" time="22.803">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 100 2)" time="21.135">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 100 2)" time="21.023">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 100 2)" time="22.024">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 1000 2)" time="32.083">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 1000 2)" time="43.336">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 1000 2)" time="22.626">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 1000 2)" time="83.129">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 1000 2)" time="21.088">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 1000 2)" time="21.901">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 10 2)" time="90.262">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 10 2)" time="26.393">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 10 2)" time="22.102">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 10 2)" time="21.029">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 10 2)" time="20.977">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 10 2)" time="21.772">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 100 2)" time="30.372">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 100 2)" time="25.940">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 100 2)" time="22.447">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 100 2)" time="21.139">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 100 2)" time="21.024">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 100 2)" time="21.819">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 1000 2)" time="30.814">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 1000 2)" time="35.516">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 1000 2)" time="22.455">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 1000 2)" time="84.106">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 1000 2)" time="21.087">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 1000 2)" time="21.892">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 10 2)" time="88.727">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 10 2)" time="25.373">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 10 2)" time="21.950">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 10 2)" time="21.032">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 10 2)" time="20.918">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 10 2)" time="21.777">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 100 2)" time="28.251">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 100 2)" time="24.979">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 100 2)" time="22.189">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 100 2)" time="21.056">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 100 2)" time="20.980">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 100 2)" time="21.784">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 1000 2)" time="28.472">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 1000 2)" time="24.284">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 1000 2)" time="22.398">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 1000 2)" time="83.097">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 1000 2)" time="21.020">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 1000 2)" time="21.853">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 10 3)" time="90.972">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 10 3)" time="27.048">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 10 3)" time="22.245">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 10 3)" time="21.060">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 10 3)" time="20.978">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 10 3)" time="21.771">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 100 3)" time="31.715">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 100 3)" time="26.598">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 100 3)" time="22.633">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 100 3)" time="21.080">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 100 3)" time="20.976">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 100 3)" time="21.906">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b on 1000 3)" time="32.143">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b on 1000 3)" time="44.390">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b on 1000 3)" time="22.332">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (0b off 1000 3)" time="83.062">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (0b off 1000 3)" time="21.081">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (0b off 1000 3)" time="21.929">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 10 3)" time="90.290">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 10 3)" time="26.373">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 10 3)" time="22.117">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 10 3)" time="21.033">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 10 3)" time="20.985">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 10 3)" time="21.781">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 100 3)" time="30.343">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 100 3)" time="25.907">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 100 3)" time="22.496">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 100 3)" time="21.114">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 100 3)" time="20.999">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 100 3)" time="21.822">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b on 1000 3)" time="30.943">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b on 1000 3)" time="25.180">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b on 1000 3)" time="22.371">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (512b off 1000 3)" time="82.025">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (512b off 1000 3)" time="21.075">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (512b off 1000 3)" time="21.887">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 10 3)" time="88.699">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 10 3)" time="25.338">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 10 3)" time="21.972">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 10 3)" time="21.023">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 10 3)" time="20.922">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 10 3)" time="21.779">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 100 3)" time="28.223">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 100 3)" time="24.993">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 100 3)" time="22.171">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 100 3)" time="21.080">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 100 3)" time="20.964">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 100 3)" time="21.768">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb on 1000 3)" time="38.836">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb on 1000 3)" time="36.748">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb on 1000 3)" time="22.335">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="nginx (10kb off 1000 3)" time="80.973">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="haproxy (10kb off 1000 3)" time="21.053">
+    </testcase>
+    <testcase classname="knockout-tests/10-steps.suite.sh" name="edge (10kb off 1000 3)" time="21.908">
+    </testcase>
+    <testcase classname="knockout-tests/90-summary.sh" name="knockout-tests/90-summary.sh" time="0.074">
+    </testcase>
+  </testsuite>
+</testsuites>
