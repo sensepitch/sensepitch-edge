@@ -126,38 +126,27 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 
 ## Protection, admission
 
-- [ ] Crawler detection from the Sensepitch Known Crawlers release: drop the embedded IP lists
-  (`src/main/resources/crawler-ips/`, `CombinedIpTraitsLookup.readCrawlerIpLists`) and read the
-  release zips from a directory instead. The fixture and the pointer to the format description
-  are in `src/test/resources/sensepitch-known-crawlers/`; its `expectations.json` is the test
-  oracle for the matching. Breaking change allowed. P2: the embedded lists go stale between
-  releases. Decided 2026-11-27:
-  - Scope: only the IP lists are replaced; the User-Agent list (`crawlers.tsv`,
-    `DetectCrawlerConfig`) stays unchanged.
-  - Configuration:
-    - directory of the zip files in the local file system; not set means no IP crawler
-      detection, startup logs one `WARNING`, the User-Agent list still applies
-    - `admittedTierLevel`, default `1`: feeds of tier 1 up to this level are admitted as
-      crawlers (tiers stand for trustworthiness, 1 is the most trusted)
-    - `excludeTypes`: tags; a feed with any excluded tag is not admitted
-  - Not admitted is not invisible: a match of a higher tier or an excluded feed is still
-    recognised and reported, it only does not bypass the challenge.
-  - Several matches (feeds overlap): the best admitted match decides, ordered by tier, then
-    vendor and list name, as in `expectations.json`. The request log and the headers list every
-    match in that order, each with vendor, list name, tier and tags; `IpTraits` carries a list
-    instead of one `crawlerName`.
-  - Updates: the directory is watched (`ConfigFileWatcher`), a zip renamed into place reloads
-    the lists; a broken zip or an unknown `meta.json` `version` keeps the previous lists and is
-    counted. The tier is taken from `meta.json`. The operator or a host job fills the directory.
-  - Metrics: the crawler counter gets a `tier` label and a `tag` label, one increment per tag of
-    the deciding match. Both values come from the configured data, not from the request, so the
-    cardinality is bounded by the loaded lists; check it stays small with the real release.
-  - Done: `KnownCrawlerLists` reads the zips of a directory and returns every matching feed in
-    the order above, checked against `expectations.json`; not wired into the request path yet.
-    Open: the configuration (directory, `admittedTierLevel`, `excludeTypes`, the `WARNING` when
-    unset), the match list in `IpTraits`, the request log and headers, the reload by the watcher,
-    the metric labels, and removing `src/main/resources/crawler-ips/` with
-    `readCrawlerIpLists`.
+- [ ] Crawler detection from the Sensepitch Known Crawlers release: replace the embedded IP lists
+  (`src/main/resources/crawler-ips/`) by the release zips read from a directory. Decisions and
+  the operator-visible changes are in
+  [known-crawlers-draft.md](doc/design/known-crawlers-draft.md).
+  - P2: the embedded lists go stale between releases. Breaking change allowed.
+  - Done: `KnownCrawlerLists` reads the zips and returns every matching feed in order, checked
+    against the fixture's `expectations.json`.
+  - Steps, each leaves the edge working:
+    - [ ] configuration (directory, `admittedTierLevel`, `excludeTypes`); unset: one `WARNING`,
+      no IP detection; configured but missing, empty or broken: the start is refused. Wire
+      `KnownCrawlerLists` in behind the existing `crawlerName` (first match), the embedded lists
+      as fallback when unset
+    - [ ] the admission rules in `DetectCrawler` (tier level, excluded tags, not admitted but
+      reported, an IP match wins over a User-Agent match), BDD scenarios from the fixture
+    - [ ] the list of matches in `IpTraits`, the request log and the headers; README sections
+      and a migration note
+    - [ ] reload by `ConfigFileWatcher`, a counter for rejected zips
+    - [ ] `sensepitch_crawler_requests_total{ingress,vendor,tier,tag,admitted}`, after recording
+      the number of vendors, tiers and tags of the current release
+    - [ ] remove `src/main/resources/crawler-ips/`, `readCrawlerIpLists` and its `update.sh`
+    - [ ] delivery in the chart, the same mechanism as the IP database (item 13)
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)

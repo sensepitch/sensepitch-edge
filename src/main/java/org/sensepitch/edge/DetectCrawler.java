@@ -16,6 +16,11 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 
+/// Lets known crawlers bypass the protection, by their User-Agent or by a crawler IP trait of the
+/// client address. A request without a `User-Agent` is never let through, also from a crawler
+/// address: real crawlers send one, a request without it is suspicious. See
+/// `doc/design/known-crawlers-draft.md`.
+///
 /// @author Jens Wilke
 public class DetectCrawler implements BypassCheck {
 
