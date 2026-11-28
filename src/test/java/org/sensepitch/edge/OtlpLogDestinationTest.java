@@ -78,13 +78,7 @@ class OtlpLogDestinationTest {
     }
 
     List<String> paths() {
-      return body.getResourceLogs(0).getScopeLogs(0).getLogRecordsList().stream()
-          .map(
-              record ->
-                  attributes(record.getAttributesList())
-                      .get(OtlpTestSupport.PATH_ATTRIBUTE)
-                      .getStringValue())
-          .toList();
+      return OtlpTestSupport.paths(body);
     }
   }
 
@@ -994,10 +988,15 @@ class OtlpLogDestinationTest {
     assertThat(posted()).as("a window full").isEqualTo(8);
     answer(503);
     assertThat(destination.window()).as("after a failure").isOne();
-    destination.endThread();
-    CompletableFuture<Void> stopped = destination.finish();
     answerAll(503);
     clock.advanceMillis(RETRY_MILLIS);
+    assertThat(posted() - answered).as("one recovery probe").isOne();
+    clock.advanceMillis(RETRY_MILLIS);
+    assertThat(posted() - answered).as("only the probe until it answers").isOne();
+    answer(200);
+    assertThat(posted() - answered).as("two posts after the probe succeeds").isEqualTo(2);
+    destination.endThread();
+    CompletableFuture<Void> stopped = destination.finish();
     answerAll(200);
     assertThat(stopped).isDone();
     assertThat(new HashSet<>(delivered)).hasSize(total);

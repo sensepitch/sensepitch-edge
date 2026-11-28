@@ -6,15 +6,14 @@ import static org.sensepitch.edge.OtlpTestSupport.decode;
 import static org.sensepitch.edge.TestRequestLogInfo.request;
 import static org.sensepitch.edge.TestingParameters.EVENT_TIMEOUT_SECONDS;
 import static org.sensepitch.edge.TestingParameters.OUT_OF_REACH_MILLIS;
-import static org.sensepitch.edge.TestingParameters.await;
 
 import com.sun.net.httpserver.HttpServer;
-import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import java.util.ArrayList;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -34,19 +33,25 @@ class OtlpSlowStartIT {
   /// flight, one more with each success, up to `maxConcurrentRequests`
   @Test
   void slowStartAfterAnOutage() throws Exception {
-    AtomicBoolean available = new AtomicBoolean();
+    int maxConcurrentRequests = 8;
+    AtomicInteger arrivals = new AtomicInteger();
+    CountDownLatch initialWindow = new CountDownLatch(maxConcurrentRequests);
+    Semaphore failures = new Semaphore(0);
     AtomicInteger inFlight = new AtomicInteger();
-    AtomicInteger records = new AtomicInteger();
+    var delivered = new ConcurrentLinkedQueue<String>();
     CountDownLatch probeArrived = new CountDownLatch(1);
     CountDownLatch twoRequestsInFlight = new CountDownLatch(1);
     Semaphore answers = new Semaphore(0);
     HttpServer held = Loopback.httpServer();
-    held.setExecutor(Executors.newCachedThreadPool());
+    var workers = Executors.newVirtualThreadPerTaskExecutor();
+    held.setExecutor(workers);
     held.createContext(
         "/v1/logs",
         exchange -> {
           byte[] body = exchange.getRequestBody().readAllBytes();
-          if (!available.get()) {
+          if (arrivals.incrementAndGet() <= maxConcurrentRequests) {
+            initialWindow.countDown();
+            failures.acquireUninterruptibly();
             exchange.sendResponseHeaders(503, -1);
             exchange.close();
             return;
@@ -57,8 +62,7 @@ class OtlpSlowStartIT {
           probeArrived.countDown();
           answers.acquireUninterruptibly();
           inFlight.decrementAndGet();
-          records.addAndGet(
-              decode(exchange, body).getResourceLogs(0).getScopeLogs(0).getLogRecordsCount());
+          delivered.addAll(OtlpTestSupport.paths(decode(exchange, body)));
           exchange.sendResponseHeaders(200, -1);
           exchange.close();
         });
@@ -74,54 +78,53 @@ class OtlpSlowStartIT {
                   .endpoint("http://127.0.0.1:" + held.getAddress().getPort() + "/v1/logs")
                   .batchBytes(batchBytes)
                   .maxBufferedBytes(64 << 20)
-                  .maxConcurrentRequests(8)
+                  .maxConcurrentRequests(maxConcurrentRequests)
+                  .timeoutMillis(OUT_OF_REACH_MILLIS)
                   .flushIntervalMillis(OUT_OF_REACH_MILLIS)
                   .initialRetryDelayMillis(10)
                   .maxRetryDelayMillis(50)
                   .build());
-      OtlpLogDestination sender = destination;
       OtlpRequestLogger logger = new OtlpRequestLogger(destination);
       int total = 10 * (batchBytes / framedSize(request("/0")) + 1);
+      var expected = new ArrayList<String>(total);
       for (int i = 0; i < total; i++) {
-        logger.logRequest(request("/" + i));
+        String path = "/" + i;
+        expected.add(path);
+        logger.logRequest(request(path));
       }
-      await("sender retries after the outage", () -> retries(sender) >= 1);
-      assertThat(destination.window()).as("after a failure").isOne();
-      available.set(true);
+      // Hold the entire initial window before returning any 503. Every later arrival is a retry
+      // or a queued post, even if the HTTP client delivers its initial requests out of order.
+      assertThat(initialWindow.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+          .as("the full initial window arrived")
+          .isTrue();
+      failures.release(maxConcurrentRequests);
       // the probe alone
       assertThat(probeArrived.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("the recovery probe arrived")
           .isTrue();
+      assertThat(destination.window()).as("while the probe is held").isOne();
       assertThat(inFlight.get()).as("only the probe is held").isOne();
       // its success allows two
       answers.release();
       assertThat(twoRequestsInFlight.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
           .as("two requests followed the successful probe")
           .isTrue();
+      assertThat(destination.window()).as("after the probe succeeds").isEqualTo(2);
       assertThat(inFlight.get()).as("two requests are held after the probe").isEqualTo(2);
       answers.release(1_000);
       HttpBatchSenderTest.close(destination);
-      assertThat(records.get()).isEqualTo(total);
+      assertThat(delivered).containsExactlyInAnyOrderElementsOf(expected);
       assertThat(destination.droppedCount()).isZero();
-      assertThat(destination.window()).as("back at the maximum").isEqualTo(8);
+      assertThat(destination.window()).as("back at the maximum").isEqualTo(maxConcurrentRequests);
     } finally {
+      failures.release(maxConcurrentRequests);
       answers.release(1_000);
       if (destination != null) {
         destination.endThread();
         destination.finish();
       }
       TestingParameters.stop(held);
+      workers.close();
     }
-  }
-
-  /// Export retries of the destination, to wait for the first failed request
-  static long retries(OtlpLogDestination destination) {
-    PrometheusRegistry registry = new PrometheusRegistry();
-    destination.metrics().registerCollectors(registry::register);
-    return (long)
-        new ScrapedMetrics(registry.scrape())
-            .counter(
-                "sensepitch_request_log_export_retries", "destination", destination.destination())
-            .getValue();
   }
 }

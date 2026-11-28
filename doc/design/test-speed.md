@@ -323,6 +323,11 @@ warm-up was not enough for the C2 compilation under that load. Moving it out of 
 lost the only test of a URI with a query on the OTLP path; that case is now in
 `OtlpLogDestinationTest`.
 
+In `OtlpSlowStartIT`, the loopback server holds the full initial window before answering any
+post with 503. Observing the first retry counter increment had allowed a delayed initial post to
+arrive during recovery and be counted alongside the probe. The unit test also holds the probe
+across another simulated retry interval and counts the posts released by its success.
+
 ## Alternatives considered
 
 ### Surefire forks

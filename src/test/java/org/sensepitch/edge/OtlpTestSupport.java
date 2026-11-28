@@ -81,6 +81,11 @@ final class OtlpTestSupport {
     } catch (InvalidProtocolBufferException e) {
       throw new AssertionError("OTLP body", e);
     }
+    return paths(body);
+  }
+
+  /// The paths identify the individual records delivered in a decoded post.
+  static List<String> paths(ExportLogsServiceRequest body) {
     return body.getResourceLogs(0).getScopeLogs(0).getLogRecordsList().stream()
         .map(record -> attributes(record.getAttributesList()).get(PATH_ATTRIBUTE).getStringValue())
         .toList();
