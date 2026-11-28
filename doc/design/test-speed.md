@@ -358,9 +358,17 @@ before each run (JaCoCo appends to it, a run without `clean` adds the data of th
 e.g. of the integration tests), keep each `target/site/jacoco/jacoco.xml` and compare `ci`, `cb`
 and `mb` per line. A line that varies points to a test whose path depends on timing.
 
-Since then the coverage floor in `pom.xml` is exactly the measured coverage, without a margin.
-A margin hid such tests; without it, a run that takes the other path fails the gate, and the
-nightly and flaky test workflows, which run the gate repeatedly, report it. The coverage must
+The coverage floor in `pom.xml` was then set exactly to the measured coverage, without a margin,
+so that a run taking the other path fails and the nightly and flaky test workflows report it. On
+CI that failed main the same day: `DiagnosticLogSink.FirstOccurrences.add` returned
+`!contains(key) && add(key)`, and the `false` outcome of `add` happens only when two threads race
+for a new key, which `WarnOnceTest` hits on some runs only; with fewer cores CI hit it more
+rarely and missed one branch (0.9630 against the floor of 0.9634; found by comparing the
+`jacoco.xml` of a failed and a passed CI run from the `build-reports` artifacts, no other line
+differed). The method returns the result of `add` now instead of branching on it. Since then the
+floor keeps a small safety gap of a few lines and branches below the measured coverage: a red
+gate on main for one branch costs more than the gap hides, and the comparison of repeated runs
+above still finds such tests. The coverage must
 not depend on the host either: `Deflector.deriveServerIpv4Address` covered the "public address
 found" or the "none found" line depending on the network interfaces of the machine, which kept
 the line floor below the measured value; the lookup is a parameter now and a test covers every

@@ -165,6 +165,18 @@ Decisions, alternatives and limitations are in
 
 ## Build, tests
 
+- [ ] JaCoCo agent opt-in for `./mvnw test`, always on for `verify`: `jacoco-prepare-agent` has no
+  phase, so it runs in `initialize` and every `./mvnw test` collects coverage, about 0.9 s of
+  5.75 s (4.85 s with `-Djacoco.skip`, three runs each, 2026-11-28, 16 cores).
+  - P3, no operator visible effect: the quick loop exists already with `-Djacoco.skip` or
+    `-Dfast`.
+  - Also: the agent appends to `target/jacoco.exec`, so a `./mvnw verify` without `clean` reports
+    the union of all runs since the last `clean` and may pass the floor locally where a clean run
+    fails; CI starts from a fresh checkout. Fix both together: e.g. a separate data file per
+    phase (unit, integration) merged by `jacoco:merge` before the report, the unit one written
+    fresh per run.
+  - Not a one-liner: surefire and failsafe share the data file today, see `jacocoArgLine` in
+    `pom.xml`.
 - [ ] an IT for the allocations per exchange; `OtlpAllocationIT` measures the steady state
   allocations of the request log only
   - P3, no operator visible effect.

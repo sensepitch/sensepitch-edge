@@ -113,9 +113,15 @@ public interface DiagnosticLogSink {
     private FirstOccurrences() {}
 
     /// True if the key was not seen before. `contains` first: it does not lock, while `add`
-    /// locks the hash bin even if the key is present.
+    /// locks the hash bin even if the key is present. The result of `add` is returned, not
+    /// branched on: it is `false` only when another thread added the key between the two calls,
+    /// a race the tests hit on some runs only, which made the branch coverage vary (one branch
+    /// on CI, 2026-11-28).
     static boolean add(CounterDataPoint key) {
-      return !SEEN.contains(key) && SEEN.add(key);
+      if (SEEN.contains(key)) {
+        return false;
+      }
+      return SEEN.add(key);
     }
   }
 
