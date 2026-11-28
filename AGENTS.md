@@ -56,8 +56,11 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
 - `./mvnw spotless:check` verifies formatting; `./mvnw spotless:apply` auto-formats Java sources.
 - `./mvnw verify` requires Node.js 22 or newer on `PATH` for the challenge JavaScript integration test.
 - `./mvnw verify` runs the whole gate: tests, `spotless:check`, the Javadoc build, and the JaCoCo
-  coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). Raise the floor
-  when coverage improves. The generic request log posting is held at 100% line and branch
+  coverage floor (`jacoco-check` in `pom.xml`, unit and integration tests combined). The floor is
+  exactly the measured coverage of `./mvnw verify`, truncated to four decimals, without a margin:
+  set it again after every change that raises the coverage. A run of the same code below the
+  floor has a test whose path depends on timing or on the host; the nightly and flaky test
+  workflows run the gate repeatedly to find it, fix it at the cause. The generic request log posting is held at 100% line and branch
   coverage by a class rule in `pom.xml`. A gap is a design question: remove error handling for a
   case that cannot happen, validate earlier, or test the case; do not lower the rule, and never
   delete a necessary check (validation, cleanup) to satisfy coverage.

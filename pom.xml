@@ -460,12 +460,12 @@
             </goals>
           </execution>
           <execution>
-            <!-- coverage floor, slightly below the actual coverage, raise it when coverage improves.
-                 Set to the lowest of repeated runs: Deflector.deriveServerIpv4Address varies by
-                 host NICs; lines stay at 0.9950 for public-IPv4 host headroom. Branches raised
-                 after deterministic PublicIpv4Finder tests (2026-11-26: 0.95985 loopback) and
-                 again when the ConfigFileWatcher race was removed (2026-11-27: 0.96095 on a
-                 workstation, ConfigFileWatcher covered in 8 of 8 runs) -->
+            <!-- coverage floor: exactly the measured coverage of ./mvnw verify, truncated to four
+                 decimals, set again after every change that raises it. No margin: a run of the
+                 same code below it has a test whose path depends on timing or on the host, which
+                 the nightly and flaky test workflows find by running the gate repeatedly; fix it
+                 at the cause, see doc/design/test-speed.md. 2026-11-28: lines 6756 of 6778,
+                 branches 2767 of 2872, identical in repeated runs -->
             <id>jacoco-check</id>
             <phase>verify</phase>
             <goals>
@@ -479,12 +479,12 @@
                     <limit>
                       <counter>LINE</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.9950</minimum>
+                      <minimum>0.9967</minimum>
                     </limit>
                     <limit>
                       <counter>BRANCH</counter>
                       <value>COVEREDRATIO</value>
-                      <minimum>0.9595</minimum>
+                      <minimum>0.9634</minimum>
                     </limit>
                   </limits>
                 </rule>

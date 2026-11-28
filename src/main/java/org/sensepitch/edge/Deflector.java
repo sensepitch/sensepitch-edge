@@ -28,7 +28,7 @@ import java.util.function.LongSupplier;
 /// @author Jens Wilke
 public class Deflector {
 
-  private static final ProxyLogger LOG = ProxyLogger.get(DeflectorHandler.class);
+  private static final ProxyLogger LOG = ProxyLogger.get(Deflector.class);
 
   public static final String CHALLENGE_ANSWER_URL = "/.sensepitch.challenge.complete";
   public static final String CHALLENGE_STEP_URL = "/.sensepitch.challenge.step";
@@ -121,7 +121,7 @@ public class Deflector {
         throw new IllegalArgumentException("IPv4 address expected");
       }
     } else {
-      serverIpv4Address = deriveServerIpv4Address();
+      serverIpv4Address = deriveServerIpv4Address(PublicIpv4Finder::findFirstPublicIpv4);
     }
     AdmissionTokenGenerator firstGenerator = null;
     for (AdmissionTokenGeneratorConfig tc : cfg.tokenGenerators()) {
@@ -136,10 +136,19 @@ public class Deflector {
     tokenGenerator = firstGenerator;
   }
 
-  byte[] deriveServerIpv4Address() {
+  /// Looks up a public IPv4 address of the host, see [PublicIpv4Finder]
+  @FunctionalInterface
+  interface PublicIpv4Lookup {
+    Optional<Inet4Address> find() throws SocketException;
+  }
+
+  /// The server address of the admission tokens when none is configured: the first public IPv4
+  /// address of the host, else `1.1.1.1`. The lookup is a parameter, so a test covers every
+  /// outcome on any host; the host's own interfaces decide only which one a run takes.
+  static byte[] deriveServerIpv4Address(PublicIpv4Lookup lookup) {
     boolean error = false;
     try {
-      Optional<Inet4Address> optInet4Address = PublicIpv4Finder.findFirstPublicIpv4();
+      Optional<Inet4Address> optInet4Address = lookup.find();
       if (optInet4Address.isPresent()) {
         return optInet4Address.get().getAddress();
       }

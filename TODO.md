@@ -13,36 +13,6 @@ here.
 Priorities: P1 = fast and reliable tests, bugs, and what the direct node ingress on Kubernetes
 needs; P2 = robustness; P3 = the rest. Notes record decisions to make before implementation.
 
-## Fast tests without flakiness
-
-First, because every other task depends on it: a quick test loop and a failure that always
-means a defect speed up and secure all work below. Measurements, the fake clock library and what
-was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
-
-- [ ] JaCoCo coverage varies between runs: lines that passing tests execute are sometimes
-  reported as missed, e.g. `AdminServer` lines 48 and 73–74 and `IpTraits` lines 31, 81 and 85
-  (seen 2026-11-24 in `./mvnw verify`, while `AdminServerTest` and `CombinedIpTraitsLookupTest`
-  passed), and one branch of `AsyncRequestLogWriter`.
-  - P1: the coverage floor is part of the gate, so a varying count is a flaky gate. The floor in
-    `pom.xml` keeps a margin today.
-  - Cause not investigated; suspected the parallel unit test execution in one JVM, or probes of a
-    class lost on a JVM or thread end. Compare two `jacoco.xml` of the same commit to find the
-    affected classes.
-
-### Real time and races in the remaining tests
-
-Unit tests that still wait on real time, until their class has a clock seam, see "Concurrent and
-asynchronous tests" in `AGENTS.md`; no new ones are added.
-
-- [ ] `ReloadableRequestLoggerTest`: 3.3 s in the full run of 2026-11-16, 0.94 s in a focused run
-  of 2026-11-25 (the first test 0.55 s with warm-up and server start).
-  `finishCoversDrainingDestinations` and `finishedDestinationEndsWhenItsRecordsAgedOut` are on
-  simulated time since 2026-11-25 and 2026-11-24; `disableAndEnableByReload` (0.2 s) and
-  `removedDestinationDoesNotBlockTheReload` (0.15 s) probably wait on real timers (retry backoff
-  after 503, age limit), not verified.
-  - P1. Done before: `noRecordIsLostWhileReloading` moved to `ReloadableRequestLoggerIT`
-    (2026-11-16).
-
 ## Bugs
 
 - [ ] Check the nightly workflows, "Flaky tests":
@@ -244,32 +214,32 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
       `sensepitch_ingress_receive_timeout`, outcome `request_timeout`; `0`, the default, is off.
   - Default of `requestTimeoutSeconds`:
     - [ ] off, as today, operators opt in
-    - [ ] on, e.g. 300 s
+    - [x] on, e.g. 300 s
   - Body limit beyond "no limit", if at all:
-    - [ ] optional `maxRequestBodyBytes`, off by default, outcome `request_too_large`
+    - [x] optional `maxRequestBodyBytes`, off by default, outcome `request_too_large`
     - [ ] none
   - Minimum body rate, like Apache `MinRate`:
     - [ ] none, `requestTimeoutSeconds` and the idle timeout only
-    - [ ] 500 bytes/s after a grace time of 20 s, capped by `requestTimeoutSeconds`
+    - [x] 500 bytes/s after a grace time of 20 s, capped by `requestTimeoutSeconds`
   - Head timeout:
-    - [ ] new `requestHeadTimeoutSeconds` in `listen.connection` (10 s, 20 s or 30 s), 408 when the
+    - [x] new `requestHeadTimeoutSeconds` in `listen.connection` (10 s, 20 s or 30 s), 408 when the
       head is not complete in time
     - [ ] keep `readTimeoutSeconds`, only document that it bounds the head in total
   - Start of the head timer:
     - [ ] at accept and at the end of the previous response, as today
-    - [ ] at the first byte of the head, with a separate keep-alive wait
+    - [x] at the first byte of the head, with a separate keep-alive wait
   - Requests without a body:
     - [ ] nothing separate, the head timeout is their limit
-    - [ ] refuse a body in `GET`, `HEAD` and `DELETE`
+    - [x] refuse a body in `GET`, `HEAD` and `DELETE`
   - Header and request line limits (other proxies refused at 9000 to 70000 bytes):
     - [ ] keep Netty's defaults
     - [ ] raise the defaults
-    - [ ] configurable in `listen.connection` via `HttpDecoderConfig`
+    - [x] configurable in `listen.connection` via `HttpDecoderConfig`
   - Overrides:
     - [ ] body limits per site and per path
-    - [ ] listener level only
+    - [x] listener level only
   - Metric phases:
-    - [ ] separate `head`, `body_idle`, `body_rate`, `request_total`
+    - [x] separate `head`, `body_idle`, `body_rate`, `request_total`
     - [ ] today's phases plus `body_rate`
 
 ## Evergreen / Cleanups
@@ -277,7 +247,6 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without
   a visible effect for the operator, move optional work to [NOT-YET.md](NOT-YET.md), and check the
   GitHub CI actions; add an entry or fix right away if something is broken
-- [ ] Improve code according to rules
-  - Ongoing review principle; record concrete inconsistencies as separate tasks.
-- [ ] improve code coverage towards 100%
-  - Prioritize uncovered risk and meaningful behavior rather than a percentage alone.
+- [ ] Improve code according to rules; Ongoing review principle; record concrete inconsistencies as separate tasks.
+- [ ] improve code coverage towards 100%, prioritize uncovered risk and meaningful behavior rather than a percentage alone.
+- [ ] Check and fix that no unit tests waits in real time, replace with a simulated clock, see [doc/design/test-speed.md](doc/design/test-speed.md)

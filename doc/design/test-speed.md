@@ -340,6 +340,32 @@ retry or a wider margin:
   after the tracked chunks became unpooled. The cause is inferred from that, not proven.
 - The log capture details described above.
 
+### Varying coverage is a race in a test, not JaCoCo
+
+The coverage of the same commit differed between runs (seen 2026-11-24: lines of `AdminServer`,
+`IpTraits` and a branch of `AsyncRequestLogWriter`), suspected lost probes of JaCoCo. Checked on
+2026-11-28: five unit test runs and three `verify` runs of one commit, line and branch counts of
+each `jacoco.xml` compared. The `verify` runs were identical; in the unit test runs one branch
+varied, `Proxy.shutdown` reporting "event loop group still running". Its only unit test,
+`ShutdownTimeoutTest`, answered the drain wait with `isDone()` right after the loops were told to
+stop, so whether the branch ran depended on how fast they ended. The test now waits for the
+futures, and a new test holds both outcomes, a loop blocked on a latch of the test or the loops
+ended first; four more runs varied in nothing. The lines seen on 2026-11-24 did not vary in any
+run; the code and the tests changed since, so their cause stays unknown.
+
+To check again: run `./mvnw test jacoco:report` several times, delete `target/jacoco.exec`
+before each run (JaCoCo appends to it, a run without `clean` adds the data of the previous one,
+e.g. of the integration tests), keep each `target/site/jacoco/jacoco.xml` and compare `ci`, `cb`
+and `mb` per line. A line that varies points to a test whose path depends on timing.
+
+Since then the coverage floor in `pom.xml` is exactly the measured coverage, without a margin.
+A margin hid such tests; without it, a run that takes the other path fails the gate, and the
+nightly and flaky test workflows, which run the gate repeatedly, report it. The coverage must
+not depend on the host either: `Deflector.deriveServerIpv4Address` covered the "public address
+found" or the "none found" line depending on the network interfaces of the machine, which kept
+the line floor below the measured value; the lookup is a parameter now and a test covers every
+outcome.
+
 ### A quick profile, the full gate stays the default
 
 `./mvnw verify -Dfast` skips what does not tell whether the code works: coverage, the Javadoc
@@ -457,11 +483,12 @@ also promised came cheaper with `LogCapture.await` on the per thread capture. Th
 
 ## Limitations
 
-- The unit test phase is bounded by the isolated classes, which run one after the other, and by
-  the class still waiting on real timers, `ReloadableRequestLoggerTest` (1.458 s in one run on
-  2026-11-17; this is an observed cost, not a stable bound). `OtlpLogDestinationTest` moved to
-  simulated time on 2026-11-23, the timer tests of `ReloadableRequestLoggerTest` on 2026-11-24
-  and 2026-11-25 (0.94 s for the class in a focused run on 2026-11-25).
+- The unit test phase is bounded by the CPU of the warm-up and the concurrent classes, see "The
+  unit test JVM compiles with C1 only", and by the isolated classes, which run one after the
+  other. No unit test waits on real timers any more: `OtlpLogDestinationTest` moved to simulated
+  time on 2026-11-23, the timer tests of `ReloadableRequestLoggerTest` on 2026-11-24 and
+  2026-11-25 or to `ReloadableRequestLoggerIT`; the class took 0.05 s in a sequential run on
+  2026-11-28.
 - Parallel execution is checked by repetition, not proven: 10 and 25 green runs in a row. A race
   between tests that needs rarer timing can still be there.
 - `LogCapture` only sees the loggers of the proxy. Netty, JUL and other libraries are visible

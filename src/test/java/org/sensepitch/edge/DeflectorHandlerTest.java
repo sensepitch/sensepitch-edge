@@ -23,14 +23,21 @@ import io.netty.handler.codec.http.cookie.DefaultCookie;
 import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
 import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /// @author Jens Wilke
 public class DeflectorHandlerTest {
+
+  @RegisterExtension LogCapture logs = new LogCapture();
 
   private ProtectionHandler handler;
   private final ProxyMetrics metrics = new ProxyMetrics();
@@ -275,6 +282,26 @@ public class DeflectorHandlerTest {
                         .build(),
                     new ConfigFiles()))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  /// Every outcome of the lookup, independent of the interfaces of the host that runs the test
+  @Test
+  public void serverIpv4AddressIsDerivedFromThePublicAddressOrFallsBack() throws Exception {
+    Inet4Address publicAddress = (Inet4Address) InetAddress.getByName("203.0.113.7");
+    assertThat(Deflector.deriveServerIpv4Address(() -> Optional.of(publicAddress)))
+        .isEqualTo(publicAddress.getAddress());
+    byte[] fallback = {1, 1, 1, 1};
+    assertThat(Deflector.deriveServerIpv4Address(Optional::empty)).isEqualTo(fallback);
+    assertThat(
+            Deflector.deriveServerIpv4Address(
+                () -> {
+                  throw new SocketException("no interfaces");
+                }))
+        .isEqualTo(fallback);
+    assertThat(logs.messages(Deflector.class))
+        .containsExactly(
+            "No public IPv4 address found",
+            "Cannot determine public IPv4 server address java.net.SocketException: no interfaces");
   }
 
   private void expectStatus(int code) {
