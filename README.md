@@ -407,6 +407,41 @@ Without admission cookie or bypass, the deflector answers only GET with the chal
 other method, e.g. a webhook POST, gets an empty 403 and counts as `method_rejected`, so webhooks
 need a bypass.
 
+### Crawler IP lists
+
+Known crawlers bypass the protection by their address or by their `User-Agent`, see
+`sensepitch.protection.bypass`; a request without a `User-Agent` never does. The address is
+checked first: a request whose address and `User-Agent` both match is bypassed as
+`crawler-ip-match`, since anyone can send a crawler's `User-Agent`. An address on an admitted
+crawler IP list gets the `crawler` IP trait, `<vendor>:<list name>`. The lists come from the
+release of [Sensepitch Known Crawlers](https://github.com/sensepitch/sensepitch-known-crawlers),
+its zip files in a directory, one per tier:
+
+```yaml
+ipLookup:
+  knownCrawlers:
+    directory: /var/lib/sensepitch/known-crawlers
+    admittedTierLevel: 1
+    excludeTypes: [ai-training-crawler]
+```
+
+- `directory`: the release's zip files; other files, e.g. a zip being written under a
+  temporary name, are ignored. A missing directory, one without zip files, a broken zip or one of
+  an unknown format version refuses the start; a reload with it is rejected and the active lists
+  stay.
+- `admittedTierLevel`: lists of tier 1, the most trustworthy, up to this tier are admitted;
+  default 1.
+- `excludeTypes`: tags of the release; a list with one of them is not admitted; default none.
+
+When several admitted lists match, the lowest tier decides, then vendor and list name. A match
+that is not admitted is not dropped: the best one, in the same order, is reported as the
+`crawler-not-admitted` IP trait, e.g. `crawler-not-admitted=example-seo:audit`, and gets the
+challenge unless its `User-Agent` is listed. An address can carry both traits. A later release
+of the edge replaces both by the list of all matches. Without
+`ipLookup.knownCrawlers`, the edge uses the IP lists embedded in its jar, which go stale; it
+logs a warning at startup, and the embedded lists will be removed. IP crawler detection needs
+`ipLookup`, a block without databases is enough.
+
 
 ## Headers sent to the upstream
 
@@ -426,17 +461,19 @@ a client cannot pretend to be a crawler or human traffic.
 | `Sp-Fingerprint-Sp1`, `Sp-Fingerprint-Sp1-Raw` | fingerprint of the request headers, version 1, if `fingerprint.sp1.enable` is set, the raw one only with `fingerprint.sp1.raw`, see [Fingerprinting](#fingerprinting) |
 
 `Sp-Ip-Traits` is a comma-and-space-separated list of `key=value` pairs. Known built-in traits
-appear first in the order `asn`, `country`, `crawler`; unknown traits are omitted. Custom labels
+appear first in the order `asn`, `country`, `crawler`, `crawler-not-admitted` (see
+[Crawler IP lists](#crawler-ip-lists)); unknown traits are omitted. Custom labels
 provided by an IP traits collector follow in key order, for example
 `asn=64496, country=DE, network=hosting, risk=low`. This adds custom labels to the header, so
 upstreams that parse it should accept additional keys. When a client IP is available but no traits
 are known, the header is empty. `Sp-Country` and `Sp-Asn` carry the corresponding built-in
 values separately when known.
 
-Custom labels are added through `IpTraits.Builder.addLabel`. Keys `asn`, `country` and `crawler`
-are reserved. Keys and values must be nonempty visible ASCII without whitespace, commas or `=`;
-a later label with the same key replaces the earlier value. Crawler IP bypass requires the
-built-in `crawler` trait; mentioning `crawler` in a custom label does not trigger it.
+Custom labels are added through `IpTraits.Builder.addLabel`. Keys `asn`, `country`, `crawler`
+and `crawler-not-admitted` are reserved. Keys and values must be nonempty visible ASCII without
+whitespace, commas or `=`; a later label with the same key replaces the earlier value. Crawler IP
+bypass requires the built-in `crawler` trait; `crawler-not-admitted` or mentioning `crawler` in
+a custom label does not trigger it.
 
 Before, these headers were named `X-Sensepitch-Ja4`, `X-Sensepitch-Ja4-Raw`,
 `X-Sensepitch-Ip-Traits`, `X-Sensepitch-Country`, `X-Sensepitch-Asn`,
@@ -719,10 +756,11 @@ reloaded, so adding the marker enables live reload. Starting the proxy does not 
   nothing changed.
 - **What is reloaded:** sites, upstreams, protection, fallback, `unservicedHost`, `listen.hosts`,
   certificates (`listen.ssl`, `snis`, Let's Encrypt), `ipLookup` and `requestLog`. The IP lookup
-  databases are only read again if `ipLookup` or a database file changed. Upstreams with
-  unchanged configuration are kept. Request log destinations with unchanged name, settings and
-  secret files are kept, with their buffered records. A changed or removed OTLP destination keeps
-  sending what it buffered to its own endpoint in the background, without delaying the reload. Each event loop writes an end marker
+  databases are only read again if `ipLookup` or a database file changed, the known crawler lists
+  (`ipLookup.knownCrawlers`) with them; a changed crawler zip alone does not reload yet.
+  Upstreams with unchanged configuration are kept. Request log destinations with unchanged name,
+  settings and secret files are kept, with their buffered records. A changed or removed OTLP
+  destination keeps sending what it buffered to its own endpoint in the background, without delaying the reload. Each event loop writes an end marker
   into it after the switch, so a record logged just before the switch is sent as well. It ends
   when everything is sent, or dropped after `otlp.maximumUnsentLogAgeMillis` during an outage.
 - **Restart needed:** changes of `listen.address`, `listen.httpsPort`, `listen.httpPort`,
@@ -1063,7 +1101,7 @@ Attributes without a semantic convention:
 | `sensepitch.protection.admission_token` | admission token of the protection: of a valid admission cookie, or the token issued for an accepted challenge answer |
 | `sensepitch.protection.admission_original_token`, `sensepitch.protection.admission_revisits` | the original admission token and number of expired admissions from verified `admission0` history, or the values issued with the response. Present in JSON and OTLP logs when history is available |
 | `sensepitch.traffic.type` | `human`, `bot` or `unknown`, see the `Sp-Traffic-Type` header |
-| `sensepitch.protection.bypass` | reason the protection was bypassed: `config-ip-match`, `config-uri-match` (a configured `bypass.remotes` or `bypass.uris`), `crawler-agent-match`, `crawler-fragment-agent-match`, `crawler-ip-match` |
+| `sensepitch.protection.bypass` | reason the protection was bypassed: `config-ip-match`, `config-uri-match` (a configured `bypass.remotes` or `bypass.uris`), `crawler-agent-match`, `crawler-fragment-agent-match`, `crawler-ip-match` (also when the `User-Agent` matches too) |
 | `sensepitch.request.cookie_present` | whether a cookie header was sent, not its content |
 | `sensepitch.request.header_names` | names of the request headers in the order and spelling the client sent them, without the headers the edge added or changed. Before, `host` came last in lower case and the edge's headers were listed |
 | `sensepitch.duration.receive_ns`, `…response_ns`, `…total_ns` | durations, see `RequestLogInfo` |

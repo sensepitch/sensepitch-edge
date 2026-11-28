@@ -16,10 +16,13 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 
-/// Lets known crawlers bypass the protection, by their User-Agent or by a crawler IP trait of the
-/// client address. A request without a `User-Agent` is never let through, also from a crawler
-/// address: real crawlers send one, a request without it is suspicious. See
-/// `doc/design/known-crawlers-draft.md`.
+/// Lets known crawlers bypass the protection, by a crawler IP trait of the client address or by
+/// their User-Agent. The address is checked first, so a request matching both is bypassed with
+/// [#REASON_CRAWLER_IP_MATCH]: the address is the stronger evidence, anyone can set a User-Agent.
+/// Only the built-in `crawler` trait counts, an address that matches only lists which are not
+/// admitted (`crawler-not-admitted`, see [KnownCrawlersConfig]) is not let through. A request
+/// without a `User-Agent` is never let through, also from a crawler address: real crawlers send
+/// one, a request without it is suspicious. See `doc/design/known-crawlers-draft.md`.
 ///
 /// @author Jens Wilke
 public class DetectCrawler implements BypassCheck {
@@ -94,13 +97,14 @@ public class DetectCrawler implements BypassCheck {
     if (agent == null) {
       return false;
     }
-    BypassCheck bypassCheck = agentMatch.get(agent);
-    if (bypassCheck != null && bypassCheck.allowBypass(channel, request)) {
+    if (hasCrawlerTrait(IpTraitsHandler.extract(request))) {
+      BypassCheck.setBypassReason(request, REASON_CRAWLER_IP_MATCH);
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_BOT);
       return true;
     }
-    if (hasCrawlerTrait(IpTraitsHandler.extract(request))) {
-      BypassCheck.setBypassReason(request, REASON_CRAWLER_IP_MATCH);
+    // UA match is after IP, so we log known IPs correctly and remove UAs that are covered via IPs
+    BypassCheck bypassCheck = agentMatch.get(agent);
+    if (bypassCheck != null && bypassCheck.allowBypass(channel, request)) {
       request.headers().set(Deflector.TRAFFIC_TYPE_HEADER, Deflector.TRAFFIC_BOT);
       return true;
     }
@@ -118,7 +122,8 @@ public class DetectCrawler implements BypassCheck {
   }
 
   /// Whether `Sp-Ip-Traits` holds the built-in `crawler` trait. Matches the key exactly, so a
-  /// custom label mentioning "crawler" in its key or value does not grant a bypass.
+  /// custom label mentioning "crawler" in its key or value, or `crawler-not-admitted`, does not
+  /// grant a bypass.
   static boolean hasCrawlerTrait(String traits) {
     return traits != null && (traits.startsWith("crawler=") || traits.contains(", crawler="));
   }

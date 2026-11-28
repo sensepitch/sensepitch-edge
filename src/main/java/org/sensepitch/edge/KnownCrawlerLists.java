@@ -9,10 +9,13 @@ import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -25,9 +28,9 @@ import java.util.zip.ZipFile;
 /// `lists/<vendor>/<listname>.json` and its description in `info/<vendor>/<listname>.json`.
 /// The optional `tags` field in the description must be an array of strings.
 ///
-/// Not wired into the request path yet, see the TODO entry "Crawler detection from the Sensepitch
-/// Known Crawlers release". Immutable once read; a reload reads the directory again and keeps the
-/// previous instance when [#read(Path)] fails.
+/// Configured with [KnownCrawlersConfig], [#readAdmitted(KnownCrawlersConfig)] gives the lists
+/// the IP lookup takes the `crawler` trait from. Immutable once read; a rebuilt IP lookup reads
+/// the directory again, and a reload whose read fails is rejected, so the previous lists stay.
 ///
 /// @author Jens Wilke
 public final class KnownCrawlerLists {
@@ -59,6 +62,11 @@ public final class KnownCrawlerLists {
     public Feed {
       tags = List.copyOf(tags);
     }
+
+    /// `<vendor>:<list name>`, the crawler name in [IpTraits#crawlerName()]
+    public String name() {
+      return vendor + ":" + listName;
+    }
   }
 
   /// The feeds, the index is the label in [#trie]
@@ -79,6 +87,20 @@ public final class KnownCrawlerLists {
         }
       }
     }
+  }
+
+  /// Reads the configured directory, see [#read(Path)], and keeps the admitted feeds, see
+  /// [#admitted(int, Collection)].
+  ///
+  /// @throws IOException if [#read(Path)] fails, or the directory holds no feed, so a configured
+  ///   directory that is empty or wrong refuses the start instead of detecting no crawler
+  public static CrawlerIpLists readAdmitted(KnownCrawlersConfig config) throws IOException {
+    Path directory = Path.of(config.directory());
+    KnownCrawlerLists lists = read(directory);
+    if (lists.feeds.isEmpty()) {
+      throw new IOException("No known crawler lists in " + directory + ", expected *" + ZIP_SUFFIX);
+    }
+    return lists.admitted(config.admittedTierLevel(), config.excludeTypes());
   }
 
   /// Reads every `*.zip` file in `directory`, in the order of the file names. Other files, e.g. a
@@ -222,6 +244,50 @@ public final class KnownCrawlerLists {
       throw new IllegalArgumentException("prefix " + prefix + " has an invalid length");
     }
     return prefix;
+  }
+
+  /// The crawler name of an address is the one of its first admitted feed in [Feed#ORDER]: a
+  /// feed up to `admittedTierLevel` without a tag of `excludeTypes`, see [KnownCrawlersConfig].
+  /// The first feed that is not admitted is reported as [IpTraits#notAdmittedCrawlerName()].
+  public CrawlerIpLists admitted(int admittedTierLevel, Collection<String> excludeTypes) {
+    return new Admitted(this, admittedTierLevel, Set.copyOf(excludeTypes));
+  }
+
+  /// The lists with the admission rules of [KnownCrawlersConfig], see
+  /// [#admitted(int, Collection)]
+  private record Admitted(KnownCrawlerLists lists, int admittedTierLevel, Set<String> excludeTypes)
+      implements CrawlerIpLists {
+
+    boolean isAdmitted(Feed feed) {
+      return feed.tier() <= admittedTierLevel && Collections.disjoint(feed.tags(), excludeTypes);
+    }
+
+    @Override
+    public String crawlerName(InetAddress address) {
+      for (Feed feed : lists.lookup(address)) {
+        if (isAdmitted(feed)) {
+          return feed.name();
+        }
+      }
+      return null;
+    }
+
+    /// Looks the address up once and sets the first admitted and the first not admitted match
+    @Override
+    public void collect(IpTraits.Builder builder, InetAddress address) {
+      String admitted = null;
+      String notAdmitted = null;
+      for (Feed feed : lists.lookup(address)) {
+        if (isAdmitted(feed)) {
+          if (admitted == null) {
+            admitted = feed.name();
+          }
+        } else if (notAdmitted == null) {
+          notAdmitted = feed.name();
+        }
+      }
+      builder.crawlerName(admitted).notAdmittedCrawlerName(notAdmitted);
+    }
   }
 
   /// Every feed `address` matches, each once, in [Feed#ORDER]. The best one comes first.

@@ -45,3 +45,9 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   `-Xlint:deprecation` on `maven-compiler-plugin` in `pom.xml`), so a newly deprecated library
   call shows up when a dependency is upgraded instead of in an occasional manual run. Developers,
   low importance. From the `replace-deprecated-library-calls` turn, 2026-11-27.
+- The plain HTTP redirect takes its port from `listen.httpsPort`
+  (`HttpToHttpsRedirectHandler#redirectAuthority`); with Kubernetes item 9's `hostPort` 443 to
+  container port 17443 the `Location` would be `https://<host>:17443/...`, unreachable from
+  outside. A separate public HTTPS port for the redirect, or the chart setting it, would fix it.
+  Operators, high importance once item 9 ships. From the `acme-http01-solver-route-research`
+  turn, 2026-11-28.

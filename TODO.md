@@ -41,7 +41,7 @@ so `bypass.remotes` and the IP traits keep working without PROXY protocol. The e
 controller (Kubernetes items 6 to 8, milestones M1 to M3) is in [NOT-YET.md](NOT-YET.md).
 
 The numbers are kept from the earlier plan, other documents refer to them; missing numbers are
-done or merged. Items after item 3 build on its kind deployment check in CI.
+done or merged. Items after item 3 build on its deployment check on a local kind cluster.
 
 - [ ] 3. manifests or a minimal Helm chart for a standalone edge: Deployment with probes and
   `terminationGracePeriodSeconds` above `shutdownTimeoutMillis`, Service, PodDisruptionBudget,
@@ -49,16 +49,18 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   - P1: production on Kubernetes; the node ingress mode is item 9.
   - The standalone chart is in [charts/sensepitch-edge](charts/sensepitch-edge/README.md).
   - Completion requires `helm template` and `kubeconform` validation plus a passing deployment
-    test in GitHub Actions on a hosted Ubuntu runner. Create a disposable single-node kind
+    test on a local kind cluster, run by a script. Create a disposable single-node kind
     cluster with pinned kind and node image versions. Build the edge image once, load it with
     `kind load docker-image`, and install the chart with `helm upgrade --install --wait` and
     `image.pullPolicy=Never`.
   - Verify pod readiness and HTTPS through the Service. Rotate a mounted Secret and verify the
     running edge uses the new value. Terminate a pod and verify graceful shutdown within
-    `terminationGracePeriodSeconds`. Reuse the same setup and smoke check locally.
+    `terminationGracePeriodSeconds`.
+  - Later, not part of completion: run the same script in GitHub Actions on a hosted Ubuntu
+    runner.
 - [ ] 9. node ingress mode in the chart: DaemonSet on labelled ingress nodes, ports 80 and 443 on
   the node addresses.
-  - BLOCKED: requires the passing kind deployment check in item 3.
+  - BLOCKED: requires the passing local kind deployment check of item 3.
   - P1.
   - Decided: `hostPort` 80/443 to container ports 17080/17443. The pod stays non-root in its own
     network namespace; the CNI `portmap` plugin forwards with DNAT, which keeps the client address
@@ -75,14 +77,37 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] 12. certificates on Kubernetes, today an ACME client on the host writes the Let's Encrypt
   directory `listen.letsEncrypt` reads.
   - P1.
-  - Decided: cert-manager with HTTP-01. Its solver publishes the challenge through Ingress or
-    HTTPRoute objects, which only a controller serves, so the standalone edge needs a fixed route
-    for `/.well-known/acme-challenge/` to the solver on the plain HTTP listener
-    (`listen.httpPort`). Not chosen: cert-manager with DNS-01 (needs a DNS provider with an API),
-    an ACME client in the edge (account and keys shared by all nodes).
-  - Next: the challenge route on the plain HTTP listener; the chart mounts one TLS Secret
-    (`tls.existingSecret`), many hosts need a list of Secrets or the `letsEncrypt` directory
-    layout from one volume.
+  - Decided: cert-manager with HTTP-01. Not chosen: cert-manager with DNS-01 (needs a DNS
+    provider with an API), an ACME client in the edge (account and keys shared by all nodes).
+  - BLOCKED: implementation awaits the route choice and, for stateless mode, the thumbprint
+    source choice below; the choice awaits the research of the next point.
+  - Research first, before the route choice: read in detail how others answer HTTP-01 and add
+    the findings to "Comparable products" in the draft, with versions and sources. For each:
+    where the answer comes from (own ACME client, cert-manager solver, stateless), how several
+    replicas or nodes all answer a challenge, concurrent challenges, the cert-manager self check.
+    - ingress-nginx and Traefik with cert-manager: how they serve the solver Ingresses (read
+      the code, the draft only assumes it).
+    - Traefik's and Caddy's built-in ACME clients, HAProxy 3.2's native client and HAProxy
+      Ingress, Envoy Gateway or Contour with cert-manager.
+    - acme.sh stateless mode in practice, and whether anyone runs cert-manager with a stateless
+      responder: search the cert-manager issues and discussions (e.g.
+      `gh search issues --repo cert-manager/cert-manager stateless`).
+  - Research (2026-11-28, cert-manager 1.21.3) in
+    [acme-http01-route-draft.md](doc/design/acme-http01-route-draft.md): a fixed route to "the
+    solver" does not work. cert-manager starts one solver pod and Service with a generated name
+    per challenge, which answers 404 for every other token; a certificate with two names has two
+    at once, and every node must answer every challenge (several CA network paths, DNS
+    spreading). Choose how the port-80 pipeline answers:
+    - [ ] stateless: answer `<token>.<account thumbprint>` itself, like acme.sh's stateless mode
+      and HAProxy 3.2; cert-manager's solver objects serve nothing
+    - [ ] forward to the solver pods through a headless Service, trying each pod
+    - [ ] watch the solver Ingresses of a reserved class through the Kubernetes API, forward
+    - [ ] back to DNS-01
+  - If stateless, the thumbprint:
+    - [ ] configured strings, a list for several accounts and rotation
+    - [ ] computed from the mounted account key Secret
+  - Then: the chart mounts one TLS Secret (`tls.existingSecret`), many hosts need a list of
+    Secrets or the `letsEncrypt` directory layout from one volume.
 - [ ] 13. IP database on the pods: production reads the IPinfo database (`ipLookup.ipInfoPath`).
   - P1.
   - Decided: option A of
@@ -132,20 +157,21 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   [known-crawlers-draft.md](doc/design/known-crawlers-draft.md).
   - P2: the embedded lists go stale between releases. Breaking change allowed.
   - Done: `KnownCrawlerLists` reads the zips and returns every matching feed in order, checked
-    against the fixture's `expectations.json`.
-  - Steps, each leaves the edge working:
-    - [ ] configuration (directory, `admittedTierLevel`, `excludeTypes`); unset: one `WARNING`,
-      no IP detection; configured but missing, empty or broken: the start is refused. Wire
-      `KnownCrawlerLists` in behind the existing `crawlerName` (first match), the embedded lists
-      as fallback when unset
-    - [ ] the admission rules in `DetectCrawler` (tier level, excluded tags, not admitted but
-      reported, an IP match wins over a User-Agent match), BDD scenarios from the fixture
-    - [ ] the list of matches in `IpTraits`, the request log and the headers; README sections
-      and a migration note
+    against the fixture's `expectations.json`. `ipLookup.knownCrawlers` (directory,
+    `admittedTierLevel`, `excludeTypes`) names the crawler of an address by the first admitted
+    feed in the existing `crawler` trait; a missing or empty directory or a broken zip refuses
+    the start; unset, the embedded lists stay in use with a `WARNING`. `DetectCrawler` checks the
+    address before the User-Agent (`crawler-ip-match` when both match); the best match that is
+    not admitted (tier level, excluded tags) is reported as the `crawler-not-admitted` trait
+    without a bypass; full-pipeline scenarios from the fixture in `KnownCrawlersBDDTest`.
+  - Open steps, each leaves the edge working:
+    - [ ] the list of matches in `IpTraits`, the request log and the headers, replacing the
+      `crawler` and `crawler-not-admitted` traits; README sections and a migration note
     - [ ] reload by `ConfigFileWatcher`, a counter for rejected zips
     - [ ] `sensepitch_crawler_requests_total{ingress,vendor,tier,tag,admitted}`, after recording
       the number of vendors, tiers and tags of the current release
-    - [ ] remove `src/main/resources/crawler-ips/`, `readCrawlerIpLists` and its `update.sh`
+    - [ ] remove `src/main/resources/crawler-ips/`, `readCrawlerIpLists`,
+      `EmbeddedCrawlerIpLists` and its `update.sh`; unset then means no IP detection
     - [ ] delivery in the chart, the same mechanism as the IP database (item 13)
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and

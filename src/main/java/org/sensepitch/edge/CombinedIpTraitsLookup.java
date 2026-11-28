@@ -9,11 +9,12 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-/// Combines the IP databases and the crawler IP lists. A database that throws on a lookup is a
-/// request level event: it is counted in [ProxyMetrics#ipLookupErrorCounter] and logged at debug,
-/// the first one at warning, see [ProxyLogger] for the levels, and the other databases are still
-/// queried. The database readers it opened are released with [#close()]; a reload replaces the
-/// lookup and closes the old one a few seconds later, see [EdgeState#closeReplacedBy].
+/// Combines the IP databases and the crawler IP lists, see [CrawlerIpLists]. A database that
+/// throws on a lookup is a request level event: it is counted in
+/// [ProxyMetrics#ipLookupErrorCounter] and logged at debug, the first one at warning, see
+/// [ProxyLogger] for the levels, and the other databases are still queried. The database readers
+/// it opened are released with [#close()]; a reload replaces the lookup and closes the old one a
+/// few seconds later, see [EdgeState#closeReplacedBy].
 ///
 /// @author Jens Wilke
 public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
@@ -25,17 +26,16 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
   private static final ProxyLogger LOG = ProxyLogger.get(CombinedIpTraitsLookup.class);
 
   private final List<IpTraitsCollector> collectors;
-  private final IpLabelLookup ipLabelLookup;
+  private final CrawlerIpLists crawlerIpLists;
   private final ProxyMetrics metrics;
 
   /// Opens the configured databases. If construction fails, closes the readers opened so far and
   /// suppresses cleanup failures on the original.
   ///
   /// @param files records the database files, which the database readers open themselves
-  /// @param crawlerIpLists the parsed crawler IP lists, see [#readCrawlerIpLists()]; a reload
-  ///   passes those of the lookup it replaces, see [EdgeState#build]
+  /// @param crawlerIpLists the parsed crawler IP lists, see [EdgeState#build]
   public static CombinedIpTraitsLookup create(
-      IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files, IpLabelLookup crawlerIpLists)
+      IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files, CrawlerIpLists crawlerIpLists)
       throws IOException {
     return create(cfg, metrics, files, crawlerIpLists, new ArrayList<>());
   }
@@ -45,7 +45,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
       IpLookupConfig cfg,
       ProxyMetrics metrics,
       ConfigFiles files,
-      IpLabelLookup crawlerIpLists,
+      CrawlerIpLists crawlerIpLists,
       List<IpTraitsCollector> collectors)
       throws IOException {
     try {
@@ -72,26 +72,55 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
 
   /// @param collectors queried in order for each address, a later one overwrites what an earlier
   ///   one found, and closed by [#close()]. Tests pass fakes here instead of databases.
-  /// @param crawlerIpLists the labels of the crawler addresses, tests pass their own, so they do
-  ///   not parse the shipped lists each time
+  /// @param crawlerIpLists the crawler IP lists, tests pass their own, so they do not parse the
+  ///   shipped lists each time
   CombinedIpTraitsLookup(
-      List<IpTraitsCollector> collectors, ProxyMetrics metrics, IpLabelLookup crawlerIpLists) {
+      List<IpTraitsCollector> collectors, ProxyMetrics metrics, CrawlerIpLists crawlerIpLists) {
     this.collectors = List.copyOf(collectors);
     this.metrics = metrics;
-    ipLabelLookup = crawlerIpLists;
+    this.crawlerIpLists = crawlerIpLists;
   }
 
-  /// The crawler IP lists, which a rebuilt lookup takes over instead of parsing them again, see
-  /// [EdgeState#build]. They are immutable and not released by [#close()].
-  IpLabelLookup crawlerIpLists() {
-    return ipLabelLookup;
+  /// The crawler IP lists, which a rebuilt lookup takes over instead of parsing them again if they
+  /// are the embedded ones, see [EdgeState#build]. They are immutable and not released by
+  /// [#close()].
+  CrawlerIpLists crawlerIpLists() {
+    return crawlerIpLists;
+  }
+
+  /// The crawler IP lists embedded in the edge, used when `ipLookup.knownCrawlers` is not
+  /// configured. To be replaced by [KnownCrawlerLists], see the TODO entry "Crawler detection from
+  /// the Sensepitch Known Crawlers release".
+  ///
+  /// @param labels the addresses labeled `crawler:<list name>`
+  public record EmbeddedCrawlerIpLists(IpLabelLookup labels) implements CrawlerIpLists {
+
+    /// @return the name of the last matching label, `null` if none matches
+    @Override
+    public String crawlerName(InetAddress address) {
+      byte[] addressBytes = address.getAddress();
+      List<String> labelList =
+          addressBytes.length == 4
+              ? labels.lookupIpv4(addressBytes)
+              : labels.lookupIpv6(addressBytes);
+      String crawlerName = null;
+      if (labelList != null) {
+        for (String label : labelList) {
+          if (label.startsWith(CRAWLER_LABEL_PREFIX)) {
+            String name = label.substring(CRAWLER_LABEL_PREFIX.length());
+            crawlerName = name.isEmpty() ? UNKNOWN_CRAWLER_NAME : name;
+          }
+        }
+      }
+      return crawlerName;
+    }
   }
 
   /// Reads the published crawler IP lists named in `crawler-ips/index.txt`. Each address is labeled
   /// `crawler:<list name>`. The list name is the path below `crawler-ips/` without `.json`, with
   /// the directory as namespace separated by `:`, e.g. `google/googlebot.json` becomes
   /// `google:googlebot`. Entries without a prefix length are single addresses.
-  public static TrieIpLabelLookup readCrawlerIpLists() throws IOException {
+  public static EmbeddedCrawlerIpLists readCrawlerIpLists() throws IOException {
     TrieIpLabelLookup lookup = new TrieIpLabelLookup();
     ObjectMapper mapper = new ObjectMapper();
     for (var file : ResourceLoader.getFileList(CRAWLER_IPS_DIRECTORY)) {
@@ -106,7 +135,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
       }
     }
     LOG.info("IP lookup nodes: " + lookup.getNodeCount());
-    return lookup;
+    return new EmbeddedCrawlerIpLists(lookup);
   }
 
   static String crawlerListName(String file) {
@@ -131,21 +160,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
         lookupException(e);
       }
     }
-    byte[] addressBytes = address.getAddress();
-    List<String> labelList;
-    if (addressBytes.length == 4) {
-      labelList = ipLabelLookup.lookupIpv4(addressBytes);
-    } else {
-      labelList = ipLabelLookup.lookupIpv6(addressBytes);
-    }
-    if (labelList != null) {
-      for (String label : labelList) {
-        if (label.startsWith(CRAWLER_LABEL_PREFIX)) {
-          String name = label.substring(CRAWLER_LABEL_PREFIX.length());
-          builder.crawlerName(name.isEmpty() ? UNKNOWN_CRAWLER_NAME : name);
-        }
-      }
-    }
+    crawlerIpLists.collect(builder, address);
     return builder.build();
   }
 

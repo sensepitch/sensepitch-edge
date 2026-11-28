@@ -83,8 +83,9 @@ Gateway API resources, and the Core conformance tests pass.
 
 ## Development order
 
-First complete TODO item 3. Deploy the standalone chart in a single-node kind cluster on a
-GitHub-hosted Ubuntu runner and pass its probes, HTTPS, Secret rotation and shutdown checks.
+First complete TODO item 3. Deploy the standalone chart in a local single-node kind cluster
+and pass its probes, HTTPS, Secret rotation and shutdown checks; the same script runs in CI
+later.
 The open Kubernetes items that follow item 3 depend on this gate.
 
 The table groups work by area. After the standalone gate, build in this order:

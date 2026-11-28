@@ -34,6 +34,13 @@ record EdgeState(
     UpstreamRegistry upstreams,
     String configId) {
 
+  private static final ProxyLogger LOG = ProxyLogger.get(EdgeState.class);
+
+  /// Logged when the embedded crawler IP lists are read, see [#buildIpTraitsLookup]
+  static final String EMBEDDED_CRAWLER_LISTS_WARNING =
+      "ipLookup.knownCrawlers is not configured, using the crawler IP lists embedded in the"
+          + " edge, which go stale and will be removed";
+
   /// Length of the config id in hex characters, 64 bits
   static final int CONFIG_ID_LENGTH = 16;
 
@@ -48,7 +55,7 @@ record EdgeState(
   ///
   /// @param previous the active state, or `null` at startup. Unchanged upstreams, SSL contexts
   ///   and an unchanged IP lookup are taken over from it, a rebuilt IP lookup takes over its parsed
-  ///   crawler IP lists.
+  ///   embedded crawler IP lists.
   /// @param files reads the referenced files and records them, also those of a taken over IP
   ///   lookup
   static EdgeState build(
@@ -104,20 +111,30 @@ record EdgeState(
         configId(config));
   }
 
-  /// Builds the IP lookup of a new state. The crawler IP lists are shipped and immutable, so they
-  /// are parsed only when `previous` has none, which saves the parse on a reload.
+  /// Builds the IP lookup of a new state. Configured lists of the Sensepitch Known Crawlers
+  /// release are read again, they may have changed. The embedded crawler IP lists are shipped and
+  /// immutable, so they are parsed only when `previous` has none, which saves the parse on a
+  /// reload; parsing them logs that they are used, a warning, as they go stale.
   ///
   /// @param previous the lookup of the active state, [IpTraitsLookup#NONE] at startup
+  /// @throws RuntimeException if a database or the configured crawler lists cannot be read
   private static IpTraitsLookup buildIpTraitsLookup(
       IpLookupConfig cfg, ProxyMetrics metrics, ConfigFiles files, IpTraitsLookup previous) {
     if (cfg == null) {
       return IpTraitsLookup.NONE;
     }
     try {
-      IpLabelLookup crawlerIpLists =
-          previous instanceof CombinedIpTraitsLookup combined
-              ? combined.crawlerIpLists()
-              : CombinedIpTraitsLookup.readCrawlerIpLists();
+      CrawlerIpLists crawlerIpLists;
+      if (cfg.knownCrawlers() != null) {
+        crawlerIpLists = KnownCrawlerLists.readAdmitted(cfg.knownCrawlers());
+      } else if (previous instanceof CombinedIpTraitsLookup combined
+          && combined.crawlerIpLists()
+              instanceof CombinedIpTraitsLookup.EmbeddedCrawlerIpLists embedded) {
+        crawlerIpLists = embedded;
+      } else {
+        LOG.warn(EMBEDDED_CRAWLER_LISTS_WARNING);
+        crawlerIpLists = CombinedIpTraitsLookup.readCrawlerIpLists();
+      }
       return CombinedIpTraitsLookup.create(cfg, metrics, files, crawlerIpLists);
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -152,7 +169,7 @@ record EdgeState(
     try {
       lookup.close();
     } catch (Exception e) {
-      ProxyLogger.get(EdgeState.class).error("Closing IP lookup failed", e);
+      LOG.error("Closing IP lookup failed", e);
     }
   }
 }

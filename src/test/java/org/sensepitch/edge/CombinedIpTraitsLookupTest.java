@@ -50,10 +50,10 @@ public class CombinedIpTraitsLookupTest {
   static final String CRAWLER_NAME = "test:bot";
 
   /// Crawler lists with one network, [#CRAWLER_ADDRESS] is in it
-  static IpLabelLookup crawlerIpLists() {
+  static CrawlerIpLists crawlerIpLists() {
     TrieIpLabelLookup lists = new TrieIpLabelLookup();
     lists.insertIpv4("192.0.2.0/24", CombinedIpTraitsLookup.CRAWLER_LABEL_PREFIX + CRAWLER_NAME);
-    return lists;
+    return new CombinedIpTraitsLookup.EmbeddedCrawlerIpLists(lists);
   }
 
   @Test

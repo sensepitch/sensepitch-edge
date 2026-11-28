@@ -257,6 +257,46 @@ class ConfigReloadTest {
     assertThat(steps.proxy.state().ipTraitsLookup()).isSameAs(lookup);
   }
 
+  /// The configured known crawler lists name the crawler of an address instead of the embedded
+  /// lists. A reload with a directory without lists is rejected and the active lists stay. Without
+  /// the configuration the embedded lists are used again, with a warning.
+  @Test
+  void knownCrawlerListsReplaceTheEmbeddedLists(@TempDir Path empty) throws Exception {
+    InetAddress crawler = InetAddress.ofLiteral("192.0.2.1");
+    ProxyConfig withKnownCrawlers =
+        CONFIG.toBuilder()
+            .ipLookup(
+                IpLookupConfig.builder()
+                    .knownCrawlers(
+                        KnownCrawlersConfig.builder()
+                            .directory(KnownCrawlerListsTest.fixtureDirectory().toString())
+                            .build())
+                    .build())
+            .build();
+    assertThat(reload(withKnownCrawlers)).isTrue();
+    IpTraitsLookup known = steps.proxy.state().ipTraitsLookup();
+    assertThat(known.lookup(crawler).crawlerName()).isEqualTo("example-search:crawler");
+    assertThat(logs.messages(EdgeState.class)).isEmpty();
+    ReloadResult rejected =
+        steps.proxy.reload(
+            withKnownCrawlers.toBuilder()
+                .ipLookup(
+                    IpLookupConfig.builder()
+                        .knownCrawlers(
+                            KnownCrawlersConfig.builder().directory(empty.toString()).build())
+                        .build())
+                .build());
+    assertThat(rejected.applied()).isFalse();
+    assertThat(rejected.message()).contains("No known crawler lists in " + empty);
+    assertThat(steps.proxy.state().ipTraitsLookup()).isSameAs(known);
+    assertThat(reload(CONFIG.toBuilder().ipLookup(IpLookupConfig.builder().build()).build()))
+        .isTrue();
+    assertThat(((CombinedIpTraitsLookup) steps.proxy.state().ipTraitsLookup()).crawlerIpLists())
+        .isInstanceOf(CombinedIpTraitsLookup.EmbeddedCrawlerIpLists.class);
+    assertThat(logs.messages(EdgeState.class))
+        .containsExactly(EdgeState.EMBEDDED_CRAWLER_LISTS_WARNING);
+  }
+
   /// A reload rejected for a missing IP database records the file, so the watcher retries the
   /// reload when the database appears
   @Test

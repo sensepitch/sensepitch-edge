@@ -19,6 +19,7 @@ class IpTraitsTest {
       delimiter = '|',
       value = {
         "crawler | google:googlebot",
+        "crawler-not-admitted | example-seo:audit",
         "asn | 15169",
         "country | US",
         "'' | low",
@@ -33,12 +34,32 @@ class IpTraitsTest {
         .isInstanceOf(IllegalArgumentException.class);
   }
 
+  /// The best match that is not admitted follows the crawler name, before the custom labels
+  @Test
+  void notAdmittedCrawlerFollowsTheCrawler() {
+    IpTraits.Builder builder =
+        IpTraits.builder()
+            .asn(64496)
+            .crawlerName("example-search:crawler")
+            .notAdmittedCrawlerName("example-ai:user-fetcher");
+    builder.addLabel("network", "hosting");
+    IpTraits traits = builder.build();
+    assertThat(traits.header())
+        .isEqualTo(
+            "asn=64496, crawler=example-search:crawler,"
+                + " crawler-not-admitted=example-ai:user-fetcher, network=hosting");
+    assertThat(traits.isCrawler()).isTrue();
+    IpTraits notAdmitted = IpTraits.builder().notAdmittedCrawlerName("example-seo:audit").build();
+    assertThat(notAdmitted.header()).isEqualTo("crawler-not-admitted=example-seo:audit");
+    assertThat(notAdmitted.isCrawler()).isFalse();
+  }
+
   @Test
   void headerAndLabelsStayStableAfterConstruction() {
     Map<String, String> labels = new HashMap<>();
     labels.put("z", "last");
     labels.put("a", "first");
-    IpTraits traits = new IpTraits(-1, null, null, labels);
+    IpTraits traits = new IpTraits(-1, null, null, null, labels);
     labels.put("a", "changed");
     assertThat(traits.header()).isEqualTo("a=first, z=last");
     assertThat(traits.keyValue()).containsEntry("a", "first");

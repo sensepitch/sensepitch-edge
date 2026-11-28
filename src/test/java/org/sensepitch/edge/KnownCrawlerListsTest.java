@@ -183,6 +183,77 @@ public class KnownCrawlerListsTest {
         .hasMessageStartingWith("Cannot read known crawler zip " + zip + ": ");
   }
 
+  /// Tier level, excluded tags, address, the expected crawler name and the expected best match
+  /// that is not admitted, `null` for none
+  static Stream<Arguments> admittedNames() {
+    List<String> none = List.of();
+    String search = "example-search:crawler";
+    String ai = "example-ai:user-fetcher";
+    String seo = "example-seo:audit";
+    String train = "example-train:bot";
+    return Stream.of(
+        Arguments.of(1, none, "192.0.2.1", search, null),
+        // two feeds of tier 1, the vendor decides, an excluded tag skips to the next one
+        Arguments.of(1, none, "192.0.2.64", ai, null),
+        Arguments.of(1, List.of("ai-search-crawler"), "192.0.2.64", search, ai),
+        Arguments.of(1, List.of("user-triggered-fetcher", "seo-tool"), "192.0.2.64", null, ai),
+        Arguments.of(1, List.of("ai-search-crawler"), "2001:db8:1:5::1", search, ai),
+        Arguments.of(1, none, "192.0.2.128", null, null),
+        // a higher tier is admitted only up to the level, the lower tier wins
+        Arguments.of(1, none, "198.51.100.1", null, seo),
+        Arguments.of(2, none, "198.51.100.1", seo, null),
+        Arguments.of(1, none, "198.51.100.128", null, seo),
+        Arguments.of(3, none, "198.51.100.128", seo, null),
+        Arguments.of(3, List.of("seo-tool"), "198.51.100.128", "example-hooks:webhooks", seo),
+        Arguments.of(2, none, "2001:db8:4::abcd", null, train),
+        Arguments.of(3, none, "2001:db8:4::abcd", train, null),
+        Arguments.of(3, List.of("ai-training-crawler"), "2001:db8:4::abcd", null, train));
+  }
+
+  /// The crawler name is the one of the first admitted feed in [KnownCrawlerLists.Feed#ORDER],
+  /// the first feed that is not admitted is reported beside it
+  @ParameterizedTest
+  @MethodSource("admittedNames")
+  void admittedFeedNamesTheCrawler(
+      int admittedTierLevel,
+      List<String> excludeTypes,
+      String ip,
+      String expectedName,
+      String expectedNotAdmitted) {
+    CrawlerIpLists lists = fixture.admitted(admittedTierLevel, excludeTypes);
+    InetAddress address = InetAddress.ofLiteral(ip);
+    assertThat(lists.crawlerName(address)).isEqualTo(expectedName);
+    IpTraits.Builder builder = IpTraits.builder();
+    lists.collect(builder, address);
+    IpTraits traits = builder.build();
+    assertThat(traits.crawlerName()).isEqualTo(expectedName);
+    assertThat(traits.notAdmittedCrawlerName()).isEqualTo(expectedNotAdmitted);
+  }
+
+  /// The configured directory, with the defaults: tier 1, no tag excluded
+  @Test
+  void readAdmittedFromTheConfiguredDirectory() throws IOException {
+    CrawlerIpLists lists =
+        KnownCrawlerLists.readAdmitted(
+            KnownCrawlersConfig.builder().directory(fixtureDirectory().toString()).build());
+    assertThat(lists.crawlerName(InetAddress.ofLiteral("192.0.2.1")))
+        .isEqualTo("example-search:crawler");
+    assertThat(lists.crawlerName(InetAddress.ofLiteral("198.51.100.1"))).isNull();
+  }
+
+  /// A configured directory without lists is an error, not a configuration that detects no
+  /// crawler
+  @Test
+  void readAdmittedRejectsADirectoryWithoutLists() throws IOException {
+    Files.writeString(dir.resolve("next.zip.tmp"), "partial");
+    assertThatThrownBy(
+            () ->
+                KnownCrawlerLists.readAdmitted(
+                    KnownCrawlersConfig.builder().directory(dir.toString()).build()))
+        .isInstanceOf(IOException.class)
+        .hasMessage("No known crawler lists in " + dir + ", expected *.zip");
+  }
+
   /// Each zip is valid except for one entry, `null` removes it
   static Stream<Arguments> rejectedZips() {
     return Stream.of(

@@ -3,12 +3,18 @@ package org.sensepitch.edge;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.channel.MultithreadEventLoopGroup;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import net.serenitybdd.annotations.Step;
 import net.serenitybdd.junit5.SerenityJUnit5Extension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /// @author Jens Wilke
 @ExtendWith(SerenityJUnit5Extension.class)
@@ -113,6 +119,39 @@ class ProxyConstructBDDTest {
     steps
         .given_the_configuration(config)
         .then_expect_construction_failure_containing("/does/not/exist/country.mmdb");
+  }
+
+  /// A configured directory of known crawler lists that cannot be used refuses the start, the
+  /// message names the directory or the zip. The other problems of a zip are tested in
+  /// [KnownCrawlerListsTest].
+  @ParameterizedTest
+  @ValueSource(strings = {"missing", "empty", "broken zip"})
+  void unusableKnownCrawlerListsFailStartup(String problem, @TempDir Path dir) throws IOException {
+    Path directory = dir.resolve("known-crawlers");
+    String expectedMessage =
+        switch (problem) {
+          case "missing" -> directory.toString();
+          case "empty" -> {
+            Files.createDirectory(directory);
+            yield "No known crawler lists in " + directory;
+          }
+          default -> {
+            Files.createDirectory(directory);
+            Path zip = Files.writeString(directory.resolve("tier1.zip"), "not a zip");
+            yield "Cannot read known crawler zip " + zip;
+          }
+        };
+    ProxyConfig config =
+        routingConfig(SiteConfig.builder().upstream(LOCAL).build()).toBuilder()
+            .ipLookup(
+                IpLookupConfig.builder()
+                    .knownCrawlers(
+                        KnownCrawlersConfig.builder().directory(directory.toString()).build())
+                    .build())
+            .build();
+    steps
+        .given_the_configuration(config)
+        .then_expect_construction_failure_containing(expectedMessage);
   }
 
   /// The proxy has as many event loops as its environment says, the one the configuration

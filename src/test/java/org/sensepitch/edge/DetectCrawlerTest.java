@@ -45,6 +45,18 @@ public class DetectCrawlerTest {
     assertThat(request.headers().get(BypassCheck.HEADER)).isEqualTo("crawler-ip-match");
   }
 
+  /// The address is the stronger evidence: with a listed User-Agent and a crawler address the
+  /// reason is the IP match
+  @Test
+  public void ipMatchWinsOverAgentMatch() {
+    DetectCrawler detectCrawler = new DetectCrawler(DetectCrawlerConfig.builder().build());
+    HttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
+    request.headers().set(HttpHeaderNames.USER_AGENT, "Twitterbot/1.0");
+    request.headers().set(IpTraitsHandler.TRAITS_HEADER, "crawler=example-search:crawler");
+    assertThat(detectCrawler.allowBypass(null, request)).isTrue();
+    assertThat(request.headers().get(BypassCheck.HEADER)).isEqualTo("crawler-ip-match");
+  }
+
   /// Custom IP labels share the traits header, only the built-in `crawler` key counts.
   @ParameterizedTest
   @CsvSource(
@@ -56,7 +68,10 @@ public class DetectCrawlerTest {
         "null | false",
         "asn=64496, network=crawler-farm | false",
         "asn=64496, crawler-hint=yes | false",
-        "my-crawler=yes | false"
+        "my-crawler=yes | false",
+        "crawler-not-admitted=example-seo:audit | false",
+        "asn=64496, crawler-not-admitted=example-seo:audit | false",
+        "crawler=example-search:crawler, crawler-not-admitted=example-ai:user-fetcher | true"
       })
   public void crawlerTraitMatchesTheKeyOnly(String traits, boolean expected) {
     assertThat(DetectCrawler.hasCrawlerTrait(traits)).isEqualTo(expected);

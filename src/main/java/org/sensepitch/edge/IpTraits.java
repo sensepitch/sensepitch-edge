@@ -9,6 +9,9 @@ import java.util.regex.Pattern;
 /// Typical properties we want to look up for an IP address. `crawlerName` names the published
 /// crawler IP list the address belongs to, e.g. `google:googlebot` or `amazon:amazonbot`, `unknown`
 /// if the crawler has no name, and is `null` if the address is not a known crawler.
+/// `notAdmittedCrawlerName` names the best matching list of the Sensepitch Known Crawlers release
+/// that is not admitted, see [KnownCrawlersConfig]: it is reported as `crawler-not-admitted` but
+/// grants no bypass, see [DetectCrawler].
 /// Custom `keyValue` labels are appended to `Sp-Ip-Traits` in key order after these properties,
 /// see [Builder#addLabel] for what a label may contain.
 ///
@@ -20,14 +23,21 @@ public final class IpTraits {
   private final long asn;
   private final String isoCountry;
   private final String crawlerName;
+  private final String notAdmittedCrawlerName;
   private final Map<String, String> keyValue;
   private final String header;
 
   @lombok.Builder(builderClassName = "Builder")
-  public IpTraits(long asn, String isoCountry, String crawlerName, Map<String, String> keyValue) {
+  public IpTraits(
+      long asn,
+      String isoCountry,
+      String crawlerName,
+      String notAdmittedCrawlerName,
+      Map<String, String> keyValue) {
     this.asn = asn;
     this.isoCountry = isoCountry;
     this.crawlerName = crawlerName;
+    this.notAdmittedCrawlerName = notAdmittedCrawlerName;
     Map<String, String> labels = keyValue == null ? Map.of() : keyValue;
     if (!labels.isEmpty()
         && (!(labels instanceof SortedMap<?, ?> sorted) || sorted.comparator() != null)) {
@@ -42,6 +52,9 @@ public final class IpTraits {
     }
     if (crawlerName != null) {
       appendTrait(value, "crawler", crawlerName);
+    }
+    if (notAdmittedCrawlerName != null) {
+      appendTrait(value, NOT_ADMITTED_CRAWLER_KEY, notAdmittedCrawlerName);
     }
     labels.forEach((key, label) -> appendTrait(value, key, label));
     header = value.toString();
@@ -68,6 +81,11 @@ public final class IpTraits {
     return crawlerName;
   }
 
+  /// @return the best match that is not admitted, `null` if there is none
+  public String notAdmittedCrawlerName() {
+    return notAdmittedCrawlerName;
+  }
+
   public Map<String, String> keyValue() {
     return keyValue;
   }
@@ -85,8 +103,12 @@ public final class IpTraits {
     return crawlerName != null;
   }
 
+  /// Key of [#notAdmittedCrawlerName()] in `Sp-Ip-Traits`
+  static final String NOT_ADMITTED_CRAWLER_KEY = "crawler-not-admitted";
+
   /// Keys of the built-in traits in `Sp-Ip-Traits`, not usable as custom label keys.
-  static final Set<String> RESERVED_KEYS = Set.of("asn", "country", "crawler");
+  static final Set<String> RESERVED_KEYS =
+      Set.of("asn", "country", "crawler", NOT_ADMITTED_CRAWLER_KEY);
 
   /// Visible ASCII without the separators of `Sp-Ip-Traits`, so the header stays parseable.
   private static final Pattern LABEL_TOKEN = Pattern.compile("[!-~&&[^,=]]+");

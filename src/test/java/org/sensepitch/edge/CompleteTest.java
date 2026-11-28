@@ -5,6 +5,8 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelInitializer;
@@ -21,6 +23,9 @@ import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCounted;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -424,6 +429,10 @@ class CompleteTest {
 
     EmbeddedChannel ingressChannel;
     HttpResponse response;
+
+    /// The client address of the next connection, `null` for none, as an embedded channel has
+    InetSocketAddress clientAddress;
+
     List<ReferenceCounted> referenceCounted = new ArrayList<>();
 
     @Step
@@ -457,8 +466,24 @@ class CompleteTest {
                 proxy.addHttpHandlers(ch.pipeline());
               }
             };
-        ingressChannel = new EmbeddedChannel(channelInitializer);
+        InetSocketAddress client = clientAddress;
+        ingressChannel =
+            client == null
+                ? new EmbeddedChannel(channelInitializer)
+                : new EmbeddedChannel(channelInitializer) {
+                  @Override
+                  protected SocketAddress remoteAddress0() {
+                    return client;
+                  }
+                };
       }
+    }
+
+    /// The next connection comes from `ip`, so the IP traits are looked up for it
+    @Step
+    Steps given_the_client_address(String ip) {
+      clientAddress = new InetSocketAddress(InetAddress.ofLiteral(ip), 4711);
+      return this;
     }
 
     @Step
@@ -501,6 +526,26 @@ class CompleteTest {
       assertThat(requestLog.lines().getLast().contains("\"trace_id\":\"" + traceId + "\""))
           .isEqualTo(expected);
       return this;
+    }
+
+    /// The IP traits and the bypass reason in the request log line of the last request, `null`
+    /// for an absent field
+    @Step
+    Steps then_the_request_log_has_traits_and_bypass(String traits, String bypass) {
+      JsonNode line;
+      try {
+        line = new ObjectMapper().readTree(requestLog.lines().getLast());
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
+      assertThat(logField(line, SensepitchLogFields.IP_TRAITS)).isEqualTo(traits);
+      assertThat(logField(line, SensepitchLogFields.BYPASS)).isEqualTo(bypass);
+      return this;
+    }
+
+    private static String logField(JsonNode line, String field) {
+      JsonNode value = line.findValue(field);
+      return value == null ? null : value.asText();
     }
 
     @Step

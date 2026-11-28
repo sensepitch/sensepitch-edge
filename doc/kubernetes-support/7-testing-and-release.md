@@ -22,8 +22,9 @@
 
 ## When a cluster is needed
 
-TODO item 3 is the first cluster gate. Its CI job deploys the standalone chart to a disposable
-single-node kind cluster on a GitHub-hosted Ubuntu runner using the locally built image.
+TODO item 3 is the first cluster gate. Its script deploys the standalone chart to a disposable
+local single-node kind cluster using the locally built image; a CI job running the same script
+on a GitHub-hosted Ubuntu runner follows later.
 The open Kubernetes items that follow item 3 start after that deployment check passes.
 
 | Stage | Tool | Cluster |

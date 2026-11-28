@@ -8,8 +8,13 @@ by their address: today from IP lists embedded in the JAR
 This document records how the embedded lists are replaced by the release of
 [sensepitch-known-crawlers](https://github.com/sensepitch/sensepitch-known-crawlers), read from a
 directory. [`KnownCrawlerLists`](../../src/main/java/org/sensepitch/edge/KnownCrawlerLists.java)
-reads that release already, not wired into the request path yet. The work is tracked in
-[`TODO.md`](../../TODO.md) under "Protection, admission".
+reads that release; configured with `ipLookup.knownCrawlers`
+([`KnownCrawlersConfig`](../../src/main/java/org/sensepitch/edge/KnownCrawlersConfig.java)) it
+names the crawler of an address, the first admitted match, in today's single `crawler` trait,
+and reports the first match that is not admitted in the `crawler-not-admitted` trait.
+[`DetectCrawler`](../../src/main/java/org/sensepitch/edge/DetectCrawler.java) checks the address
+before the User-Agent.
+The work is tracked in [`TODO.md`](../../TODO.md) under "Protection, admission".
 
 ## Purpose and scope
 
@@ -32,7 +37,10 @@ Decided on 2026-11-27, completed on 2026-11-28.
 ### Configuration: a directory, a tier level and excluded tags
 
 - The directory of the zip files in the local file system. Not set: no IP crawler detection,
-  one `WARNING` at startup; the User-Agent list still applies.
+  one `WARNING` at startup; the User-Agent list still applies. Until the embedded lists are
+  removed, not set uses them, with the `WARNING`.
+- The keys are in `ipLookup.knownCrawlers`, because the IP traits, the crawler trait among them,
+  are only looked up with `ipLookup` configured.
 - `admittedTierLevel`, default `1`: feeds of tier 1 up to this level are admitted as crawlers.
 - `excludeTypes`: tags; a feed with any excluded tag is not admitted.
 
@@ -49,6 +57,11 @@ previous lists and counts the rejection, as a reload does for other files.
 A match of a higher tier or of an excluded feed is still recognised and reported (traits, request
 log, counter); it only does not bypass the challenge.
 
+Implemented as a step: the best match that is not admitted is the IP trait
+`crawler-not-admitted=<vendor>:<list name>` in `Sp-Ip-Traits` and `sensepitch.ip_traits`, beside
+the `crawler` trait of the best admitted match. Only `crawler` grants a bypass. The list of
+matches below replaces both traits; the counter is a later step.
+
 ### Several matches: the best admitted match decides, all are reported
 
 Feeds overlap. The best admitted match decides, ordered by tier, then vendor and list name, as in
@@ -60,8 +73,8 @@ vendor, list name, tier and tags; `IpTraits` carries a list of matches instead o
 
 When the User-Agent and the address both match, the bypass reason is `crawler-ip-match` (decided
 2026-11-28): the address is the stronger evidence, a User-Agent can be set by anyone. Today
-`DetectCrawler.allowBypass` checks the User-Agent first and records `crawler-agent-match`; the
-order changes.
+`DetectCrawler.allowBypass` checked the User-Agent first and recorded `crawler-agent-match`; it
+now checks the address first (implemented).
 
 ### No User-Agent, no bypass
 
@@ -96,6 +109,8 @@ release before the counter is added.
 ## Operator-visible changes
 
 - The embedded lists are gone: without a configured directory there is no IP crawler detection.
+- The new `crawler-not-admitted=` trait in `Sp-Ip-Traits` and `sensepitch.ip_traits` names the
+  best match that is not admitted, until the list of matches replaces it.
 - The `crawler=` trait in `Sp-Ip-Traits` and `sensepitch.ip_traits` changes from one name, e.g.
   `google:googlebot`, to the list of matches with vendor and list name.
 - The request log and the headers get the matches with tier and tags; the README sections on the
