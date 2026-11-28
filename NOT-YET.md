@@ -8,7 +8,7 @@ need, e.g. a bug or a production requirement. Bugs and robustness issues are nev
 ## Upstream pool fine tuning
 
 - max age, see below
-- put circuit breaker into it
+- put circuit breaker into it, see "upstream health and circuit breaker" below
 
 ## Memory / allocation bounds
 
@@ -168,12 +168,20 @@ Decisions, alternatives and limitations are in
   - first do low overhead brotli and cache it, recompress with more efficient compression with half
     of the available CPUs in niced priority, priotising hot resources
 - [ ] multiple servers per upstream
-  - P3: decide load balancing, retry safety, failover and configuration semantics.
-  - One circuit breaker per server, see the `Endpoint` record in `HttpBatchSender`.
+  - P3: a design draft exists, see [doc/design/upstream-targets.md](doc/design/upstream-targets.md):
+    a common pool and limit per upstream, the target chosen first by least connections per event
+    loop, a breaker per target and never all out, a retry on another target after a connect
+    failure, the connections per target reported.
 - [ ] upstream health and circuit breaker:
   [`CircuitBreaker`](src/main/java/org/sensepitch/edge/CircuitBreaker.java) exists for the request
-  log, it opens on the first failure; for upstreams it needs a failure threshold (consecutive
-  failures or a failure rate window, as in Armeria or resilience4j). This breaker replaces the TCP readiness probe.
+  log and supports upstreams: a threshold of failures in a row, probes by the caller and a start
+  in the open state. For an upstream it opens only when the upstream is down: consecutive
+  failures, reset by any success, no failure rate while there is one server; pool limit refusals
+  do not count. Still to do: an optional probe endpoint per upstream (probed at startup, then
+  after each backoff), `INFO` lines on unavailable and alive again, a short upstream connect
+  timeout, see "Planned improvements" in
+  [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md). This breaker replaces the TCP
+  readiness probe.
   - P2: do research and design draft and give decisions here
   - P3: specify thresholds, recovery probes, per-server versus per-upstream state and retry policy.
   - Keep the backoff, `Retry-After`, single probe and metrics, the request log keeps a threshold

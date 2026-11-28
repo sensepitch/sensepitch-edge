@@ -339,6 +339,7 @@ public class HttpBatchSender<B extends Batch> implements RequestLogMetrics.Queue
             settings.endpoint(),
             new CircuitBreaker(
                 settings.backoff(),
+                CircuitBreaker.Policy.OPEN_ON_FIRST_FAILURE,
                 timeout.toMillis() + 1_000,
                 metrics.circuitBreakers.events(BREAKER_COMPONENT, name),
                 clock == null ? Ticker.systemTicker() : clock,

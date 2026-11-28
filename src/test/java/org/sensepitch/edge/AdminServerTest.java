@@ -190,7 +190,11 @@ class AdminServerTest {
   CircuitBreakerMetrics withOneBreaker(String name) {
     CircuitBreakerMetrics breakers = new CircuitBreakerMetrics();
     CircuitBreaker breaker =
-        new CircuitBreaker(new Backoff(1_000, 30_000), 1_000, breakers.events("requestLog", name));
+        new CircuitBreaker(
+            new Backoff(1_000, 30_000),
+            CircuitBreaker.Policy.OPEN_ON_FIRST_FAILURE,
+            1_000,
+            breakers.events("requestLog", name));
     breakers.add("requestLog", name, breaker);
     return breakers;
   }

@@ -1,6 +1,8 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 import com.sun.management.ThreadMXBean;
 import io.netty.util.concurrent.MockTicker;
@@ -270,33 +272,196 @@ class CircuitBreakerBDDTest {
   }
 
   /// Another thread closes the breaker while this one waits for its lock, after it saw the open
-  /// state. Reproduced with a clock that closes the breaker when read inside the lock.
+  /// state and that the backoff is over. Reproduced with a clock that closes the breaker when
+  /// read.
   @Test
   void closedWhileWaitingForTheLock_grants() {
     steps
         .given_a_breaker()
         .when_a_request_fails()
+        .when_time_passes_millis(500)
         .when_another_thread_closes_the_breaker_during_the_next_request()
         .then_a_request_is_granted()
         .then_the_state_is(CircuitBreaker.State.CLOSED);
   }
 
-  /// Asked for each request on an event loop, so the closed state must not allocate
+  /// Another thread forces the breaker open while this one waits for the lock to take the probe:
+  /// refused
+  @Test
+  void forcedOpenWhileWaitingForTheLock_refuses() {
+    steps
+        .given_a_breaker()
+        .when_a_request_fails()
+        .when_time_passes_millis(500)
+        .when_another_thread_forces_the_breaker_open_during_the_next_request()
+        .then_a_request_is_refused()
+        .then_the_state_is(CircuitBreaker.State.FORCED_OPEN);
+  }
+
+  // failure threshold
+
+  @Test
+  void belowTheThreshold_staysClosed() {
+    steps
+        .given_a_breaker_with(new CircuitBreaker.Policy(3, false, false))
+        .when_a_request_fails()
+        .when_a_request_fails()
+        .then_the_state_is(CircuitBreaker.State.CLOSED)
+        .then_the_failures_are(2)
+        .then_the_events_are("call failed", "error http_503", "call failed", "error http_503")
+        .then_requests_are_granted(3);
+  }
+
+  /// Only failures in a row open it: a success in between resets the count, as does an ignored
+  /// failure, the server answered
+  @Test
+  void answerInBetween_resetsTheCount() {
+    steps
+        .given_a_breaker_with(new CircuitBreaker.Policy(3, false, false))
+        .when_a_request_fails()
+        .when_a_request_fails()
+        .when_a_request_succeeds()
+        .then_the_failures_are(0)
+        .when_a_request_fails()
+        .when_a_request_fails()
+        .when_a_request_fails_ignored()
+        .then_the_failures_are(0)
+        .when_a_request_fails()
+        .when_a_request_fails()
+        .then_the_state_is(CircuitBreaker.State.CLOSED);
+  }
+
+  /// The backoff starts at the trip, not at the first failure; a failed probe doubles it
+  @Test
+  void atTheThreshold_opensWithTheInitialBackoff() {
+    steps
+        .given_a_breaker_with(new CircuitBreaker.Policy(3, false, false))
+        .when_a_request_fails()
+        .when_a_request_fails()
+        .when_a_request_fails()
+        .then_the_state_is(CircuitBreaker.State.OPEN)
+        .then_the_failures_are(3)
+        .when_time_passes_millis(499)
+        .then_a_request_is_refused()
+        .when_time_passes_millis(1)
+        .then_a_request_is_granted()
+        .when_a_request_fails()
+        .then_the_failures_are(4)
+        .when_time_passes_millis(999)
+        .then_a_request_is_refused()
+        .when_time_passes_millis(1)
+        .then_a_request_is_granted();
+  }
+
+  @Test
+  void policyIsValidated() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new CircuitBreaker.Policy(0, false, false))
+        .withMessage("failureThreshold must be at least 1");
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new CircuitBreaker.Policy(1, false, true))
+        .withMessage("startOpen requires callerProbes");
+  }
+
+  // the caller probes
+
+  /// Requests are never the probe: refused after the backoff too, the caller's probe is granted
+  /// once, then refused until the probe timeout
+  @Test
+  void callerProbes_requestsAreNotTheProbe() {
+    steps
+        .given_a_breaker_with(new CircuitBreaker.Policy(1, true, false))
+        .when_a_request_fails()
+        .then_no_probe_is_granted()
+        .when_time_passes_millis(500)
+        .then_a_request_is_refused()
+        .then_a_probe_is_granted()
+        .then_the_state_is(CircuitBreaker.State.HALF_OPEN)
+        .then_a_request_is_refused()
+        .then_no_probe_is_granted()
+        .when_time_passes_millis(BreakerSteps.PROBE_TIMEOUT_MILLIS)
+        .then_a_probe_is_granted()
+        .when_a_request_succeeds()
+        .then_the_state_is(CircuitBreaker.State.CLOSED)
+        .then_requests_are_granted(1)
+        .then_no_probe_is_granted();
+  }
+
+  /// A probe of the caller's own is not counted as a call, a refused request is
+  @Test
+  void callerProbes_probeIsNoCall() {
+    steps
+        .given_a_breaker_with(new CircuitBreaker.Policy(1, true, false))
+        .when_a_request_fails()
+        .when_time_passes_millis(500)
+        .then_the_events_are("call failed", "error http_503", "closed to open: http_503")
+        .then_a_probe_is_granted()
+        .then_the_events_are("open to half_open: backoff_over")
+        .then_a_request_is_refused()
+        .then_the_events_are("call not_permitted");
+  }
+
+  /// Without `callerProbes` the requests are the probes, asking for a probe is a bug
+  @Test
+  void tryProbe_withoutCallerProbes_throws() {
+    steps.given_a_breaker().then_asking_for_a_probe_throws();
+  }
+
+  /// Starts open with the backoff over: requests are refused, the first probe is granted at once.
+  /// It was never up, so no transition and no trip time; the first successful probe closes it.
+  @Test
+  void startOpen_probesBeforeTheFirstRequest() {
+    steps
+        .given_a_breaker_with(new CircuitBreaker.Policy(3, true, true))
+        .then_the_state_is(CircuitBreaker.State.OPEN)
+        .then_the_events_are()
+        .then_a_request_is_refused()
+        .then_a_probe_is_granted()
+        .when_a_request_succeeds()
+        .then_the_state_is(CircuitBreaker.State.CLOSED)
+        .then_the_events_are(
+            "call not_permitted",
+            "open to half_open: backoff_over",
+            "call successful",
+            "half_open to closed: recovered")
+        .then_the_trip_and_restart_times_are_millis(0, BreakerSteps.START_MILLIS)
+        .then_requests_are_granted(1);
+  }
+
+  /// A failed startup probe opens with the initial backoff, whatever the threshold
+  @Test
+  void startOpen_failedProbe_waitsTheInitialBackoff() {
+    steps
+        .given_a_breaker_with(new CircuitBreaker.Policy(3, true, true))
+        .then_a_probe_is_granted()
+        .when_a_request_fails()
+        .then_the_state_is(CircuitBreaker.State.OPEN)
+        .when_time_passes_millis(499)
+        .then_no_probe_is_granted()
+        .when_time_passes_millis(1)
+        .then_a_probe_is_granted();
+  }
+
+  /// Asked for each request on an event loop, so the closed state must not allocate, neither the
+  /// permission nor the success
   @Test
   void closed_doesNotAllocate() {
     CircuitBreaker breaker =
         new CircuitBreaker(
             new Backoff(1_000, 30_000),
+            new CircuitBreaker.Policy(3, false, false),
             1_000,
             new RequestLogMetrics().circuitBreakers.events("test", "b"));
     ThreadMXBean threads = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     for (int i = 0; i < 20_000; i++) {
       breaker.tryAcquire();
+      breaker.onSuccess();
     }
     long before = threads.getCurrentThreadAllocatedBytes();
     boolean granted = true;
     for (int i = 0; i < 10_000; i++) {
       granted &= breaker.tryAcquire();
+      breaker.onSuccess();
     }
     long allocated = threads.getCurrentThreadAllocatedBytes() - before;
     assertThat(granted).isTrue();
@@ -340,7 +505,10 @@ class CircuitBreakerBDDTest {
 
   private static CircuitBreaker breaker(CircuitBreakerMetrics metrics, String name) {
     return new CircuitBreaker(
-        new Backoff(1_000, 30_000), 1_000, metrics.events("requestLog", name));
+        new Backoff(1_000, 30_000),
+        CircuitBreaker.Policy.OPEN_ON_FIRST_FAILURE,
+        1_000,
+        metrics.events("requestLog", name));
   }
 
   /// The values of the state gauge for `open`, one per reported breaker, sorted by name
@@ -371,9 +539,15 @@ class CircuitBreakerBDDTest {
 
     @Step("Given a breaker with a backoff of 1 s to 30 s, without jitter")
     public BreakerSteps given_a_breaker() {
+      return given_a_breaker_with(CircuitBreaker.Policy.OPEN_ON_FIRST_FAILURE);
+    }
+
+    @Step("Given a breaker with {0}, a backoff of 1 s to 30 s, without jitter")
+    public BreakerSteps given_a_breaker_with(CircuitBreaker.Policy policy) {
       breaker =
           new CircuitBreaker(
               new Backoff(1_000, 30_000, bound -> 0),
+              policy,
               PROBE_TIMEOUT_MILLIS,
               new RecordingEvents(),
               new HookedTicker(),
@@ -469,6 +643,34 @@ class CircuitBreakerBDDTest {
             // reentrant, the lock is held by this thread
             breaker.onSuccess();
           };
+      return this;
+    }
+
+    @Step
+    public BreakerSteps when_another_thread_forces_the_breaker_open_during_the_next_request() {
+      onClockRead =
+          () -> {
+            onClockRead = () -> {};
+            breaker.forceOpen();
+          };
+      return this;
+    }
+
+    @Step
+    public BreakerSteps then_a_probe_is_granted() {
+      assertThat(breaker.tryProbe()).as("probe granted").isTrue();
+      return this;
+    }
+
+    @Step
+    public BreakerSteps then_no_probe_is_granted() {
+      assertThat(breaker.tryProbe()).as("probe granted").isFalse();
+      return this;
+    }
+
+    @Step
+    public BreakerSteps then_asking_for_a_probe_throws() {
+      assertThatIllegalStateException().isThrownBy(breaker::tryProbe);
       return this;
     }
 

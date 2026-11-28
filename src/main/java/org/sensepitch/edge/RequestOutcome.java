@@ -21,7 +21,8 @@ public enum RequestOutcome {
   UPSTREAM_CONNECT_FAILED,
 
   /// The upstream had as many connections as `connectionPool.maxConnections` allows, the request
-  /// was answered with `503`, see [ConnectionPoolConfig]
+  /// was answered with `503`, see [ConnectionPoolConfig]. A refusal by the edge, the upstream was
+  /// not asked, so it is no failure of the upstream.
   UPSTREAM_CONNECTION_LIMIT,
 
   /// Forwarding the request to the upstream failed

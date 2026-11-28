@@ -60,15 +60,39 @@ retries the same batch.
 
 ## Design decisions
 
-### Opens on the first retryable failure
+### Opens after a threshold of failures in a row
 
-Unlike Armeria and resilience4j, there is no failure rate: the first failure that a retry may fix
-opens the breaker. For the request log this is the right policy. After a failure the sender drops
-its concurrency to one request and puts the batch back to the head of the queue, so there is no
-stream of independent calls a rate could be computed over, and every further request during the
-outage would only add load to a log server that is in trouble.
+Unlike Armeria and resilience4j, there is no failure rate: the breaker opens after
+`Policy.failureThreshold` failures in a row that a retry may fix; a success or an ignored failure
+resets the count. The request log uses a threshold of one (`Policy.OPEN_ON_FIRST_FAILURE`). After
+a failure the sender drops its concurrency to one request and puts the batch back to the head of
+the queue, so there is no stream of independent calls a rate could be computed over, and every
+further request during the outage would only add load to a log server that is in trouble. An
+upstream fails one request at a time under load and will use a higher threshold, so it opens only
+when the upstream is down, see [Planned improvements](#planned-improvements).
 
-The consecutive failures (`failures()`) are counted, but only to grow the backoff.
+The backoff starts at the trip: it grows with the failures since the breaker opened (the trip
+and the failed probes), not with the failures before the threshold was reached. With a threshold
+of one both counts are the same, so the request log keeps its delays.
+
+### Who probes: the next request, or the caller
+
+By default the first request after the backoff is the probe (`tryAcquire()` grants it). That fits
+the request log: its next batch is exactly what has to get through. For an upstream with a health
+endpoint it does not: the probe would be a client request that waits up to the connect or
+response timeout, while every other request gets `503` until it answers. With
+`Policy.callerProbes`, `tryAcquire()` grants requests only while closed, and the caller sends a
+probe of its own after `tryProbe()` granted it, scheduled after `retryDelayNanos()`. A probe is
+no client call, so it is not counted as one; its result is reported like any other. Both modes
+share the backoff, the single probe and the probe timeout.
+
+### Starts open when the caller probes
+
+With `Policy.startOpen` the breaker starts open with the backoff already over, so the caller
+probes the remote before the first request is let through, e.g. an upstream at startup. It was
+never up, so the start is no trip: no transition is reported and the trip time stays `0`; the
+first successful probe reports `open → closed: recovered` as after an outage. `startOpen` requires
+`callerProbes`, otherwise the first client request would be the startup probe.
 
 ### Exponential backoff with jitter, `Retry-After` wins
 
@@ -168,14 +192,20 @@ while idle and needs no shutdown. A caller that wants to retry by itself schedul
 
 ### Cheap in the closed state
 
-`tryAcquire()` in the closed state reads one volatile field and returns, it neither locks nor
-allocates, so it can be called for each request on an event loop (a test checks the allocation).
-All state changes and the open and half open paths take a private lock object of the breaker, so
-no outside code can hold it. A breaker is rarely open, and then the cost of a lock is irrelevant,
-so the simpler locking was preferred over Armeria's compare and set on immutable state objects. A
-caller that saw the open state and then waits for the lock re-checks the state inside it. Only the
-state is volatile, for that lock free read; the other fields, including the trip and restart times
-for the metrics, are read under the lock.
+`tryAcquire()` and `onSuccess()` in the closed state read volatile fields and return, they
+neither lock nor allocate, so they can be called for each request on an event loop (a test checks
+the allocation). A refusal while open or half open is lock free as well: during an outage every
+request of every event loop is refused, and they must not contend on one lock exactly then. Only
+a state change takes the private lock object of the breaker, so no outside code can hold it:
+granting a probe, a failure, the close after an outage, and a success that resets failures
+counted before. These are rare, so the simpler locking was preferred over Armeria's compare and
+set on immutable state objects. A caller that saw the open state and then waits for the lock
+re-checks the state inside it. The state, the failures in a row, the retry time and the probe
+time are volatile for the lock free reads; the other fields, including the trip and restart
+times for the metrics, are read under the lock.
+
+The failures in a row are counted across threads, so the count is approximate: a success that
+runs at the same time as a failure may see no failure yet and not reset it.
 
 ### `Ticker` for durations, system clock for timestamps
 
@@ -279,9 +309,8 @@ batches show in `sensepitch_request_log_buffered_bytes`.
 
 Known limits of the current implementation, checked against the code on 2026-11-20:
 
-- **Not suited for upstreams yet.** It opens on the first retryable failure. An upstream under
-  load fails one connection at a time, e.g. a single reset among hundreds of requests per second;
-  opening on that would refuse all traffic for the backoff.
+- **Failures in a row are approximate across threads.** A success that runs at the same time as
+  a failure on another event loop may not reset it, see "Cheap in the closed state".
 - **Slow responses do not count.** A response within the request timeout is a success, however
   slow. Only the timeout itself is a failure. There is no slow call rate as in resilience4j.
 - **Results of old requests decide the probe.** A result of a request sent before the breaker
@@ -307,12 +336,39 @@ Known limits of the current implementation, checked against the code on 2026-11-
 In order of priority, all tracked in [NOT-YET.md](../../NOT-YET.md), sections "Circuit breaker" and
 "Upstream":
 
-1. **Failure threshold for upstreams.** Open after a number of consecutive failures, or on a
-   failure rate over a window with a minimum number of calls, as in Armeria and resilience4j. The
-   request log sender keeps the current policy, a threshold of one. The backoff, `Retry-After`,
-   the single probe and the metrics stay as they are; the window counts may become gauges like
-   Armeria's `requests{result}`.
-2. **Slow calls for upstreams.** Count a response slower than a threshold as a failure, as
-   resilience4j's slow call rate, once upstream latency targets are known.
-3. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
-   `Endpoint` record in `HttpBatchSender` and "multiple servers per upstream" in NOT-YET.md.
+1. **Upstreams: open only when the upstream is down.** Open after a number of consecutive
+   failures (connect failures, timeouts), and any success resets the count; no failure rate while
+   an upstream has a single server, which is all the edge supports today. Opening the breaker
+   turns a partial failure into a total one: with no other server to send the request to, the
+   requests that would have succeeded get `503` too. Partial overload is bounded by
+   `connectionPool.maxConnections` and the timeouts instead, see
+   [upstream-connection-pool.md](upstream-connection-pool.md). NGINX decides the same, from the
+   [upstream module docs](https://nginx.org/en/docs/http/ngx_http_upstream_module.html), read on
+   2026-11-28: "If there is only a single server in a group, `max_fails`, `fail_timeout` and
+   `slow_start` parameters are ignored, and such a server will never be considered unavailable."
+   The breaker has the threshold, both probe modes and the start state for it (see the design
+   decisions above); what remains is the upstream side:
+   - A probe endpoint per upstream, optional. If configured, the breaker uses
+     `callerProbes` and `startOpen`: the upstream is probed at startup and closes on the first
+     successful probe, then the edge sends a probe after each backoff while open. Without it, the
+     next client request after the backoff is the probe.
+   - An `INFO` line when an upstream becomes unavailable (the trip) and when it is alive again
+     (the close after a trip), from `Events.transition`, as the request log sender logs its
+     outages; one line per transition, not per request.
+   - A short upstream connect timeout: `DefaultUpstream` sets no `CONNECT_TIMEOUT_MILLIS`, so
+     Netty's default of 30 s applies to a client request that is the probe.
+
+   Two rules for classifying an exchange:
+   - By the `RequestOutcome` or the exception, never by the status sent to the client: the
+     edge's own `503` and one of the upstream look the same. A refusal at the pool limit
+     (`upstream_connection_limit`) is no failure, the upstream was not asked.
+   - The permit is taken only after a pool connection was reserved or taken, so a request refused
+     at the limit cannot use up the probe of a half open breaker; where that order cannot be
+     kept, the refused request reports `onIgnored`.
+2. **Several endpoints.** One breaker per endpoint of a destination or upstream, see the
+   `Endpoint` record in `HttpBatchSender`, and for upstreams the draft
+   [upstream-targets.md](upstream-targets.md). Only
+   here a failure rate over a window with a minimum number of calls (Armeria, resilience4j) and a
+   slow call rate (resilience4j) make sense: they take one server out while the others serve, and
+   never all of them, like Envoy's `max_ejection_percent` (from memory, not verified). The window
+   counts may become gauges like Armeria's `requests{result}`.

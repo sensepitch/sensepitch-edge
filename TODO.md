@@ -7,8 +7,8 @@ Current focus (2026-11-21): first fast tests without flakiness, then run the sta
 Kubernetes as the ingress of our own infrastructure, terminating TLS directly on the nodes,
 without a provider load balancer. Optional work outside this focus is parked in
 [NOT-YET.md](NOT-YET.md), among it the Gateway API controller, the failover endpoints and disk
-spool of the request log, and slow calls and the failure threshold of the circuit breaker for
-upstreams. Bugs and robustness issues stay here.
+spool of the request log, and the circuit breaker for upstreams. Bugs and robustness issues stay
+here.
 
 Priorities: P1 = fast and reliable tests, bugs, and what the direct node ingress on Kubernetes
 needs; P2 = robustness; P3 = the rest. Notes record decisions to make before implementation.

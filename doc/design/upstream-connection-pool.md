@@ -150,6 +150,9 @@ rounded down, at least 1, counted in its partition: the loops together come near
 never exceed it, and no counter is shared by the threads. An exchange that needs a further
 connection gets `503` with the outcome `upstream_connection_limit`, counted in
 `sensepitch_upstream_pool_requests_rejected_total`; an idle connection is still taken at the limit.
+The limit is the protection against overload, a concurrency limit like Envoy's "circuit
+breaking". The refusal is local, the upstream was not asked, so a planned upstream breaker must
+not count it as a failure, see "Planned improvements" in [circuit-breaker.md](circuit-breaker.md).
 
 The name is the one of Envoy (`max_connections`) and Reactor Netty (`maxConnections`); HAProxy has
 `maxconn`, NGINX `max_conns` (from memory, not verified). Envoy enables it by default (1024) and

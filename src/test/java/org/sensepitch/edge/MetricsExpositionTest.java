@@ -147,6 +147,7 @@ class MetricsExpositionTest {
     CircuitBreaker breaker =
         new CircuitBreaker(
             new Backoff(1_000, 30_000, bound -> 0),
+            CircuitBreaker.Policy.OPEN_ON_FIRST_FAILURE,
             5_000,
             requestLogMetrics.circuitBreakers.events("requestLog", "otlp"),
             ticker,
