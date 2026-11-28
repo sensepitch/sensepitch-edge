@@ -56,7 +56,12 @@ final class SslContextCheck {
 
   /// @param maxRoundtrips number of roundtrips allowed, [#MAX_HANDSHAKE_ROUNDTRIPS] in production
   static void requireHandshake(SslContext server, int maxRoundtrips) throws SSLException {
-    SslContext client = buildClient();
+    requireHandshake(server, buildClient(), maxRoundtrips);
+  }
+
+  /// @param client the client side, a test offers a single protocol or cipher suite with it
+  static void requireHandshake(SslContext server, SslContext client, int maxRoundtrips)
+      throws SSLException {
     SSLEngine serverEngine = server.newEngine(ByteBufAllocator.DEFAULT);
     SSLEngine clientEngine = client.newEngine(ByteBufAllocator.DEFAULT);
     try {

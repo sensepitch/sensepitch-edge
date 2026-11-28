@@ -1,14 +1,19 @@
 package org.sensepitch.edge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.handler.ssl.SslProtocols;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.util.ReferenceCountUtil;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,26 +25,147 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
-/// The SNI selection, the takeover of unchanged contexts and the certificate log of [SslSetup].
+/// The TLS policy, the SNI selection, the takeover of unchanged contexts and the certificate log
+/// of [SslSetup].
 /// [SslSetupIT] checks different key algorithms with OpenSSL. [ConfigReloadTest] covers reloads.
 ///
 /// @author Jens Wilke
 class SslSetupTest {
 
+  // TLS policy
+
+  /// The cipher suites the rule [SslSetup#CIPHER_SUITES] selects from what the TLS library
+  /// supports, in the order of preference. A library upgrade that adds or drops a suite fails
+  /// this test on purpose: review the suite against the policy in
+  /// `doc/design/encrypted-transport.md`, then update this list and the document. A plain rule
+  /// would, e.g., also have let `TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256` through.
+  static final List<String> KNOWN_CIPHER_SUITES =
+      List.of(
+          "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+          "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+          "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+          "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+          "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+          "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+          "TLS_AES_128_GCM_SHA256",
+          "TLS_AES_256_GCM_SHA384",
+          "TLS_CHACHA20_POLY1305_SHA256");
+
   @Test
-  void enablesOnlyTls12And13() {
-    var setup = build(ListenConfig.builder().ssl(ConfigReloadTest.TEST_SSL).build());
-    var engine = setup.map(null).newEngine(ByteBufAllocator.DEFAULT);
+  void enabledCipherSuitesAreKnown() {
+    SSLEngine engine = testContext().newEngine(ByteBufAllocator.DEFAULT);
     try {
-      // SSLv2Hello describes a ClientHello format, not a negotiable version.
-      assertThat(List.of(engine.getEnabledProtocols()))
-          .filteredOn(protocol -> !SslProtocols.SSL_v2_HELLO.equals(protocol))
-          .containsExactlyInAnyOrder("TLSv1.2", "TLSv1.3");
+      assertThat(engine.getEnabledCipherSuites()).containsExactlyElementsOf(KNOWN_CIPHER_SUITES);
     } finally {
       ReferenceCountUtil.release(engine);
+    }
+  }
+
+  /// The test certificate is RSA, the ECDSA suites are covered by [#enabledCipherSuitesAreKnown]
+  @ParameterizedTest
+  @CsvSource({
+    "TLSv1.3, TLS_AES_128_GCM_SHA256",
+    "TLSv1.2, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+    "TLSv1.2, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    "TLSv1.2, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+  })
+  void acceptedHandshakes(String protocol, String cipherSuite) {
+    SslContext client = client(protocol, List.of(cipherSuite));
+    assertThatCode(() -> SslContextCheck.requireHandshake(testContext(), client, MAX_ROUNDTRIPS))
+        .doesNotThrowAnyException();
+  }
+
+  /// Old protocols, and TLS 1.2 without forward secrecy or with CBC. The client offers only the
+  /// rejected protocol or suite, so nothing else can fail the handshake; the reason is the alert
+  /// the server sends, as the client reports it.
+  @ParameterizedTest
+  @CsvSource({
+    "TLSv1.1, TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, TLSV1_ALERT_PROTOCOL_VERSION",
+    "TLSv1, TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, TLSV1_ALERT_PROTOCOL_VERSION",
+    "TLSv1.2, TLS_RSA_WITH_AES_128_GCM_SHA256, SSLV3_ALERT_HANDSHAKE_FAILURE",
+    "TLSv1.2, TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, SSLV3_ALERT_HANDSHAKE_FAILURE"
+  })
+  void rejectedHandshakes(String protocol, String cipherSuite, String reason) {
+    SslContext client = client(protocol, List.of(cipherSuite));
+    assertThatThrownBy(
+            () -> SslContextCheck.requireHandshake(testContext(), client, MAX_ROUNDTRIPS))
+        .isInstanceOf(SSLException.class)
+        .hasMessageContaining(reason);
+  }
+
+  /// Netty lists `SSLv2Hello` among the enabled protocols of every OpenSSL engine and offers no
+  /// way to remove it, so the test checks what the server answers to such a hello. BoringSSL reads
+  /// the SSL 2.0 format, but it carries no extensions, so no ECDHE group can be agreed and the
+  /// cipher policy leaves no suite: the server answers with a fatal `handshake_failure` alert, as
+  /// to a TLS 1.2 hello without extensions.
+  @Test
+  void sslV2HelloIsRejected() throws SSLException {
+    byte[] hello =
+        new ClientHelloBuilder()
+            .legacyVersion(TLS_1_2_VERSION)
+            .ciphers(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)
+            .sslV2Hello();
+    SSLEngine engine = testContext().newEngine(ByteBufAllocator.DEFAULT);
+    try {
+      engine.unwrap(ByteBuffer.wrap(hello), ByteBuffer.allocate(APPLICATION_BUFFER));
+      Runnable task;
+      while ((task = engine.getDelegatedTask()) != null) {
+        task.run();
+      }
+      ByteBuffer answer = ByteBuffer.allocate(engine.getSession().getPacketBufferSize());
+      engine.wrap(ByteBuffer.allocate(0), answer);
+      answer.flip();
+      assertThat(answer.remaining()).isEqualTo(ALERT_RECORD_LENGTH);
+      assertThat(answer.get(0)).isEqualTo(ALERT_CONTENT_TYPE);
+      assertThat(answer.get(ALERT_RECORD_LENGTH - 2)).isEqualTo(FATAL);
+      assertThat(answer.get(ALERT_RECORD_LENGTH - 1)).isEqualTo(HANDSHAKE_FAILURE);
+    } finally {
+      ReferenceCountUtil.release(engine);
+    }
+  }
+
+  /// Roundtrips of the in-memory handshakes, the production limit of [SslContextCheck]
+  private static final int MAX_ROUNDTRIPS = 10;
+
+  private static final int TLS_1_2_VERSION = 0x0303;
+
+  private static final int TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xc02f;
+
+  /// Room for what the engine decodes, nothing in these tests
+  private static final int APPLICATION_BUFFER = 16 * 1024;
+
+  /// A TLS alert record: a five byte record header, then level and description (RFC 5246, 7.2)
+  private static final int ALERT_RECORD_LENGTH = 7;
+
+  private static final byte ALERT_CONTENT_TYPE = 21;
+
+  private static final byte FATAL = 2;
+
+  private static final byte HANDSHAKE_FAILURE = 40;
+
+  /// The server context of the test certificate, as the client-facing listener builds it
+  private static SslContext testContext() {
+    return build(ListenConfig.builder().ssl(ConfigReloadTest.TEST_SSL).build()).map(null);
+  }
+
+  /// An OpenSSL client that offers only the given protocol and suites and trusts any certificate
+  private static SslContext client(String protocol, List<String> cipherSuites) {
+    try {
+      return SslContextBuilder.forClient()
+          .sslProvider(SslProvider.OPENSSL)
+          .trustManager(InsecureTrustManagerFactory.INSTANCE)
+          .protocols(protocol)
+          .ciphers(cipherSuites)
+          .build();
+    } catch (SSLException e) {
+      throw new IllegalStateException(e);
     }
   }
 

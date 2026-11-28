@@ -126,6 +126,39 @@ public class ClientHelloBuilder {
     return toRecords(handshake(), fragmentLength);
   }
 
+  /// The ClientHello in the SSL 2.0 format that SSL 3.0 and TLS 1.0 clients sent for
+  /// compatibility (RFC 5246, appendix E.2), with the [#legacyVersion] and the [#ciphers] as
+  /// TLS cipher specs; no session id and a zero challenge. Extensions do not exist in this
+  /// format.
+  ///
+  /// @return the message with its two byte SSL 2.0 header
+  public byte[] sslV2Hello() {
+    ByteBuf body = Unpooled.buffer();
+    body.writeByte(ClientHelloParser.HANDSHAKE_TYPE_CLIENT_HELLO);
+    body.writeShort(legacyVersion);
+    body.writeShort(ciphers.length * SSL_V2_CIPHER_SPEC_LENGTH);
+    body.writeShort(0); // session id length
+    body.writeShort(SSL_V2_CHALLENGE_LENGTH);
+    for (int cipher : ciphers) {
+      body.writeMedium(cipher);
+    }
+    body.writeZero(SSL_V2_CHALLENGE_LENGTH);
+    ByteBuf msg = Unpooled.buffer();
+    msg.writeShort(SSL_V2_TWO_BYTE_HEADER | body.readableBytes());
+    msg.writeBytes(body);
+    body.release();
+    return bytes(msg);
+  }
+
+  /// A cipher spec of the SSL 2.0 format has three bytes, a TLS suite has a leading zero
+  private static final int SSL_V2_CIPHER_SPEC_LENGTH = 3;
+
+  /// Length of the client's random challenge, 16 to 32 bytes
+  private static final int SSL_V2_CHALLENGE_LENGTH = 16;
+
+  /// High bit of the record length: a two byte header without padding
+  private static final int SSL_V2_TWO_BYTE_HEADER = 0x8000;
+
   static ByteBuf toRecords(byte[] handshake, int fragmentLength) {
     ByteBuf out = Unpooled.buffer();
     int pos = 0;

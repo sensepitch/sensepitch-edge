@@ -1,5 +1,6 @@
 package org.sensepitch.edge;
 
+import io.netty.handler.ssl.CipherSuiteFilter;
 import io.netty.handler.ssl.ClientAuth;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
@@ -16,12 +17,14 @@ import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
 import javax.net.ssl.SSLException;
 
 /// The TLS setup of one [EdgeState]: the SSL context for each SNI host name, built from the
@@ -40,6 +43,25 @@ final class SslSetup implements Mapping<String, SslContext> {
   /// not legal in a host name, so it never collides with a real one, see
   /// [SanitizeHostHandler#UNKNOWN_HOST].
   static final String DEFAULT_HOST = "default_host";
+
+  /// The cipher suites of the client-facing listener: a rule over the suites the TLS library
+  /// supports, not a list, see [#forwardSecretAead]. `SslSetupTest` pins the outcome in a known
+  /// list, so a suite a library upgrade adds or drops fails the test and is reviewed before it
+  /// ships. Decision and alternatives in `doc/design/encrypted-transport.md`.
+  static final CipherSuiteFilter CIPHER_SUITES = SslSetup::forwardSecretAead;
+
+  /// TLS 1.2 suites with an ephemeral key exchange authenticated by the certificate, and an
+  /// AEAD cipher. This is the TLS 1.2 part of the Mozilla server side TLS "intermediate" profile
+  /// without DHE, which BoringSSL does not offer. It leaves out the suites Netty 4.2.21 enables
+  /// by default without forward secrecy (`TLS_RSA_*`) and with CBC and SHA-1, and the PSK suites
+  /// BoringSSL supports.
+  private static final Pattern TLS_1_2_SUITE =
+      Pattern.compile("TLS_ECDHE_(ECDSA|RSA)_WITH_(AES_(128|256)_GCM|CHACHA20_POLY1305)_SHA\\d+");
+
+  /// TLS 1.3 suites. They have to be in the list, without one Netty disables TLS 1.3; BoringSSL
+  /// ignores the selection and enables its own TLS 1.3 suites.
+  private static final Pattern TLS_1_3_SUITE =
+      Pattern.compile("TLS_(AES_(128|256)_GCM|CHACHA20_POLY1305)_SHA\\d+");
 
   /// The TLS context by SNI host name, with the wildcards and the fallback, built once per setup
   /// because it is queried on every handshake
@@ -310,6 +332,7 @@ final class SslSetup implements Mapping<String, SslContext> {
       SslContext context =
           SslContextBuilder.forServer(new ByteArrayInputStream(cert), new ByteArrayInputStream(key))
               .protocols(SslProtocols.TLS_v1_2, SslProtocols.TLS_v1_3)
+              .ciphers(null, CIPHER_SUITES)
               .clientAuth(ClientAuth.NONE)
               .sslProvider(SslProvider.OPENSSL)
               .build();
@@ -319,5 +342,20 @@ final class SslSetup implements Mapping<String, SslContext> {
       throw new IllegalArgumentException(
           "Cannot build the TLS context from " + cfg.certPath() + " and " + cfg.keyPath(), e);
     }
+  }
+
+  /// Selects the suites of [#CIPHER_SUITES] from all the library supports, in the library's
+  /// order. Netty's own default list is no base: it is fixed in Netty, has suites without
+  /// forward secrecy and lacks ChaCha20 for TLS 1.2.
+  ///
+  /// @param requested `null`, the builder configures no list
+  /// @param defaults Netty's default list, not used
+  private static String[] forwardSecretAead(
+      Iterable<String> requested, List<String> defaults, Set<String> supported) {
+    return supported.stream()
+        .filter(
+            suite ->
+                TLS_1_2_SUITE.matcher(suite).matches() || TLS_1_3_SUITE.matcher(suite).matches())
+        .toArray(String[]::new);
   }
 }

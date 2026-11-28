@@ -67,13 +67,19 @@ UDP 443, QUIC, HTTP/3: not started
 
 On 2026-11-26, before the edge pinned its TLS versions, a measurement with Netty 4.2.21 and its
 BoringSSL build found the following defaults by reading the enabled protocols and cipher suites
-from a new server engine.
+from a new server engine. The split of the suites was corrected on 2026-11-28 against Netty's
+list, `SslUtils.DEFAULT_CIPHER_SUITES` in 4.2.21, all of which BoringSSL supports.
 
-- protocols TLS 1.3 and TLS 1.2; `SSLv2Hello` is listed as well, it only accepts the old hello
-  format and negotiates no SSLv2
-- 12 cipher suites: the 3 of TLS 1.3, 5 ECDHE suites, and 4 suites with RSA key exchange, which
-  have no forward secrecy; 4 of the 12 use CBC with SHA-1
+- protocols TLS 1.3 and TLS 1.2; `SSLv2Hello` is listed as well, Netty adds it to every OpenSSL
+  engine and has no way to remove it
+- 12 cipher suites: the 3 of TLS 1.3, 6 ECDHE suites, and 3 suites with RSA key exchange, which
+  have no forward secrecy; 4 of the 12 use CBC with SHA-1. No ChaCha20 for TLS 1.2.
+- key exchange groups: `X25519MLKEM768` first, the hybrid post-quantum group, then `x25519`,
+  `secp256r1`, `secp384r1`, `secp521r1` (Netty's `OpenSsl` with BoringSSL, read from the source)
 - no ALPN protocols, so every client speaks HTTP/1.1
+
+The edge keeps the protocols and groups and replaces the suites, see the next two decisions.
+The test `SslSetupTest` pins the result.
 
 ## Design decisions
 
@@ -81,7 +87,42 @@ from a new server engine.
 
 `SslSetup` enables TLS 1.2 and TLS 1.3 on the shared server context builder for all certificates.
 This keeps the supported versions stable across provider upgrades and changes to provider defaults.
-The cipher suites still come from the provider.
+TLS 1.0 and 1.1 are rejected with a `protocol_version` alert.
+
+The `SSLv2Hello` that Netty reports among the enabled protocols negotiates nothing. BoringSSL
+still reads a ClientHello in the SSL 2.0 format, but the format has no extensions, so no ECDHE
+group can be agreed and the suites below leave nothing to negotiate: the server answers with a
+`handshake_failure` alert, as to a TLS 1.2 hello without extensions (measured 2026-11-28, Netty
+4.2.21, `SslSetupTest#sslV2HelloIsRejected`). With Netty's default suites, a `TLS_RSA_*` suite
+would need no group; that such a hello was accepted before is inferred, not tested.
+
+### TLS 1.2 suites by rule: ECDHE and AEAD only
+
+The edge serves public websites, so it needs to reach old but still used clients, not every
+client ever built. The TLS 1.2 suites follow the Mozilla server side TLS "intermediate" profile
+(version 5.7): an ephemeral ECDHE key exchange authenticated by the certificate (ECDSA or RSA),
+for forward secrecy, and an AEAD cipher, AES-GCM or ChaCha20-Poly1305. BoringSSL has no DHE, so
+the profile's DHE suites are left out. Gone compared to Netty's defaults are the static RSA key
+exchange (no forward secrecy) and CBC with SHA-1; ChaCha20 is added, which helps devices without
+AES instructions.
+
+The suites are selected by a rule, `SslSetup.CIPHER_SUITES`, a Netty `CipherSuiteFilter` over
+all suites the library supports, not by a list: the edge owns the policy, the library the
+algorithms. TLS 1.3 suites pass the rule unchanged; BoringSSL ignores the selection anyway, and
+Netty disables TLS 1.3 when the list holds no TLS 1.3 suite. The key exchange groups stay
+Netty's defaults, including the post-quantum `X25519MLKEM768`.
+
+A rule can let through what nobody looked at: BoringSSL also supports
+`TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256`, which a rule of "ECDHE and AEAD" without the
+certificate authentication would have enabled. So `SslSetupTest#enabledCipherSuitesAreKnown`
+compares the outcome with a known list. A suite that a library upgrade adds or drops fails the
+build; it is reviewed against this policy, then the list and this document are updated.
+
+There is no configuration for suites or protocols. Clients that offer only suites without
+forward secrecy or only CBC suites cannot connect; by the Mozilla compatibility tables that is IE
+11 on Windows 7 and 8.1 against an RSA certificate (the profile reaches it only through DHE),
+Android 4.3 and older, Java 7 and older OpenSSL builds. Current browsers, Android 4.4.2 and later
+and Java 8 and later are unaffected.
 
 ### Port 80 is a separate pipeline, not a route
 
@@ -227,11 +268,19 @@ handshake, connection reuse) and is decided on its own, see
 - **Trusting `X-Forwarded-Proto` from configured proxy addresses**, for a load balancer that
   terminates TLS. Rejected, see [TLS terminates at the edge](#tls-terminates-at-the-edge).
 
+- **Netty's default suites minus an exclude list** (static RSA, CBC). Rejected: the base is a
+  list fixed in Netty, not what BoringSSL offers, it lacks ChaCha20 for TLS 1.2, and a suite
+  Netty adds later is enabled without review.
+- **An explicit allow list of suites.** Works, but a suite a library adds needs a code change to
+  be offered; the rule with the known list in the test asks for the same review with less code.
+- **Mozilla "old" profile** for clients before 2014. Not for a gateway of modern web
+  applications.
+- **A `strict` profile, TLS 1.3 only, as an option.** Not now, nobody needs it; it would be a
+  configuration value selecting a profile, never a list of suites.
+
 ## Limitations
 
 - Clients without TLS get only the redirect.
-- The default TLS 1.2 cipher suites include suites without forward secrecy and suites using CBC,
-  see [Overview](#overview).
 - The plain HTTP listener is counted, not logged: an individual request on port 80 cannot be
   investigated afterwards, see [Port 80 is counted, not logged](#port-80-is-counted-not-logged).
 - The fail closed check in the pipeline is missing, see [The invariant is structural, and
@@ -245,4 +294,4 @@ handshake, connection reuse) and is decided on its own, see
 ## Planned improvements
 
 Listed in [`TODO.md`](../../TODO.md) under "Transport encryption": fail closed without a TLS
-session, a TLS 1.2 cipher-suite policy, HTTP/2 over TLS, and upstream TLS.
+session, HTTP/2 over TLS, and upstream TLS.
