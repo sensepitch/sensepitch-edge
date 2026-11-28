@@ -125,7 +125,7 @@ class ShadedJarIT {
     env.put(ENV_PREFIX + "LISTEN_HTTPS_PORT", Integer.toString(port));
     env.put(ENV_PREFIX + "LISTEN_SSL_CERT_PATH", copyResource("ssl/test.crt").toString());
     env.put(ENV_PREFIX + "LISTEN_SSL_KEY_PATH", copyResource("ssl/test.key").toString());
-    env.put(ENV_PREFIX + "METRICS_ENABLE", "false");
+    env.put(ENV_PREFIX + "METRICS_DISABLED", "true");
     env.put(ENV_PREFIX + "PROTECTION_DISABLE", "true");
     env.put(ENV_PREFIX + "SITES_0_KEY", "localhost");
     env.put(ENV_PREFIX + "SITES_0_RESPONSE_TEXT", "ok");
@@ -362,7 +362,7 @@ class ShadedJarIT {
             certPath: %s
             keyPath: %s
         metrics:
-          enable: false
+          disabled: true
         protection:
           disable: true
         sites:

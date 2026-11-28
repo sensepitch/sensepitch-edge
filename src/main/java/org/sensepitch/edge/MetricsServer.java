@@ -23,7 +23,7 @@ public class MetricsServer implements AutoCloseable {
   ///
   /// @param cfg port `0` binds to an ephemeral port, see [#port()]
   public static MetricsServer start(PrometheusConfig cfg, PrometheusRegistry registry) {
-    if (cfg.enableJvmMetrics()) {
+    if (!cfg.disableJvmMetrics()) {
       JvmMetrics.builder().register(registry);
     }
     try {

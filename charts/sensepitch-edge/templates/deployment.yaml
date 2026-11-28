@@ -11,7 +11,7 @@
 {{- $httpsPort := int (dig "listen" "httpsPort" 17443 $config) -}}
 {{- $adminPort := int (dig "admin" "port" 9401 $config) -}}
 {{- $metricsPort := int (dig "metrics" "prometheus" "port" 9400 $config) -}}
-{{- $metricsEnabled := dig "metrics" "enable" true $config -}}
+{{- $metricsEnabled := not (dig "metrics" "disabled" false $config) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

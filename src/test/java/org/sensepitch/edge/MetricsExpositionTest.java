@@ -64,7 +64,7 @@ class MetricsExpositionTest {
   @Test
   void jvmMetricNames() throws Exception {
     PrometheusRegistry registry = new PrometheusRegistry();
-    PrometheusConfig cfg = PrometheusConfig.builder().port(0).enableJvmMetrics(true).build();
+    PrometheusConfig cfg = PrometheusConfig.builder().port(0).build();
     try (MetricsServer ignored = MetricsServer.start(cfg, registry)) {
       String names =
           registry.scrape().stream()
@@ -156,7 +156,8 @@ class MetricsExpositionTest {
       implements RequestLogMetrics.QueueSource {}
 
   String scrape(PrometheusRegistry registry, String accept) throws Exception {
-    return scrape(registry, PrometheusConfig.builder().port(0).build(), accept);
+    return scrape(
+        registry, PrometheusConfig.builder().port(0).disableJvmMetrics(true).build(), accept);
   }
 
   String scrape(PrometheusRegistry registry, PrometheusConfig cfg, String accept) throws Exception {

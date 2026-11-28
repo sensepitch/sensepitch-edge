@@ -174,7 +174,7 @@ request head; a client that has not sent the whole body by then, and has no resp
 ## Exposed metrics
 
 Metrics are exposed via prometheus at `http://<host>:9400/metrics`, the port is set with
-`metrics.prometheus.port`, `metrics.enable: false` switches the export off. This section picks out
+`metrics.prometheus.port`, `metrics.disabled: true` switches the export off. This section picks out
 metrics that should be monitored.
 
 ### `process_resident_memory_bytes`
@@ -652,7 +652,7 @@ upstreams:
   api:
     target: api:8080
     connectionPool:
-      enable: true            # default; false opens a connection per request
+      disabled: false         # default; true opens a connection per request
       idleTimeoutMillis: 4000 # default
       maxConnections: 10000   # default, all connections to this upstream
 ````
@@ -661,7 +661,7 @@ upstreams:
 does not run out of local ports and does not overwhelm the upstream. The event loops share it
 evenly: each may open `maxConnections` divided by the number of event loops, rounded down. A
 request that needs a further connection is answered with `503` and the outcome
-`upstream_connection_limit`; there is no queue. The limit applies also with `enable: false`.
+`upstream_connection_limit`; there is no queue. The limit applies also with `disabled: true`.
 
 - The headers that only apply to the client connection (`Connection` and the headers it names,
   `Keep-Alive`, `Proxy-Connection`, `Upgrade`, `TE`, `Trailer`) are not forwarded to the upstream;

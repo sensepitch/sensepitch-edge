@@ -204,10 +204,12 @@ closes the idle connections with the event loops.
 
 ### On by default, configured per upstream
 
-`connectionPool` on each upstream (`enable`, `idleTimeoutMillis`, `maxConnections`), enabled by
+`connectionPool` on each upstream (`disabled`, `idleTimeoutMillis`, `maxConnections`), enabled by
 default like NGINX since 1.29.7: without the pool the edge reaches the limit of local ports at
-about 470 requests per second per upstream address, see "Purpose and scope". `enable: false`
-restores the connection per request. Metrics, labelled with the upstream name: connections opened, connections
+about 470 requests per second per upstream address, see "Purpose and scope". `disabled: true`
+restores the connection per request. An off switch rather than `enable`, so the key is absent
+normally and a later configuration layer only switches the default off, as with
+`requestLog.disabled`. Metrics, labelled with the upstream name: connections opened, connections
 reused, open connections and idle connections (gauges), idle connections closed by reason
 (`idle_timeout`, `closed_by_upstream`, `removed`), refusals at the connection limit, retries.
 

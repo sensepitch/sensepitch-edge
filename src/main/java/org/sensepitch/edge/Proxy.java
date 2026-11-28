@@ -400,7 +400,7 @@ public class Proxy implements ProxyContext {
     if (metricsConfig == null) {
       metricsConfig = MetricsConfig.DEFAULT;
     }
-    if (!metricsConfig.enable()) {
+    if (metricsConfig.disabled()) {
       return null;
     }
     PrometheusConfig prometheusConfig = metricsConfig.prometheus();

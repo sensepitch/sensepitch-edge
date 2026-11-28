@@ -37,7 +37,7 @@ class BindAddressTest {
                         .response(ResponseConfig.builder().text("demo").build())
                         .protection(ProtectionConfig.builder().disable(true).build())
                         .build()))
-            .metrics(MetricsConfig.builder().enable(false).build())
+            .metrics(MetricsConfig.builder().disabled(true).build())
             .build();
 
     var proxy = new Proxy(config, new RequestLogCapture());

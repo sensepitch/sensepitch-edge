@@ -74,7 +74,7 @@ class CompleteTest {
                   SiteConfig.builder()
                       .response(ResponseConfig.builder().text("a test response").build())
                       .build()))
-          .metrics(MetricsConfig.builder().enable(false).build())
+          .metrics(MetricsConfig.builder().disabled(true).build())
           .build();
 
   Steps steps = new Steps().given_initialized_proxy_with(COMMON_CONFIG);

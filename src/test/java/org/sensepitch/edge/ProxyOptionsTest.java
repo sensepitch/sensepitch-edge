@@ -204,8 +204,7 @@ class ProxyOptionsTest {
         COMMON_CONFIG.toBuilder()
             .metrics(
                 MetricsConfig.builder()
-                    .enable(true)
-                    .prometheus(PrometheusConfig.builder().port(0).build())
+                    .prometheus(PrometheusConfig.builder().port(0).disableJvmMetrics(true).build())
                     .build())
             .build();
     Proxy proxy = new Proxy(config, new RequestLogCapture());

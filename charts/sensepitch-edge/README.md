@@ -127,8 +127,8 @@ the rounded-up shutdown seconds and fails otherwise.
 ## Metrics
 
 Metrics are served on the `metrics` container port (`/metrics`). The chart creates a separate
-`ClusterIP` Service for it when `config.metrics.enable` is true; it is never added to the public
-`https` Service.
+`ClusterIP` Service for it unless `config.metrics.disabled` is set; it is never added to the
+public `https` Service.
 
 For Prometheus installations that discover pods, the chart adds `prometheus.io/scrape`,
 `prometheus.io/port`, and `prometheus.io/path` annotations. Set

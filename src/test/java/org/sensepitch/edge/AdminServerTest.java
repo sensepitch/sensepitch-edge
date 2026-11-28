@@ -280,7 +280,7 @@ class AdminServerTest {
                 SiteConfig.builder()
                     .upstream(UpstreamConfig.builder().target("127.0.0.1:" + port).build())
                     .build()))
-        .metrics(MetricsConfig.builder().enable(false).build())
+        .metrics(MetricsConfig.builder().disabled(true).build())
         .build();
   }
 }

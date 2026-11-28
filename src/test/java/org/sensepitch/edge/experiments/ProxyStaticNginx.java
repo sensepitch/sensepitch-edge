@@ -25,9 +25,7 @@ public class ProxyStaticNginx {
         ProxyConfig.builder()
             .metrics(
                 MetricsConfig.builder()
-                    .enable(true)
-                    .prometheus(
-                        PrometheusConfig.builder().enableJvmMetrics(true).port(9400).build())
+                    .prometheus(PrometheusConfig.builder().port(9400).build())
                     .build())
             .listen(
                 ListenConfig.builder()

@@ -59,7 +59,7 @@ class PlainHttpListenerIT {
                         .response(ResponseConfig.builder().text("a test response").build())
                         .protection(ProtectionConfig.builder().disable(true).build())
                         .build()))
-            .metrics(MetricsConfig.builder().enable(false).build())
+            .metrics(MetricsConfig.builder().disabled(true).build())
             .build();
     proxy = new Proxy(config, new RequestLogCapture());
     Thread thread =

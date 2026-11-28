@@ -12,7 +12,7 @@ class ConnectionPoolConfigTest {
     ConnectionPoolConfig cfg =
         UpstreamConfig.builder().target("localhost:8080").build().connectionPool();
     assertThat(cfg).isEqualTo(ConnectionPoolConfig.DEFAULT);
-    assertThat(cfg.enable()).isTrue();
+    assertThat(cfg.disabled()).isFalse();
     assertThat(cfg.idleTimeoutMillis()).isEqualTo(4_000);
     assertThat(cfg.maxConnections()).isEqualTo(10_000);
   }

@@ -11,7 +11,6 @@ admin:
   address: 0.0.0.0
   port: 9401
 metrics:
-  enable: true
   prometheus:
     port: 9400
 # Keep readiness observable even if the test is descheduled during shutdown.

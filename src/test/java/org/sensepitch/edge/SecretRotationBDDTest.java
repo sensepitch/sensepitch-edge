@@ -107,7 +107,7 @@ class SecretRotationBDDTest {
                   UnservicedHostConfig.builder().defaultLocation("https://sensepitch.io").build())
               .protection(ProtectionConfig.builder().disable(true).build())
               .sites(Map.of(SITE_KEY, site))
-              .metrics(MetricsConfig.builder().enable(false).build())
+              .metrics(MetricsConfig.builder().disabled(true).build())
               .build();
       proxy.given_initialized_proxy_with(config);
       return this;

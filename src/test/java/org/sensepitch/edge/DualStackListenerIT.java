@@ -97,7 +97,7 @@ class DualStackListenerIT {
                                     List.of(CookieGateConfig.builder().name("gate").build()))
                                 .build())
                         .build()))
-            .metrics(MetricsConfig.builder().enable(false).build())
+            .metrics(MetricsConfig.builder().disabled(true).build())
             .requestLog(RequestLogConfig.builder().plainText(true).build())
             .build();
     proxy = new Proxy(config, requestLog);

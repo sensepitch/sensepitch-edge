@@ -1,4 +1,4 @@
-{{- if dig "metrics" "enable" true .Values.config }}
+{{- if not (dig "metrics" "disabled" false .Values.config) }}
 {{- $metricsPort := int (dig "metrics" "prometheus" "port" 9400 .Values.config) -}}
 apiVersion: v1
 kind: Service

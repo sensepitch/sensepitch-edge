@@ -6,20 +6,21 @@ import lombok.Builder;
 /// connection for each, and the limit of connections to it. See
 /// `doc/design/upstream-connection-pool.md`.
 ///
-/// @param enable keep connections open after a response and reuse them; `false` opens a new
-///   connection for every request and closes it after the response
+/// @param disabled open a new connection for every request and close it after the response,
+///   instead of keeping connections open and reusing them. A flag, so a later configuration layer
+///   can switch off a default.
 /// @param idleTimeoutMillis an idle connection is closed after this time. After a burst of
 ///   requests, the connections no longer needed are closed this way. Keep it below the keep-alive
 ///   timeout of the upstream server, otherwise the server closes connections just as the edge sends
 ///   a request on them. At least 1.
 /// @param maxConnections the most connections to the upstream, open, idle and connecting, also with
-///   `enable: false`. Shared evenly by the event loops: each may open `maxConnections` divided by
+///   `disabled: true`. Shared evenly by the event loops: each may open `maxConnections` divided by
 ///   the number of event loops, rounded down, at least 1. A request that needs a further connection
 ///   is answered with `503` and the outcome `upstream_connection_limit`. The default keeps the local
 ///   ports of the edge from running out. At least 1.
 /// @author Jens Wilke
 @Builder(toBuilder = true)
-public record ConnectionPoolConfig(boolean enable, long idleTimeoutMillis, int maxConnections) {
+public record ConnectionPoolConfig(boolean disabled, long idleTimeoutMillis, int maxConnections) {
 
   /// Below the 5 s keep-alive timeout common for application servers
   static final long DEFAULT_IDLE_TIMEOUT_MILLIS = 4_000;
@@ -32,7 +33,6 @@ public record ConnectionPoolConfig(boolean enable, long idleTimeoutMillis, int m
   /// Builder with the defaults preset
   public static Builder builder() {
     return new Builder()
-        .enable(true)
         .idleTimeoutMillis(DEFAULT_IDLE_TIMEOUT_MILLIS)
         .maxConnections(DEFAULT_MAX_CONNECTIONS);
   }
@@ -55,7 +55,7 @@ public record ConnectionPoolConfig(boolean enable, long idleTimeoutMillis, int m
       if (maxConnections < 1) {
         throw new IllegalArgumentException("connectionPool.maxConnections must be at least 1");
       }
-      return new ConnectionPoolConfig(enable, idleTimeoutMillis, maxConnections);
+      return new ConnectionPoolConfig(disabled, idleTimeoutMillis, maxConnections);
     }
   }
 }

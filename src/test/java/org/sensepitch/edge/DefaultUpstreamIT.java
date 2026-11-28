@@ -85,7 +85,7 @@ class DefaultUpstreamIT {
               "backend",
               UpstreamConfig.builder()
                   .target(Loopback.ADDRESS + ":" + target.getLocalPort())
-                  .connectionPool(ConnectionPoolConfig.builder().enable(pooling).build())
+                  .connectionPool(ConnectionPoolConfig.builder().disabled(!pooling).build())
                   .build());
       try (var client = SocketChannel.open(listener.getLocalAddress())) {
         var ingress = new NioSocketChannel(listener.accept());

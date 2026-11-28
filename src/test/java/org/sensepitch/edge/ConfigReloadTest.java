@@ -47,7 +47,7 @@ class ConfigReloadTest {
               UnservicedHostConfig.builder().defaultLocation("https://sensepitch.io").build())
           .protection(ProtectionConfig.builder().disable(true).build())
           .sites(sites("a.com", response("A")))
-          .metrics(MetricsConfig.builder().enable(false).build())
+          .metrics(MetricsConfig.builder().disabled(true).build())
           .build();
 
   @RegisterExtension LogCapture logs = new LogCapture();

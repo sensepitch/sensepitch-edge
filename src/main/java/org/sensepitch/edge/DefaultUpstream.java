@@ -18,7 +18,7 @@ import io.netty.util.concurrent.Promise;
 /// Connections to an upstream server, on the event loop of the client channel. An exchange takes an
 /// idle connection of the [UpstreamConnectionPool] of that loop, or opens a new one; the
 /// [DownstreamHandler] releases it after a clean exchange, otherwise it is closed. With
-/// [ConnectionPoolConfig#enable()] off every exchange opens a connection and closes it after the
+/// [ConnectionPoolConfig#disabled()] set every exchange opens a connection and closes it after the
 /// response. The upstream connections are spread over the event loops like the accepted client
 /// connections, so their load balance is that of the clients.
 ///
@@ -37,7 +37,7 @@ public class DefaultUpstream implements Upstream {
     this.name = name;
     this.target = cfg.target();
     this.metrics = ctx.metrics();
-    this.pooling = cfg.connectionPool().enable();
+    this.pooling = !cfg.connectionPool().disabled();
     this.pool =
         new UpstreamConnectionPool(
             cfg.connectionPool(), metrics, metricsName(), ctx.environment().eventLoopThreads());

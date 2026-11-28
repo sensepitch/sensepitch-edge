@@ -111,7 +111,7 @@ class ExternalTcpIT {
                                 .build())
                         .protection(ProtectionConfig.builder().disable(true).build())
                         .build()))
-            .metrics(MetricsConfig.builder().enable(false).build())
+            .metrics(MetricsConfig.builder().disabled(true).build())
             // the only place the fingerprint is taken from a real ClientHello in the pipeline
             .fingerprint(
                 FingerprintConfig.builder().ja4(Ja4Config.builder().enable(true).build()).build())

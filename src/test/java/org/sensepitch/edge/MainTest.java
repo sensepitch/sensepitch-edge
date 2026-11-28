@@ -35,7 +35,7 @@ class MainTest {
           certPath: classpath:ssl/test.crt
           keyPath: classpath:ssl/test.key
       metrics:
-        enable: false
+        disabled: true
       admin:
         address: 127.0.0.1
         port: %d
@@ -83,7 +83,7 @@ class MainTest {
             prefix + "LISTEN_HTTPS_PORT", Integer.toString(port),
             prefix + "LISTEN_SSL_CERT_PATH", "classpath:ssl/test.crt",
             prefix + "LISTEN_SSL_KEY_PATH", "classpath:ssl/test.key",
-            prefix + "METRICS_ENABLE", "false",
+            prefix + "METRICS_DISABLED", "true",
             prefix + "PROTECTION_DISABLE", "true",
             prefix + "SITES_0_KEY", "localhost",
             prefix + "SITES_0_RESPONSE_TEXT", "ok",

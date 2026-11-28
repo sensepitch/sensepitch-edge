@@ -184,7 +184,7 @@ class ProxyShutdownIT {
                                         .build())
                                 .build()))
                     .build())
-            .metrics(MetricsConfig.builder().enable(false).build())
+            .metrics(MetricsConfig.builder().disabled(true).build())
             .shutdownTimeoutMillis(shutdownTimeoutMillis)
             .build();
     proxy =

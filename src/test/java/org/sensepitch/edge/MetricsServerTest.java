@@ -30,7 +30,7 @@ class MetricsServerTest {
   void exportsRegistryAndStopsOnClose() throws Exception {
     PrometheusRegistry registry = new PrometheusRegistry();
     Counter.builder().name("test_requests").register(registry).inc(3);
-    PrometheusConfig cfg = PrometheusConfig.builder().port(0).enableJvmMetrics(true).build();
+    PrometheusConfig cfg = PrometheusConfig.builder().port(0).build();
     int port;
     try (MetricsServer server = MetricsServer.start(cfg, registry)) {
       port = server.port();
@@ -56,7 +56,7 @@ class MetricsServerTest {
   @Test
   void jvmMetricsAreOptional() throws Exception {
     PrometheusRegistry registry = new PrometheusRegistry();
-    PrometheusConfig cfg = PrometheusConfig.builder().port(0).build();
+    PrometheusConfig cfg = PrometheusConfig.builder().port(0).disableJvmMetrics(true).build();
     try (MetricsServer server = MetricsServer.start(cfg, registry)) {
       assertThat(get(server.port()).body()).doesNotContain("jvm_memory_used");
     }

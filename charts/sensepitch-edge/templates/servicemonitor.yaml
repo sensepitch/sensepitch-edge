@@ -1,6 +1,6 @@
 {{- if .Values.serviceMonitor.enabled }}
-{{- if not (dig "metrics" "enable" true .Values.config) }}
-{{- fail "serviceMonitor.enabled requires config.metrics.enable=true" }}
+{{- if dig "metrics" "disabled" false .Values.config }}
+{{- fail "serviceMonitor.enabled requires metrics, config.metrics.disabled is set" }}
 {{- end }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

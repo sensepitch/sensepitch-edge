@@ -25,7 +25,7 @@ class ProxyConstructBDDTest {
                   .build())
           .build();
 
-  static final MetricsConfig NO_METRICS = MetricsConfig.builder().enable(false).build();
+  static final MetricsConfig NO_METRICS = MetricsConfig.builder().disabled(true).build();
 
   static final UpstreamConfig LOCAL = UpstreamConfig.builder().target("localhost:8080").build();
 
