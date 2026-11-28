@@ -6,10 +6,14 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpVersion;
 import java.net.InetAddress;
+import java.util.AbstractList;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
+import java.util.RandomAccess;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 
@@ -436,6 +440,80 @@ class RequestLogFieldsWriterTest {
     assertThat(fields(info).fields.get("sensepitch.request.sample_headers")).isEqualTo(sample);
     assertThat(fields(TestRequestLogInfo.of(HttpMethod.GET, 200)).fields)
         .doesNotContainKey("sensepitch.request.sample_headers");
+  }
+
+  /// Header name and sample lists are read by index so logging does not allocate list iterators
+  @Test
+  void headerListsAreReadByIndexWithoutIterator() {
+    List<CharSequence> names = indexedOnly(List.of("Host", "User-Agent", "Accept"));
+    List<String> sample = indexedOnly(List.of("Host: example.com", "Accept: */*"));
+    TestRequestLogInfo info =
+        TestRequestLogInfo.of(HttpMethod.GET, 200)
+            .withClientHeaderNames(names)
+            .withSampleHeaders(sample);
+    Map<String, Object> written = fields(info).fields;
+    assertThat(written.get("sensepitch.request.header_names"))
+        .isEqualTo(List.of("Host", "User-Agent", "Accept"));
+    assertThat(written.get("sensepitch.request.sample_headers"))
+        .isEqualTo(List.of("Host: example.com", "Accept: */*"));
+
+    TestRequestLogInfo empty =
+        TestRequestLogInfo.of(HttpMethod.GET, 200).withClientHeaderNames(indexedOnly(List.of()));
+    assertThat(fields(empty).fields.get("sensepitch.request.header_names")).isEqualTo(List.of());
+  }
+
+  /// Pre-captured client header names exclude edge headers, stay fixed when headers change later,
+  /// and return the same list on repeated reads; uncaptured instances still read headers
+  /// dynamically
+  @Test
+  void capturedClientHeaderNamesAreReusedAndExcludeEdgeHeaders() {
+    TestRequestLogInfo captured = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    captured.request().headers().set(HttpHeaderNames.USER_AGENT, "curl/8");
+    captured.request().headers().set(IpTraitsHandler.COUNTRY_HEADER, "DE");
+    captured.captureClientHeaderNames();
+    captured.request().headers().set(HttpHeaderNames.ACCEPT_LANGUAGE, "de-DE");
+
+    List<CharSequence> firstRead = captured.clientHeaderNames();
+    assertThat(firstRead).containsExactly(HttpHeaderNames.HOST, HttpHeaderNames.USER_AGENT);
+    assertThat(captured.clientHeaderNames()).isSameAs(firstRead);
+    assertThat(fields(captured).fields.get("sensepitch.request.header_names"))
+        .isEqualTo(List.of("host", "user-agent"));
+
+    TestRequestLogInfo dynamic = TestRequestLogInfo.of(HttpMethod.GET, 200);
+    dynamic.request().headers().set(HttpHeaderNames.ACCEPT_LANGUAGE, "en");
+    assertThat(dynamic.clientHeaderNames())
+        .containsExactly(HttpHeaderNames.HOST, HttpHeaderNames.ACCEPT_LANGUAGE);
+  }
+
+  /// A random-access list that fails if any iterator is created, to guard indexed iteration
+  private static <T> List<T> indexedOnly(List<T> delegate) {
+    final class IndexedOnlyList extends AbstractList<T> implements RandomAccess {
+      @Override
+      public T get(int index) {
+        return delegate.get(index);
+      }
+
+      @Override
+      public int size() {
+        return delegate.size();
+      }
+
+      @Override
+      public Iterator<T> iterator() {
+        throw new AssertionError("must not allocate an iterator");
+      }
+
+      @Override
+      public ListIterator<T> listIterator() {
+        throw new AssertionError("must not allocate an iterator");
+      }
+
+      @Override
+      public ListIterator<T> listIterator(int index) {
+        throw new AssertionError("must not allocate an iterator");
+      }
+    }
+    return new IndexedOnlyList();
   }
 
   /// The name and the version of the negotiated protocol, either may be absent

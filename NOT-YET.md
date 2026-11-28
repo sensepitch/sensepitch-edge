@@ -10,6 +10,13 @@ need, e.g. a bug or a production requirement. Bugs and robustness issues are nev
 - enable -> disable
 - finanlise metric names
 - max age, see below
+- put circuit breaker into it
+
+## Memory / allocation bounds
+
+- OtlpAllocationIT measures steady state allocations, can we have object counts as well? No, not possble
+- Add an IT test for allocations per exchange
+- is there a allocations / request metric?
 
 ## Benchmark: edge against NGINX, done fairly
 
@@ -38,6 +45,10 @@ need, e.g. a bug or a production requirement. Bugs and robustness issues are nev
     2. Variants per step: NGINX and the edge, each with its log on and off
        (`NGINX_PROXY_ACCESS_LOG=off`, `SENSEPITCH_EDGE_REQUEST_LOG_DISABLED=true`), at 10, 100
        and 1 000 connections (closed loop: `shb` sends as fast as answers come).
+       Future variant parameters could be http1.1, http2, QUIC. Also HAPROXY and envoy should 
+       be added for comparison in the future.
+       There should be also different test scenarios, we only test with 10kb data.
+       There should be a test scenario for 0 byte responses. 512 byte responses, and a size mix.
     3. Three runs per variant, the table reports median and range, so a single bad run (seen
        up to a factor of three in the p90) does not decide.
     4. CPU per variant: the machine busy share and the server's cores, average of the samples 6

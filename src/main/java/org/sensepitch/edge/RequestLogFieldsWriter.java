@@ -289,15 +289,18 @@ public final class RequestLogFieldsWriter {
     sink.optionalString(SensepitchLogFields.TRAFFIC_TYPE, info.trafficType());
     sink.bool(SensepitchLogFields.REQUEST_COOKIE_PRESENT, headers.contains(HttpHeaderNames.COOKIE));
     sink.startArray(SensepitchLogFields.REQUEST_HEADER_NAMES);
-    for (CharSequence name : info.clientHeaderNames()) {
-      sink.arrayValue(name);
+    // Performance: avoid iterator allocation
+    List<CharSequence> headerNames = info.clientHeaderNames();
+    for (int index = 0; index < headerNames.size(); index++) {
+      sink.arrayValue(headerNames.get(index));
     }
     sink.endArray();
     List<String> sample = info.sampleHeaders();
     if (sample != null) {
       sink.startArray(SensepitchLogFields.REQUEST_SAMPLE_HEADERS);
-      for (String header : sample) {
-        sink.arrayValue(header);
+      // Performance: avoid iterator allocation
+      for (int index = 0; index < sample.size(); index++) {
+        sink.arrayValue(sample.get(index));
       }
       sink.endArray();
     }

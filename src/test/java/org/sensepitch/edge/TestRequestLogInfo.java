@@ -35,6 +35,7 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
   private String route;
   private String configId;
   private String protectionOutcome;
+  private List<CharSequence> clientHeaderNames;
   private List<String> sampleHeaders;
   private ResponseSource responseSource;
 
@@ -269,10 +270,32 @@ final class TestRequestLogInfo implements RequestBackedLogInfo {
     return 3_000;
   }
 
+  /// Captures the current request header names without the edge headers into an immutable list,
+  /// like [FingerprintHandler] does before logging, so [#clientHeaderNames()] does not allocate
+  TestRequestLogInfo captureClientHeaderNames() {
+    clientHeaderNames = List.copyOf(extractClientHeaderNames());
+    return this;
+  }
+
+  /// With pre-captured client header names, as [FingerprintHandler] takes them
+  TestRequestLogInfo withClientHeaderNames(List<CharSequence> names) {
+    clientHeaderNames = names;
+    return this;
+  }
+
   /// The names of the request headers without the edge headers, like the [FingerprintHandler]
-  /// takes them before the edge adds its own
+  /// takes them before the edge adds its own. Returns the pre-captured list when set via
+  /// [#captureClientHeaderNames()] or [#withClientHeaderNames(List)].
   @Override
   public List<CharSequence> clientHeaderNames() {
+    if (clientHeaderNames != null) {
+      return clientHeaderNames;
+    }
+    return extractClientHeaderNames();
+  }
+
+  /// Scans the current request headers without the edge headers when no list was pre-captured
+  private List<CharSequence> extractClientHeaderNames() {
     List<CharSequence> names = new ArrayList<>();
     request
         .headers()

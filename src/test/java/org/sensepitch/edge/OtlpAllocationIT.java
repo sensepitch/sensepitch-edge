@@ -17,7 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 ///
 /// Measured with the allocation counter of the JVM for the calling thread, so the work of the
 /// sender thread of the destination is not included. What remains are the iterators Netty
-/// creates when the request headers are iterated, about 32 bytes each.
+/// creates when the logged request headers are iterated, about 40 bytes each.
 ///
 /// The log server answers, as in steady state. While it is unavailable, batches pile up and new
 /// ones are allocated, which is intended, see [OtlpLogDestination]. The best of a few rounds is
@@ -38,10 +38,11 @@ class OtlpAllocationIT {
   /// Calls per measured round
   static final int RECORDS = 5_000;
 
-  /// Bound per record. Measured are 120 to 150 bytes, the four header iterators of this request
-  /// (three logged headers and the header names), the encoding and the anonymization add nothing.
-  /// The bound leaves room for JIT variance. Before the per-thread buffers, logging allocated about
-  /// 14 KB per record.
+  /// Bound per record. Measured are 0 to 120 bytes: up to three Netty value iterators for the
+  /// present logged headers (which C2 scalar-replaces while `RequestLogInfo` is monomorphic, and
+  /// allocates once anonymization makes dispatch bimorphic). The pre-captured header names, the
+  /// encoding and the anonymization add nothing. The bound leaves room for JIT variance. Before
+  /// the per-thread buffers, logging allocated about 14 KB per record.
   static final long MAX_BYTES_PER_RECORD = 256;
 
   static TestRequestLogInfo browserRequest() {
@@ -54,7 +55,7 @@ class OtlpAllocationIT {
     info.request().headers().set(HttpHeaderNames.ACCEPT_LANGUAGE, "de-DE,de;q=0.9");
     info.request().headers().set(HttpHeaderNames.REFERER, "https://example.org/");
     info.request().headers().set(RequestLogFieldsWriter.SEC_CH_UA_MOBILE, "?0");
-    return info;
+    return info.captureClientHeaderNames();
   }
 
   static final int ROUNDS = 3;
