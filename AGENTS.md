@@ -179,7 +179,7 @@ Sensepitch Edge is a low-latency, public-facing reverse proxy on Java 25 and Net
   testable. `./mvnw verify` with the integration tests and the JaCoCo floor is the final check,
   it must not be the only place where code of ours is executed. So do not move a test to `*IT` to
   make `./mvnw test` faster when that takes coverage away from the unit tests; make the test fast
-  instead (fake clock, no real timers, see `NOT-YET.md`). Check with
+  instead (fake clock, no real timers, see `TODO.md`). Check with
   `./mvnw clean test jacoco:report` and `target/site/jacoco/jacoco.csv` before and after.
 - Tests that mainly exercise the JDK, Netty or other libraries rather than our code (e.g. real TLS
   handshakes, GC or RSS behaviour) belong in `*IT`, so `./mvnw test` stays fast. An `*IT` may

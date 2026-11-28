@@ -166,3 +166,42 @@ The `.log` file of step 4 holds the request log. Each JSON line has
 ```sh
 grep -c '"sensepitch.connection.request_count":0,' results-probe/5000-pool.log
 ```
+
+## Next comparison
+
+Planned on 2026-11-27, tracked in [NOT-YET.md](../../../NOT-YET.md) under "Benchmark: edge
+against NGINX, done fairly". It builds on these findings of this run:
+
+- vegeta is the bottleneck on one machine: at a requested 40k req/s it reached 28 to 30k, the
+  machine 93 % busy with NGINX on 3.7 cores. `h2load` 1.71 and `shb` (io_uring) reach about 50k
+  for both servers at 100 connections.
+- A freshly started edge needs a warm-up (JIT): without one the first seconds take 10 cores and
+  dominate the tail; 10 s at 1 000 req/s are enough.
+- NGINX logs every request to standard out (the image links `access.log` to `/dev/stdout`); that
+  costs it 19 % (64.8k to 52.5k req/s with `shb`), the request log of the edge 7 % (47.3k to
+  43.8k). With both logs off the edge reaches 73 % of NGINX, with both on 83 %. Earlier "edge
+  equals NGINX" results compared NGINX with its log against the edge without.
+- Without the warm-up and with vegeta, the latency tails at 5k and 10k came from the cold start,
+  not from the request log.
+
+The method:
+
+1. `compare.sh` on `shb` instead of vegeta: per step a fresh server (edge JVM or NGINX
+   container), warm-up with `shb` for 10 s (discarded), then 10 s measured with `-j` (JSON), the
+   summary table built from the JSON: requests per second, errors, p50, p90, p99, p99.9.
+2. Variants per step: NGINX and the edge, each with its log on and off
+   (`NGINX_PROXY_ACCESS_LOG=off`, `SENSEPITCH_EDGE_REQUEST_LOG_DISABLED=true`), at 10, 100 and
+   1 000 connections (closed loop: `shb` sends as fast as answers come). Later: HAProxy and Envoy
+   for comparison, and response sizes beyond the 10 KB used today: 0 bytes, 512 bytes and a mix.
+3. Three runs per variant, the table reports median and range, so a single bad run (seen up to a
+   factor of three in the p90) does not decide.
+4. CPU per variant: the machine busy share and the server's cores, average of the samples 6 to 8
+   of 10 as in `compare.sh` today, and from it cores per 10 000 req/s, the fairest figure while
+   the client shares the machine.
+5. Optional, if the machine stays above 80 % busy: pin `shb` and the server to separate cores
+   (`taskset`) and run once more, to see how much the shared CPU changes the ratio.
+6. Optional: HTTP/2 (`shb --http2`, NGINX `http2 on`, the edge where it supports it) and later
+   HTTP/3 and QUIC, which `shb` and `h2load` both speak.
+7. Results: this README gets the new tables and replaces the probe tables measured without a
+   warm-up; the README benchmark section gets the fair numbers (logs on and off, tool, machine,
+   date) instead of the 2025 vegeta run, and keeps one sentence on why the old numbers differ.

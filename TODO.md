@@ -19,6 +19,40 @@ First, because every other task depends on it: a quick test loop and a failure t
 means a defect speed up and secure all work below. Measurements, the fake clock library and what
 was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
 
+- [ ] `./mvnw test` at about 5 s wall time: move a test that does real socket connections or
+  sleeps to an `*IT`, or put it on simulated time
+  - P1. The classes run in parallel, the methods of a class in order, so one slow class sets the
+    wall time and a few hundred ms count.
+  - Move only what adds no coverage of its own: compare `target/site/jacoco/jacoco.csv` of
+    `./mvnw clean test jacoco:report` with and without the test (exclude with
+    `-Dtest='**/*Test,**/*BDDTest,!Class#method'`, a bare exclusion pulls in the `*IT`s). One
+    branch of `AsyncRequestLogWriter` varies between runs, rerun before reading a difference.
+  - What cannot move for coverage gets a fake clock instead, see the planned improvements in the
+    [test speed design](doc/design/test-speed.md#planned-improvements).
+- [ ] JaCoCo coverage varies between runs: lines that passing tests execute are sometimes
+  reported as missed, e.g. `AdminServer` lines 48 and 73–74 and `IpTraits` lines 31, 81 and 85
+  (seen 2026-11-24 in `./mvnw verify`, while `AdminServerTest` and `CombinedIpTraitsLookupTest`
+  passed), and one branch of `AsyncRequestLogWriter`.
+  - P1: the coverage floor is part of the gate, so a varying count is a flaky gate. The floor in
+    `pom.xml` keeps a margin today.
+  - Cause not investigated; suspected the parallel unit test execution in one JVM, or probes of a
+    class lost on a JVM or thread end. Compare two `jacoco.xml` of the same commit to find the
+    affected classes.
+
+### Real time and races in the remaining tests
+
+Unit tests that still wait on real time, until their class has a clock seam, see "Concurrent and
+asynchronous tests" in `AGENTS.md`; no new ones are added.
+
+- [ ] `ReloadableRequestLoggerTest`: 3.3 s in the full run of 2026-11-16, 0.94 s in a focused run
+  of 2026-11-25 (the first test 0.55 s with warm-up and server start).
+  `finishCoversDrainingDestinations` and `finishedDestinationEndsWhenItsRecordsAgedOut` are on
+  simulated time since 2026-11-25 and 2026-11-24; `disableAndEnableByReload` (0.2 s) and
+  `removedDestinationDoesNotBlockTheReload` (0.15 s) probably wait on real timers (retry backoff
+  after 503, age limit), not verified.
+  - P1. Done before: `noRecordIsLostWhileReloading` moved to `ReloadableRequestLoggerIT`
+    (2026-11-16).
+
 ## Bugs
 
 - [ ] Check the nightly workflows, "Flaky tests":
@@ -29,7 +63,7 @@ was tried are in [doc/design/test-speed.md](doc/design/test-speed.md).
     The flaky test summary lists each failed test with the number of runs it failed in; a failed
     nightly run uploads `nightly-test-reports` (kept 7 days). An excessive test that fails is load
     sensitive or a real regression of allocation or timing.
-  - See flaky-tests.yml how to get the rest result via GitHub CLI
+  - See flaky-tests.yml how to get the test result via GitHub CLI
   - Act only on what the workflows reported on the recent run; a failure seen once in a local
     or agent build is not added here. The general remedies are in "Fast tests without
     flakiness" above.
@@ -62,76 +96,58 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   - Verify pod readiness and HTTPS through the Service. Rotate a mounted Secret and verify the
     running edge uses the new value. Terminate a pod and verify graceful shutdown within
     `terminationGracePeriodSeconds`. Reuse the same setup and smoke check locally.
-- [ ] 9. node ingress mode in the chart, and a restart without refused connections: DaemonSet on
-  labelled ingress nodes, ports 80 and 443 on the node addresses. How the ports are bound decides
-  whether a restart can overlap the old and the new pod.
+- [ ] 9. node ingress mode in the chart: DaemonSet on labelled ingress nodes, ports 80 and 443 on
+  the node addresses.
   - BLOCKED: requires the passing kind deployment check in item 3.
   - P1.
-  - Port binding, tick one; rule: first the option with the least extra configuration that works
-    in the most setups:
-    - [ ] `hostNetwork: true`: the edge binds the node addresses itself. Ports below 1024 as
-      non-root need a capability; `capabilities.add: [NET_BIND_SERVICE]` is not effective for a
-      non-root process without file capabilities on `java`, and the
-      `net.ipv4.ip_unprivileged_port_start` sysctl is the node's in the host network namespace
-      (inferred from the Kubernetes and Linux capability rules, verify on the cluster).
-      `1-architecture.md` assumes the capability is enough.
-    - [x] `hostPort` 80/443 to container ports 17080/17443: the pod stays non-root in its own
-      network namespace; the CNI `portmap` plugin forwards with DNAT, which keeps the client
-      address (verify with the chosen CNI). The scheduler allows one pod per host port and node,
-      so a restart cannot overlap. Verify on kind first (its default CNI supports `portmap`);
-      Cilium serves host ports only with its host port support enabled, list such CNI
-      prerequisites in the chart README (item 15)
-  - Restart: with host ports a DaemonSet update stops the old pod before the new one binds
-    (`maxSurge: 0`), and the node refuses connections in between. Tick one:
-    - [x] accept it: browsers try the next address of the name; check the clients that matter,
-      e.g. payment provider webhooks, which may not retry
-    - [ ] overlap with `SO_REUSEPORT`, parked in [NOT-YET.md](NOT-YET.md) under "Configuration,
-      operations"
-  - The node firewall must let 80 and 443 through to the chosen path.
-- [x] 11. dual stack: the default `listen.address` `0.0.0.0` accepts IPv4 only, the nodes have
-  IPv6 as well. Verify that `address: "::"` accepts both on one socket, and that an IPv4 client
-  then appears as IPv4, not `::ffff:` mapped, in `bypass.remotes`, the IP traits, the request log
-  and `X-Forwarded-For`. With `hostPort` the cluster and CNI need dual stack too.
-  - P1, before AAAA records point to the nodes.
-- [ ] 12. certificates on Kubernetes: an ACME client on the host writes the Let's Encrypt directory
-  `listen.letsEncrypt` reads today. Tick one:
+  - Decided: `hostPort` 80/443 to container ports 17080/17443. The pod stays non-root in its own
+    network namespace; the CNI `portmap` plugin forwards with DNAT, which keeps the client address
+    (verify with the chosen CNI, first on kind, whose default CNI supports `portmap`). Cilium
+    serves host ports only with its host port support enabled; list such CNI prerequisites in the
+    chart README (item 15). Not chosen: `hostNetwork: true`, ports below 1024 as non-root would
+    need file capabilities on `java` or the node's `ip_unprivileged_port_start` (inferred, not
+    verified); `1-architecture.md` assumes the capability is enough.
+  - Decided: a restart refuses connections on the node in between, the scheduler allows one pod
+    per host port and node (`maxSurge: 0`); browsers try the next address of the name. Check the
+    clients that matter, e.g. payment provider webhooks, which may not retry. The overlap with
+    `SO_REUSEPORT` is parked in [NOT-YET.md](NOT-YET.md) under "Configuration, operations".
+  - The node firewall must let 80 and 443 through.
+- [ ] 12. certificates on Kubernetes, today an ACME client on the host writes the Let's Encrypt
+  directory `listen.letsEncrypt` reads.
   - P1.
-  - [ ] cert-manager with DNS-01, one Secret per host or wildcard, mounted through `snis`; a
-    renewed Secret reloads, see [doc/design/config-files.md](doc/design/config-files.md). Needs a
-    DNS provider with an API cert-manager supports
-  - [x] cert-manager with HTTP-01: its solver publishes the challenge through Ingress or
-    HTTPRoute objects, which only a controller serves; the standalone edge would need a fixed
-    route for `/.well-known/acme-challenge/` to the solver, on the plain HTTP listener
-    (`listen.httpPort`)
-  - [ ] an ACME client in the edge, with the account and keys shared by all nodes
-  - Also: the chart mounts one TLS Secret (`tls.existingSecret`); many hosts need a list of
-    Secrets or the `letsEncrypt` directory layout from one volume.
+  - Decided: cert-manager with HTTP-01. Its solver publishes the challenge through Ingress or
+    HTTPRoute objects, which only a controller serves, so the standalone edge needs a fixed route
+    for `/.well-known/acme-challenge/` to the solver on the plain HTTP listener
+    (`listen.httpPort`). Not chosen: cert-manager with DNS-01 (needs a DNS provider with an API),
+    an ACME client in the edge (account and keys shared by all nodes).
+  - Next: the challenge route on the plain HTTP listener; the chart mounts one TLS Secret
+    (`tls.existingSecret`), many hosts need a list of Secrets or the `letsEncrypt` directory
+    layout from one volume.
 - [ ] 13. IP database on the pods: production reads the IPinfo database (`ipLookup.ipInfoPath`).
-  Research with sources and the evidence for each point:
-  [ip-database-volume-draft.md](doc/design/ip-database-volume-draft.md).
   - P1.
+  - Decided: option A of
+    [ip-database-volume-draft.md](doc/design/ip-database-volume-draft.md), an init container
+    plus a native sidecar (`restartPolicy: Always`) in the chart that download into a shared
+    `emptyDir`, each to a temporary file in that directory renamed into place. The edge mounts the
+    volume `readOnly: true` and points `ipLookup.ipInfoPath` at it; the token is a small Secret
+    mounted only into the two downloader containers. Why: the token and the egress to ipinfo.io
+    stay out of the public-facing process, the edge needs no download code, and the existing
+    watcher reloads on the rename. Against: every pod downloads 24 MB per update and its sidecar
+    needs egress; a pod cannot start while IPinfo is unreachable. Standalone setups use a host
+    timer that writes the same way.
   - Facts: IPinfo Lite `ipinfo_lite.mmdb` is 23.71 MB, updated daily, CC BY-SA 4.0, downloaded
-    with an account token. A Secret or ConfigMap holds at most 1 MiB, so neither can carry it.
-    `ConfigFileWatcher` already reloads by itself when the file is renamed into place.
-    The reader memory-maps the file, so an updater must write a temporary file in the same
-    directory and rename it, never write in place.
-  - Volume, tick one:
-    - [ ] A. init container download plus a native sidecar that refreshes into an `emptyDir`;
-      token from a small Secret; every pod downloads and needs egress to IPinfo
-    - [ ] B. read-only `hostPath` directory (not the file) on the ingress nodes, filled by a
-      host timer; node setup outside the chart
-    - [ ] C. image volume with the database as an OCI artifact (stable since Kubernetes 1.36);
-      every update is a pod restart
-    - [ ] D. baked into the edge image; every update is an image build and rollout, and the
-      public image redistributes CC BY-SA data
-    - [x] edge gets writable volume and does regular updates by itself, access token and 
-      maybe URL for IPInfo needs to be confiugres
-  - Update interval, tick one; A and B reach the running edge through the watcher, C and D
-    through a rollout restart:
-    - [x] daily, IPinfo's cadence, confurable check interval with HTTP validator skipping if nothing is new
-    - [ ] less often, e.g. weekly, to save transfer
-  - Then: a chart values block for the chosen volume, its operator documentation (item 15), and
-    a test that the running watcher picks up a renamed database without a `reload` call.
+    with an account token; a Secret or ConfigMap holds at most 1 MiB. The reader memory-maps the
+    file, so the download goes to a temporary file in the same directory and is renamed into
+    place, never written in place; `ConfigFileWatcher` already reloads on the rename.
+  - Next:
+    - a pinned downloader image, or a small script on a minimal image
+    - the chart values block: enable, Secret name, URL, interval (daily); an HTTP validator
+      (`If-None-Match`/`ETag` or `If-Modified-Since`) in the script, if IPinfo supports it
+      (verify)
+    - verify on kind that the edge's watcher sees a rename made by the sidecar in the shared
+      `emptyDir` (inferred from inotify on a shared node directory, not tested)
+    - a test that a renamed database is picked up without a `reload` call
+    - the operator documentation (item 15), with the host timer for standalone setups
 - [ ] 14. draining with DNS spreading: a node's address stays in client caches for the DNS TTL
   after it is removed from DNS. Decide who maintains the records without the controller (by hand
   or external-dns with a node source), the TTL, and the order for
@@ -154,7 +170,8 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   (`src/main/resources/crawler-ips/`, `CombinedIpTraitsLookup.readCrawlerIpLists`) and read the
   release zips from a directory instead. The fixture and the pointer to the format description
   are in `src/test/resources/sensepitch-known-crawlers/`; its `expectations.json` is the test
-  oracle for the matching. Breaking change allowed. Decided 2026-11-27:
+  oracle for the matching. Breaking change allowed. P2: the embedded lists go stale between
+  releases. Decided 2026-11-27:
   - Scope: only the IP lists are replaced; the User-Agent list (`crawlers.tsv`,
     `DetectCrawlerConfig`) stays unchanged.
   - Configuration:
@@ -184,9 +201,9 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] restrict admissions per solved challenge; see the
   [replay draft](doc/design/admission-replay-draft.md) and
   [PoW admission design](doc/design/pow-admission.md)
-  - P3: today a challenge is a bare timestamp and an answer can be replayed for five minutes,
-    each replay minting another admission. All choices are decided (2026-11-27); the next step
-    is the implementation plan:
+  - P2, a security issue: today a challenge is a bare timestamp and an answer can be replayed
+    for five minutes, each replay minting another admission. All choices are decided
+    (2026-11-27); the next step is the implementation plan:
     - [x] enforcement, decided: Option A of the draft, a stateless idempotent token. The
       challenge becomes random and signed, and the admission token is derived
       deterministically from it, so a replay on any replica returns the same token without shared
@@ -212,55 +229,41 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
 - [ ] pass the browser traits of the challenge answer (`webdriver`, timezone) on with the
   admission, so later requests and the upstream see them; see
   [browser fingerprinting](doc/design/browser-fingerprinting.md)
+  - P3.
 
 ## Ingress, HTTP
 
-- [ ] Request size limits: decide the options below, then implement the chosen ones. Research,
-  measurements and sources in the draft
-  [request-body-limit-draft.md](doc/design/request-body-limit-draft.md)
-  - P2. Today: no body limit; the body streams with backpressure (64 KiB Netty water mark), so
-    memory is bounded. Netty's header (8192 bytes) and request line (4096) limits answer 431 and
-    414 (`DecoderFailureHandler`). Measured on 2026-11-20: NGINX 1.28.3 refuses bodies over 1 MiB
-    with 413 because it buffers them; HAProxy 3.2, Caddy 2.11 and Envoy 1.36 stream and have no
-    default limit, Caddy and Envoy offer an opt-in 413.
-  - Found: a slow upload is not bounded. Every body byte resets the read timeout, so one byte per
-    29 s keeps the client and upstream connections open (inferred from the code and a decoder
-    experiment). Bounded now when `listen.connection.requestTimeoutSeconds` is set, see below.
-  - Body limit, tick one:
-    - [x] no limit, as today; document it in the README
-    - [ ] optional `maxRequestBodyBytes`, off by default
-    - [ ] default limit like NGINX (1 MiB)
-  - Visibility of refusals:
-    - [x] new `RequestOutcome` `request_too_large` in `sensepitch_ingress_request_outcomes_total`
-    - [ ] status 413 in the request log only
-  - Header and request line:
-    - [x] answer decoder failures explicitly: 431 too large header, 414 too long request line,
-      400 other, with outcome or counter. Done: `DecoderFailureHandler`, outcome
-      `request_too_large`
-    - [ ] raise the defaults (other proxies refused at 9000 to 70000 bytes)
-    - [ ] configurable in `listen.connection` via `HttpDecoderConfig`
-  - Slow uploads:
-    - [x] total request receive timeout in `listen.connection`, answered with 408. Done:
-      `requestTimeoutSeconds` in `ConnectionConfig`, counted with phase `request_total` in
-      `sensepitch_ingress_receive_timeout`, outcome `request_timeout`; `0` is off
-    - Default of `requestTimeoutSeconds`, tick one (today `0`, off, so existing setups are
-      unchanged):
-      - [ ] off by default, operators opt in
-      - [ ] on by default, e.g. 300 s
-    - [ ] minimum upload rate
-    - [ ] only correct the `ConnectionConfig` doc, which says a byte does not reset the timeout
-- [ ] Slow request protection: decide the options below, then implement the chosen ones. Research
-  and sources in the draft
-  [slow-request-protection-draft.md](doc/design/slow-request-protection-draft.md)
-  - P2. Today (read and measured on 2026-11-26): the head is already bounded by a total of
-    `readTimeoutSeconds` (30 s) from accept or from the end of the previous response, since the
-    codec emits it only when complete; a request without `Content-Length` and
-    `Transfer-Encoding` ends with its head (RFC 9112 6.3). The same timer is also the idle body
-    timeout and the keep-alive wait, so the head cannot be tightened alone. The body total
-    `requestTimeoutSeconds` is off by default, see the request size entry above.
+- [ ] Slow and large requests: decide the options below, then implement the chosen ones.
+  Research, measurements and sources in the drafts
+  [request-body-limit-draft.md](doc/design/request-body-limit-draft.md) and
+  [slow-request-protection-draft.md](doc/design/slow-request-protection-draft.md).
+  - P2. Today (read and measured on 2026-11-20 and 2026-11-26):
+    - Body: no limit, decided and documented in the README; the body streams with backpressure
+      (64 KiB Netty water mark), so memory is bounded. NGINX 1.28.3 refuses bodies over 1 MiB with
+      413 because it buffers them; HAProxy 3.2, Caddy 2.11 and Envoy 1.36 stream and have no
+      default limit, Caddy and Envoy offer an opt-in 413.
+    - Head: Netty's header (8192 bytes) and request line (4096) limits are answered with 431 and
+      414 by `DecoderFailureHandler`, outcome `request_too_large`. The head is bounded by a total
+      of `readTimeoutSeconds` (30 s) from accept or from the end of the previous response, since
+      the codec emits it only when complete; a request without `Content-Length` and
+      `Transfer-Encoding` ends with its head (RFC 9112 6.3). The same timer is the idle body
+      timeout and the keep-alive wait, so the head cannot be tightened alone.
+    - Slow upload: every body byte resets the read timeout, so one byte per 29 s keeps the client
+      and upstream connections open, unless `listen.connection.requestTimeoutSeconds` is set: the
+      total time to receive the body, answered with 408, phase `request_total` in
+      `sensepitch_ingress_receive_timeout`, outcome `request_timeout`; `0`, the default, is off.
+  - Default of `requestTimeoutSeconds`:
+    - [ ] off, as today, operators opt in
+    - [ ] on, e.g. 300 s
+  - Body limit beyond "no limit", if at all:
+    - [ ] optional `maxRequestBodyBytes`, off by default, outcome `request_too_large`
+    - [ ] none
+  - Minimum body rate, like Apache `MinRate`:
+    - [ ] none, `requestTimeoutSeconds` and the idle timeout only
+    - [ ] 500 bytes/s after a grace time of 20 s, capped by `requestTimeoutSeconds`
   - Head timeout:
-    - [ ] new `requestHeadTimeoutSeconds` in `listen.connection`, 408 when the head is not
-      complete in time
+    - [ ] new `requestHeadTimeoutSeconds` in `listen.connection` (10 s, 20 s or 30 s), 408 when the
+      head is not complete in time
     - [ ] keep `readTimeoutSeconds`, only document that it bounds the head in total
   - Start of the head timer:
     - [ ] at accept and at the end of the previous response, as today
@@ -268,20 +271,13 @@ done or merged. Items after item 3 build on its kind deployment check in CI.
   - Requests without a body:
     - [ ] nothing separate, the head timeout is their limit
     - [ ] refuse a body in `GET`, `HEAD` and `DELETE`
-  - Body:
-    - [ ] minimum rate after a grace time, like Apache `MinRate`, capped by
-      `requestTimeoutSeconds`
-    - [ ] only `requestTimeoutSeconds`, on by default
-    - [ ] idle only, as today
+  - Header and request line limits (other proxies refused at 9000 to 70000 bytes):
+    - [ ] keep Netty's defaults
+    - [ ] raise the defaults
+    - [ ] configurable in `listen.connection` via `HttpDecoderConfig`
   - Overrides:
     - [ ] body limits per site and per path
     - [ ] listener level only
-  - Defaults:
-    - [ ] head 10 s
-    - [ ] head 20 s
-    - [ ] head 30 s, as today
-    - [ ] minimum body rate off
-    - [ ] minimum body rate 500 bytes/s after 20 s
   - Metric phases:
     - [ ] separate `head`, `body_idle`, `body_rate`, `request_total`
     - [ ] today's phases plus `body_rate`

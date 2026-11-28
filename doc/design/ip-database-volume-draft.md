@@ -127,10 +127,10 @@ truncation can make lookups fail.
 
 ### Where the file comes from on the pod
 
-- [ ] **A. Init container plus sidecar into an `emptyDir`.** An init container downloads the
-  database before the edge starts. A native sidecar (`restartPolicy: Always`) downloads it again,
-  e.g. daily, and renames it into place. The token is a small Secret mounted into these two
-  containers only.
+- [x] **A. Init container plus sidecar into an `emptyDir`.** Chosen, see "Decision". An init
+  container downloads the database before the edge starts. A native sidecar (`restartPolicy:
+  Always`) downloads it again, e.g. daily, and renames it into place. The token is a small Secret
+  mounted into these two containers only.
   - For: works on any cluster from v1.33 and needs no node access. The pod is self-contained,
     and the update reaches the edge through the existing watcher.
   - Against: every pod downloads 24 MB per update and needs egress to `ipinfo.io`. A pod cannot
@@ -183,7 +183,21 @@ each node. The interval is open:
 - a test that the running watcher picks up a database renamed into its directory, without a
   `reload` call. `ConfigReloadTest` calls `reload` itself.
 
-## Recommendation (assumption, for the maintainer to confirm)
+## Decision
+
+Decided by the maintainer on 2026-11-28, recorded in `TODO.md` item 13: **A**, the init container
+plus the native sidecar into a shared `emptyDir`. The edge mounts the volume read-only; the
+downloaders write a temporary file in the same directory and rename it into place, and the
+existing watcher reloads. The token is mounted only into the downloader containers, so the token
+and the egress to `ipinfo.io` stay out of the public-facing process, and the edge needs no
+download code.
+
+Considered first and dropped: the edge downloads the database itself into a writable volume. Its
+advantage, one mechanism for Kubernetes and standalone setups, is covered by a host timer that
+writes the same way; against it, the edge would hold the token, need egress, and carry an HTTP
+client with validator handling, retries and the rename.
+
+## Recommendation (superseded by the decision)
 
 B, if the ingress nodes get host-level setup anyway (items 9 and 12); otherwise A. Both keep
 updates restart-free through the watcher, which already works. C and D trade the restart-free

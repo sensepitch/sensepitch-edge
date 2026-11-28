@@ -5,61 +5,17 @@ node ingress, see [TODO.md](TODO.md). Moved out of `TODO.md` on 2026-11-21; the 
 their text, numbers and priorities from there. An entry moves back to `TODO.md` when it becomes a
 need, e.g. a bug or a production requirement. Bugs and robustness issues are never parked here.
 
-## Upstream pool fine tuning
-
-- max age, see below
-- put circuit breaker into it, see "upstream health and circuit breaker" below
-
-## Memory / allocation bounds
-
-- OtlpAllocationIT measures steady state allocations, can we have object counts as well? No, not possble
-- Add an IT test for allocations per exchange
-- is there a allocations / request metric?
-
 ## Benchmark: edge against NGINX, done fairly
 
 - [ ] Rebuild the comparison in `performance-test/runs/2026-11-27-upstream-pool` on `shb` and
   replace the numbers of the README benchmark section
   - P2, operator-visible only through the README: today's README numbers (2025, vegeta, edge with
     the earlier pool) and most numbers of 2026-11-27 compare unequal setups.
-  - Findings of 2026-11-27 that the plan builds on, in the run README
-    [2026-11-27-upstream-pool](performance-test/runs/2026-11-27-upstream-pool/README.md):
-    - vegeta is the bottleneck on one machine: at a requested 40k req/s it reached 28 to 30k, the
-      machine 93 % busy with NGINX on 3.7 cores. `h2load` 1.71 and `shb` (io_uring) reach about
-      50k for both servers at 100 connections.
-    - A freshly started edge needs a warm-up (JIT): without one the first seconds take 10 cores
-      and dominate the tail; 10 s at 1 000 req/s are enough.
-    - NGINX logs every request to standard out (the image links `access.log` to `/dev/stdout`);
-      that costs it 19 % (64.8k to 52.5k req/s with `shb`), the request log of the edge 7 %
-      (47.3k to 43.8k). With both logs off the edge reaches 73 % of NGINX, with both on 83 %.
-      Earlier "edge equals NGINX" results compared NGINX with its log against the edge without.
-    - Without the warm-up and with vegeta, the latency tails at 5k and 10k came from the cold
-      start, not from the request log.
-  - Plan:
-    1. `compare.sh` on `shb` instead of vegeta: per step a fresh server (edge JVM or NGINX
-       container), warm-up with `shb` for 10 s (discarded), then 10 s measured with `-j` (JSON),
-       the summary table built from the JSON: requests per second, errors, p50, p90, p99,
-       p99.9.
-    2. Variants per step: NGINX and the edge, each with its log on and off
-       (`NGINX_PROXY_ACCESS_LOG=off`, `SENSEPITCH_EDGE_REQUEST_LOG_DISABLED=true`), at 10, 100
-       and 1 000 connections (closed loop: `shb` sends as fast as answers come).
-       Future variant parameters could be http1.1, http2, QUIC. Also HAPROXY and envoy should 
-       be added for comparison in the future.
-       There should be also different test scenarios, we only test with 10kb data.
-       There should be a test scenario for 0 byte responses. 512 byte responses, and a size mix.
-    3. Three runs per variant, the table reports median and range, so a single bad run (seen
-       up to a factor of three in the p90) does not decide.
-    4. CPU per variant: the machine busy share and the server's cores, average of the samples 6
-       to 8 of 10 as in `compare.sh` today, and from it cores per 10 000 req/s, the fairest
-       figure while the client shares the machine.
-    5. Optional, if the machine stays above 80 % busy: pin `shb` and the server to separate
-       cores (`taskset`) and run once more, to see how much the shared CPU changes the ratio.
-    6. Optional: HTTP/2 (`shb --http2`, NGINX `http2 on`, the edge where it supports it) and
-       later HTTP/3, which `shb` and `h2load` both speak.
-    7. Results: the run README gets the new tables and replaces the probe tables measured
-       without a warm-up; the README benchmark section gets the fair numbers (logs on and off,
-       tool, machine, date) instead of the 2025 vegeta run, and keeps one sentence on why the
-       old numbers differ.
+  - The findings it builds on and the method (`shb` with warm-up, each server with its log on and
+    off, 10 to 1 000 connections, three runs, CPU per 10 000 req/s, later more response sizes,
+    HTTP/2, HAProxy and Envoy) are in the run README
+    [2026-11-27-upstream-pool](performance-test/runs/2026-11-27-upstream-pool/README.md), section
+    "Next comparison".
 
 ## Kubernetes, Gateway API controller
 
@@ -100,7 +56,7 @@ from the standalone chart. The numbers continue those of the Kubernetes section 
   (`Deflector.outputChallengeHtml` renders the page per request, only the challenge changes)
   - P3: benchmark and define caching, cookie scope and security semantics.
 - [ ] improve bypass matching (maybe ASN, geo)
-  - Define which traits grant bypass, rule precedence and behavior for unknown or stale data.
+  - P3: define which traits grant bypass, rule precedence and behavior for unknown or stale data.
 - [ ] `TrieIpLabelLookup`: consolidate into `IpTraitsLookup`
   - P3, no operator-visible effect: clarify the desired API and whether collector composition
     already covers the use case.
@@ -122,8 +78,8 @@ Decisions, alternatives and limitations are in
 
 - [ ] failover endpoints: several endpoints per OTLP destination, each with its own breaker, see
   the `Endpoint` record in `HttpBatchSender`
-  - P3: decide failover order versus round robin; shares the design with "multiple servers per
-    upstream".
+  - P3: decide failover order versus round robin; the upstream side is drafted in
+    [doc/design/upstream-targets.md](doc/design/upstream-targets.md).
 - [ ] disk spool: waiting batches are lost when the proxy restarts during a log server outage or
   hits the shutdown deadline
   - P3: only if deployments ask for it; needs a volume, a disk budget, fsync policy and replay
@@ -161,39 +117,32 @@ Decisions, alternatives and limitations are in
   - preconnect (Envoy `per_upstream_preconnect_ratio`)
   - P3: no operator asked yet; the pool works without them.
 - [ ] cache upstream responses with cache2k in netty buffers
+  - P3.
 - [ ] Allow cache to be tiered on disk and Redis
-  - P2 relatively important so we don't have restart spikes
-- [ ] transparent compression: all responses to the client are compressed with low overhead brotli, add benchmarks
+  - P3, after the cache: relatively important then, so a restart does not cause load spikes.
+- [ ] transparent compression: all responses to the client are compressed with low overhead
+  brotli, add benchmarks
+  - P3.
 - [ ] best compression for cached content
-  - first do low overhead brotli and cache it, recompress with more efficient compression with half
-    of the available CPUs in niced priority, priotising hot resources
+  - P3, after the cache: first do low overhead brotli and cache it, recompress with more efficient
+    compression with half of the available CPUs in niced priority, prioritising hot resources.
 - [ ] multiple servers per upstream
   - P3: a design draft exists, see [doc/design/upstream-targets.md](doc/design/upstream-targets.md):
     a common pool and limit per upstream, the target chosen first by least connections per event
     loop, a breaker per target and never all out, a retry on another target after a connect
     failure, the connections per target reported.
-- [ ] upstream health and circuit breaker:
-  [`CircuitBreaker`](src/main/java/org/sensepitch/edge/CircuitBreaker.java) exists for the request
-  log and supports upstreams: a threshold of failures in a row, probes by the caller and a start
-  in the open state. For an upstream it opens only when the upstream is down: consecutive
-  failures, reset by any success, no failure rate while there is one server; pool limit refusals
-  do not count. Still to do: an optional probe endpoint per upstream (probed at startup, then
-  after each backoff), `INFO` lines on unavailable and alive again, a short upstream connect
-  timeout, see "Planned improvements" in
-  [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md). This breaker replaces the TCP
-  readiness probe.
-  - P2: do research and design draft and give decisions here
-  - P3: specify thresholds, recovery probes, per-server versus per-upstream state and retry policy.
-  - Keep the backoff, `Retry-After`, single probe and metrics, the request log keeps a threshold
-    of one, see [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
-
-## Circuit breaker
-
-Limitations and the reasoning are in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md);
-the failure threshold for upstreams is under Upstream.
-
-- [ ] slow calls count as failures, as resilience4j's slow call rate
-  - P3: for upstreams, once latency targets are known.
+- [ ] upstream health and circuit breaker
+  - P3. Done: [`CircuitBreaker`](src/main/java/org/sensepitch/edge/CircuitBreaker.java) supports
+    upstreams (a threshold of failures in a row, probes by the caller, a start in the open state,
+    lock free per request), and the policy is decided: open only when the upstream is down, no
+    failure rate while there is one server, pool limit refusals do not count, see "Planned
+    improvements" in [doc/design/circuit-breaker.md](doc/design/circuit-breaker.md).
+  - Next: the integration listed there (configuration, permit after the pool reservation,
+    classification by outcome, an optional probe endpoint, `INFO` lines on unavailable and alive
+    again, a short upstream connect timeout); slow calls as failures once latency targets are
+    known.
+  - Open decisions: the breaker on or off by default per upstream; readiness from the breakers,
+    which replace the TCP readiness probe (`UpstreamReadinessProbe`).
 
 ## Ingress, HTTP
 
@@ -207,7 +156,9 @@ the failure threshold for upstreams is under Upstream.
 
 ## Metrics, logging
 
-- [ ] Cleanup: Consolidate all sensepitch metrics prefixes as constants into one place including their descritpion P3
+- [ ] Cleanup: consolidate all sensepitch metric prefixes as constants into one place, including
+  their description
+  - P3.
 
 ## Configuration, operations
 
@@ -226,8 +177,9 @@ the failure threshold for upstreams is under Upstream.
 
 ## Build, tests
 
-
-
+- [ ] an IT for the allocations per exchange; `OtlpAllocationIT` measures the steady state
+  allocations of the request log only
+  - P3, no operator visible effect.
 - [ ] google-java-format 2, https://github.com/google/google-java-format/releases#release-v2.0.0
   (stuck at 1.36.1: Spotless cannot load 1.37+, 2.x changes the lambda layout). Impact: one-time
   reformat of about 40 files / 930 lines, lambda bodies hug the call (`.forEach(t -> {`) and indent
@@ -246,15 +198,6 @@ the failure threshold for upstreams is under Upstream.
     `readRoutingFromYaml`, `readRoutingFromEnvironment`).
   - Remove a case if `./mvnw clean test jacoco:report` shows no coverage loss; a case that
     covers a loader path moves to `ConfigTest` with a generic record.
-- [ ] JaCoCo coverage varies between runs: lines that passing tests execute are sometimes
-  reported as missed, e.g. `AdminServer` lines 48 and 73–74 and `IpTraits` lines 31, 81 and 85
-  (seen 2026-11-24 in `./mvnw verify`, while `AdminServerTest` and `CombinedIpTraitsLookupTest`
-  passed). Cause not investigated; suspected the parallel unit test execution in one JVM, or
-  probes of a class lost on a JVM or thread end. Known before: one branch of
-  `AsyncRequestLogWriter` (see "Evergreen / Cleanups").
-  - P3, no operator visible effect: the floor in `pom.xml` keeps a margin; a new gap seen once
-    may be noise, rerun before writing a test or a TODO for it. Compare two `jacoco.xml` of the
-    same commit to find the affected classes.
 - [ ] Investigate cache2k pinpoint for the test patterns
   - P3: `cache2k-pinpoint` (module of cache2k, 2.6.1) has `PinpointParameters.TIMEOUT`,
     `Await` with a `TimeoutError` naming the condition, `TimeBox` (timing assertions only count when
@@ -270,25 +213,6 @@ the failure threshold for upstreams is under Upstream.
 
 ## Evergreen / Cleanups
 
-- [ ] Move a test case that is doing real socket connections or sleeps from test to verify and
-  maintain code coverage
-  - Goal: `./mvnw test` at about 5 s wall time. The classes run in parallel, the methods of a
-    class in order, so one slow class sets the wall time and a few hundred ms count.
-  - Move only what adds no coverage of its own: compare `target/site/jacoco/jacoco.csv` of
-    `./mvnw clean test jacoco:report` with and without the test (exclude with
-    `-Dtest='**/*Test,**/*BDDTest,!Class#method'`, a bare exclusion pulls in the `*IT`s). One
-    branch of `AsyncRequestLogWriter` varies between runs, rerun before reading a difference.
-  - Done 2026-11-16: `ReloadableRequestLoggerTest.noRecordIsLostWhileReloading` (0.3 s, no own
-    coverage) to `ReloadableRequestLoggerIT`, which uses the unit test class as its fixture.
-  - Next: `ReloadableRequestLoggerTest` still takes 3.3 s in the full run (2026-11-16):
-    `finishCoversDrainingDestinations` 1.4 s (on simulated time since 2026-11-25),
-    `finishedDestinationEndsWhenItsRecordsAgedOut` 0.3 s (on simulated time since 2026-11-24),
-    `disableAndEnableByReload` 0.2 s, `removedDestinationDoesNotBlockTheReload` 0.15 s.
-    Probably real timers (retry backoff after 503, age limit), not verified. On 2026-11-25 a
-    focused run of the class took 0.94 s, the first test 0.55 s of it with warm-up and server
-    start, the others 0.15 s or less. What cannot move for coverage gets a fake clock instead,
-    see the planned improvements in the
-    [test speed design](doc/design/test-speed.md#planned-improvements).
 - [ ] Performance test: different Netty allocators, leak detection,
   `-XX:NativeMemoryTracking=summary`
   - P3: compare representative workloads and record throughput, latency and memory before choosing.
