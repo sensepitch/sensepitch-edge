@@ -41,3 +41,7 @@ New ideas can be added here. An idea should be brief, for which audience its rel
   `OtlpLogDestinationIT.concurrentRequestsUpToTheLimit` had; none was slow in one full gate. A
   shared helper that stops without grace once the sender is closed would cover them. Developers,
   low importance. From the `shorten-otlp-destination-it` turn, 2026-11-27.
+- Show deprecation warnings in the normal build (`<showDeprecation>true</showDeprecation>` or
+  `-Xlint:deprecation` on `maven-compiler-plugin` in `pom.xml`), so a newly deprecated library
+  call shows up when a dependency is upgraded instead of in an occasional manual run. Developers,
+  low importance. From the `replace-deprecated-library-calls` turn, 2026-11-27.

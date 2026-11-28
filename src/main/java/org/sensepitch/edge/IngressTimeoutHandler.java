@@ -280,11 +280,11 @@ public final class IngressTimeoutHandler extends ChannelDuplexHandler {
         // to avoid the client from sending a new requests while the server closes the connection
         // also server should send a 408 response before closing the connection
         // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Keep-Alive
-        //noinspection deprecation
         response
             .headers()
             .set(
-                HttpHeaderNames.KEEP_ALIVE, "timeout=" + config.readTimeoutSeconds() + ", max=123");
+                LegacyHeaderNames.KEEP_ALIVE,
+                "timeout=" + config.readTimeoutSeconds() + ", max=123");
         response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
       }
       cancelRequestDeadline();

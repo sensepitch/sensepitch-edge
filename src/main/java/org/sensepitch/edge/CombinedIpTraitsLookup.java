@@ -96,7 +96,7 @@ public class CombinedIpTraitsLookup implements IpTraitsLookup, AutoCloseable {
     ObjectMapper mapper = new ObjectMapper();
     for (var file : ResourceLoader.getFileList(CRAWLER_IPS_DIRECTORY)) {
       String label = CRAWLER_LABEL_PREFIX + crawlerListName(file);
-      JsonNode root = mapper.readTree(Proxy.class.getResource("/" + file));
+      JsonNode root = mapper.readTree(ResourceLoader.loadBinaryFile(file));
       for (JsonNode prefix : root.path("prefixes")) {
         if (prefix.has("ipv4Prefix")) {
           lookup.insertIpv4(withPrefixLength(prefix.get("ipv4Prefix").asText(), 32), label);

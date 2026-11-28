@@ -162,7 +162,7 @@ class InformationalResponseBDDTest {
       HttpUtil.setContentLength(response, BODY.length);
       response.headers().set(HttpHeaderNames.CONNECTION, "X-Final-Private");
       response.headers().set("X-Final-Private", "upstream-only");
-      response.headers().set(HttpHeaderNames.KEEP_ALIVE, "timeout=5");
+      response.headers().set(LegacyHeaderNames.KEEP_ALIVE, "timeout=5");
       upstream.writeInbound(
           response,
           new DefaultHttpContent(Unpooled.wrappedBuffer(BODY)),
@@ -177,7 +177,8 @@ class InformationalResponseBDDTest {
       try {
         assertThat(response.status()).isEqualTo(HttpResponseStatus.OK);
         assertThat(response.headers().contains("X-Final-Private")).isFalse();
-        assertThat(response.headers().get(HttpHeaderNames.KEEP_ALIVE)).doesNotContain("timeout=5");
+        assertThat(response.headers().get(LegacyHeaderNames.KEEP_ALIVE))
+            .doesNotContain("timeout=5");
         assertThat(response.headers().get(HttpHeaderNames.CONNECTION)).isEqualTo("keep-alive");
         HttpContent content = FlowAndExceptionTest.readSkippingEmptyBuffers(ingress);
         try {

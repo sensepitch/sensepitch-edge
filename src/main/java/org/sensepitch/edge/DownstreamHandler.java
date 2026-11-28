@@ -494,8 +494,8 @@ public class DownstreamHandler extends ChannelDuplexHandler {
       }
     }
     headers.remove(HttpHeaderNames.CONNECTION);
-    headers.remove(HttpHeaderNames.KEEP_ALIVE);
-    headers.remove(HttpHeaderNames.PROXY_CONNECTION);
+    headers.remove(LegacyHeaderNames.KEEP_ALIVE);
+    headers.remove(LegacyHeaderNames.PROXY_CONNECTION);
     headers.remove(HttpHeaderNames.TE);
     headers.remove(HttpHeaderNames.TRAILER);
     headers.remove(HttpHeaderNames.UPGRADE);

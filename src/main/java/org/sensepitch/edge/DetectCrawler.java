@@ -62,7 +62,7 @@ public class DetectCrawler implements BypassCheck {
               .setHeader()
               .setSkipHeaderRecord(true)
               .get();
-      CSVParser parser = new CSVParser(in, format);
+      CSVParser parser = format.parse(in);
       for (CSVRecord record : parser) {
         try {
           String agent = record.get("agent-match");

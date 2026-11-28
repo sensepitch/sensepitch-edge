@@ -298,16 +298,6 @@ Decisions and reasons in [encrypted transport](doc/design/encrypted-transport.md
 
 ## Evergreen / Cleanups
 
-- [ ] Replace deprecated library calls, found with `javac -Xlint:deprecation` on 2026-11-27 (Maven
-  does not show them by default):
-  - Netty `HttpHeaderNames.KEEP_ALIVE` in `DownstreamHandler` and `IngressTimeoutHandler`, and in
-    `FlowAndExceptionTest`, `InformationalResponseBDDTest`, `TimeoutsTest`; `PROXY_CONNECTION` in
-    `DownstreamHandler`. Both are hop-by-hop headers the proxy removes, check what Netty suggests
-    instead (likely an `AsciiString` constant of our own, behaviour unchanged).
-  - Jackson `ObjectMapper.readTree(URL)` in `CombinedIpTraitsLookup.readCrawlerIpLists`.
-  - Commons CSV `new CSVParser(Reader, CSVFormat)` in `DetectCrawler`, the builder instead.
-  - P3, no operator-visible effect; consider enabling `-Xlint:deprecation` in `pom.xml` afterwards
-    so new ones show up in the build.
 - [ ] Review this file and CI regularly: suggest removals or a lower priority for entries without
   a visible effect for the operator, move optional work to [NOT-YET.md](NOT-YET.md), and check the
   GitHub CI actions; add an entry or fix right away if something is broken

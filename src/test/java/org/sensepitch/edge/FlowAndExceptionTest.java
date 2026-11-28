@@ -322,14 +322,14 @@ public class FlowAndExceptionTest {
   public void responseIsForwardedAndUpstreamClosed() {
     sendGetRequest();
     HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-    response.headers().set(HttpHeaderNames.KEEP_ALIVE, "timeout=5");
+    response.headers().set(LegacyHeaderNames.KEEP_ALIVE, "timeout=5");
     response.headers().set(HttpHeaderNames.CONTENT_LENGTH, 3);
     HttpContent content = new DefaultHttpContent(Unpooled.copiedBuffer(new byte[] {1, 2, 3}));
     upstreamChannel.writeInbound(response, content, new DefaultLastHttpContent());
     rattle();
     assertThat((Object) ingressChannel.readOutbound()).isSameAs(response);
     // the upstream's value is dropped, IngressTimeoutHandler sets the one of the proxy
-    assertThat(response.headers().get(HttpHeaderNames.KEEP_ALIVE)).isNotEqualTo("timeout=5");
+    assertThat(response.headers().get(LegacyHeaderNames.KEEP_ALIVE)).isNotEqualTo("timeout=5");
     HttpContent received = ingressChannel.readOutbound();
     assertThat(received.content().readableBytes()).isEqualTo(3);
     received.release();

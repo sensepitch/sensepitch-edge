@@ -342,7 +342,8 @@ class UpstreamReuseBDDTest {
       HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/data");
       request.headers().set(HttpHeaderNames.CONNECTION, "close, X-Hop");
       request.headers().set("X-Hop", "1");
-      request.headers().set(HttpHeaderNames.KEEP_ALIVE, "timeout=5");
+      request.headers().set("Keep-Alive", "timeout=5");
+      request.headers().set("Proxy-Connection", "keep-alive");
       request.headers().set(HttpHeaderNames.ACCEPT, "text/html");
       return fromClient(request, LastHttpContent.EMPTY_LAST_CONTENT);
     }
@@ -487,7 +488,8 @@ class UpstreamReuseBDDTest {
       HttpRequest sent = upstream.current.readOutbound();
       assertThat(sent.headers().contains(HttpHeaderNames.CONNECTION)).isFalse();
       assertThat(sent.headers().contains("X-Hop")).isFalse();
-      assertThat(sent.headers().contains(HttpHeaderNames.KEEP_ALIVE)).isFalse();
+      assertThat(sent.headers().contains(LegacyHeaderNames.KEEP_ALIVE)).isFalse();
+      assertThat(sent.headers().contains(LegacyHeaderNames.PROXY_CONNECTION)).isFalse();
       assertThat(sent.headers().get(HttpHeaderNames.ACCEPT)).isEqualTo("text/html");
       return this;
     }

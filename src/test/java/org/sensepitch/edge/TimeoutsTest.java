@@ -342,7 +342,7 @@ class TimeoutsTest {
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.status().code()).isEqualTo(200);
     assertThat(response.headers().get(HttpHeaderNames.CONNECTION)).isEqualTo("close");
-    assertThat(response.headers().contains(HttpHeaderNames.KEEP_ALIVE)).isFalse();
+    assertThat(response.headers().contains(LegacyHeaderNames.KEEP_ALIVE)).isFalse();
     ticker.advance(9, SECONDS);
     rattle();
     ingressChannel.writeInbound(new DefaultHttpContent(Unpooled.wrappedBuffer(BODY)));
@@ -422,7 +422,8 @@ class TimeoutsTest {
     rattle();
     HttpResponse response = ingressChannel.readOutbound();
     assertThat(response.headers().get(HttpHeaderNames.CONNECTION)).isEqualTo("keep-alive");
-    assertThat(response.headers().get(HttpHeaderNames.KEEP_ALIVE)).isEqualTo("timeout=10, max=123");
+    assertThat(response.headers().get(LegacyHeaderNames.KEEP_ALIVE))
+        .isEqualTo("timeout=10, max=123");
     assertThat(ingressChannel.isActive()).isTrue();
   }
 
